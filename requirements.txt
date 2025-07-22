@@ -1,0 +1,8 @@
+# PlanetForge - Civilization IV Map Generator
+# 
+# This project uses Python 2.4+ which is included with Civilization IV.
+# No external dependencies are required for the main map script.
+#
+# For development and testing outside of Civ IV:
+# - Python 2.7+ (for compatibility testing)
+# - Any additional testing frameworks can be added here as needed
