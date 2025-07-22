@@ -6,6 +6,18 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ## Development Guidelines
 
+### Core Development Priorities
+
+1. **Model Accuracy**: Always strive for mathematical and physical accuracy when developing code for this map generator. Mathematical and physical laws are preferred over heuristic and pseudo methods.
+2. **Optimization and Performance**: Speed is necessary for a great user experience when loading a map. This is priority number 2 in coding decisions.
+
+### Python 2.4 Restrictions
+
+- **Civilization IV Constraint**: Must respect Civilization IV's Python 2.4 restrictions
+- **Available Libraries**: Limited to Python 2.4 standard library and Civilization IV's included modules
+- **No Modern Features**: Cannot use features introduced after Python 2.4 (no decorators, context managers, etc.)
+- **Memory Management**: Be mindful of Python 2.4's memory limitations and garbage collection
+
 ### Civilization IV Python API Conventions
 
 - All map scripts must inherit from the CvMapScriptInterface template
@@ -22,11 +34,12 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ### Map Generation Best Practices
 
-- **Plate Tectonics**: Implement realistic continental drift and mountain formation
-- **Climate Modeling**: Use latitude-based climate zones and weather patterns
-- **Natural Features**: Ensure rivers flow downhill, realistic biome placement
-- **Balance**: Maintain gameplay balance while achieving realism
-- **Performance**: Optimize for reasonable generation times
+- **Plate Tectonics**: Implement realistic continental drift and mountain formation using proper geological models
+- **Climate Modeling**: Use latitude-based climate zones and weather patterns based on atmospheric physics
+- **Natural Features**: Ensure rivers flow downhill, realistic biome placement following ecological principles
+- **Mathematical Accuracy**: Prefer physics-based algorithms over approximations where possible
+- **Balance**: Maintain gameplay balance while achieving scientific realism
+- **Performance**: Optimize algorithms for fast generation times without sacrificing model accuracy
 
 ### Testing and Validation
 
@@ -47,9 +60,16 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 - Keep examples/ folder in .gitignore
 - Commit working versions frequently
 - Document major algorithm changes in commit messages
+- **Task Completion Commits**: At the end of every task, stage the recent changes for a commit and create a reasonable but concise description in the commit message. If an existing commit is already staged, update it and its message with your recent changes.
 
 ### Documentation
 
 - Keep README.md concise and focused
 - Document any external dependencies in requirements.txt
 - Include usage instructions and customization options
+
+### Memory Bank Management
+
+- **Task Completion**: Always update the memory bank when a task is completed
+- **Progress Tracking**: Document significant algorithm implementations and improvements
+- **Context Preservation**: Maintain project context and technical decisions for future reference
