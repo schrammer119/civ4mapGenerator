@@ -1,127 +1,11 @@
-# PlanetForge - Civilization IV Map Generator
-# A sophisticated map generator using plate tectonics and climate models
-# to create natural, organic, earth-like maps
-
 from CvPythonExtensions import *
-import CvUtil
 import random
 import math
 from collections import deque
 
-"""
-PlanetForge Map Script
-
-This map generator uses realistic geological and climatic processes to create
-natural-looking worlds with:
-- Plate tectonic simulation for continental formation
-- Climate modeling for realistic biome placement
-- Natural river systems and mountain ranges
-- Balanced gameplay while maintaining realism
-"""
-
-# Global elevation map instance - shared across all generation functions
-elevationMap = None
-
-
-def getDescription():
-    """Returns the description shown in the map selection menu"""
-    return "PlanetForge: Realistic worlds created using plate tectonics and climate modeling"
-
-
-def isAdvancedMap():
-    """Return 1 to show in advanced menu, 0 for simple menu"""
-    return 0
-
-
-def isClimateMap():
-    """Uses the Climate options"""
-    return 1
-
-
-def isSeaLevelMap():
-    """Uses the Sea Level options"""
-    return 1
-
-
-def getNumCustomMapOptions():
-    """Number of custom map options"""
-    return 0
-
-
-def beforeInit():
-    """Called before map initialization - set up global variables"""
-    global gc, map
-    gc = CyGlobalContext()
-    map = CyMap()
-
-
-def beforeGeneration():
-    """Called before map generation starts"""
-    pass
-
-
-def generatePlotTypes():
-    """Generate the basic plot types using plate tectonic simulation"""
-    global elevationMap
-
-    # Initialize and generate elevation map
-    elevationMap = ElevationMap()
-    elevationMap.GenerateElevationMap()
-
-    # Convert elevation data to plot types
-    plotTypes = []
-    for i in range(elevationMap.iNumPlots):
-        if elevationMap.elevationMap[i] <= elevationMap.seaLevelThreshold:
-            plotTypes.append(PlotTypes.PLOT_OCEAN)
-        elif elevationMap.prominenceMap[i] > elevationMap.peakHeight:
-            plotTypes.append(PlotTypes.PLOT_PEAK)
-        elif elevationMap.prominenceMap[i] > elevationMap.hillHeight:
-            plotTypes.append(PlotTypes.PLOT_HILLS)
-        else:
-            plotTypes.append(PlotTypes.PLOT_LAND)
-
-    return plotTypes
-
-
-def generateTerrain():
-    """Generate terrain types based on climate modeling"""
-    global elevationMap
-    # TODO: Implement climate-based terrain generation using elevationMap
-    # For now, fall back to default implementation
-    CyPythonMgr().allowDefaultImpl()
-
-
-def addRivers():
-    """Add rivers to the map using realistic flow patterns"""
-    global elevationMap
-    # TODO: Implement realistic river generation using elevationMap
-    # For now, fall back to default implementation
-    CyPythonMgr().allowDefaultImpl()
-
-
-def addFeatures():
-    """Add features (forests, jungles, etc.) based on climate"""
-    global elevationMap
-    # TODO: Implement climate-based feature placement using elevationMap
-    # For now, fall back to default implementation
-    CyPythonMgr().allowDefaultImpl()
-
-
-def addBonuses():
-    """Add bonus resources appropriate to terrain and climate"""
-    global elevationMap
-    # TODO: Implement realistic resource placement using elevationMap
-    # For now, fall back to default implementation
-    CyPythonMgr().allowDefaultImpl()
-
-
-def afterGeneration():
-    """Final adjustments after map generation"""
-    pass
-
 
 class ElevationMap:
-    # Direction macros
+    # macros
     L = 0
     N = 1
     S = 2
@@ -141,77 +25,89 @@ class ElevationMap:
         self.wrapX = self.map.isWrapX()
         self.wrapY = self.map.isWrapY()
 
-        # Vanilla Civ IV settings
-        self.seaLevelChange = self.gc.getSeaLevelInfo(
-            self.map.getSeaLevel()).getSeaLevelChange()  # -8, 0, 6
-        self.desertPercentChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getDesertPercentChange()  # -10, 0, 20
-        self.jungleLatitude = self.gc.getClimateInfo(
-            self.map.getClimate()).getJungleLatitude()  # 2, 5, 6
-        self.hillRange = self.gc.getClimateInfo(
-            self.map.getClimate()).getHillRange()  # 5, 7
-        self.peakPercent = self.gc.getClimateInfo(
-            self.map.getClimate()).getPeakPercent()  # 25, 35
-        self.snowLatitudeChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getSnowLatitudeChange()  # -0.1, -0.025, 0.0, 0.1
-        self.tundraLatitudeChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getTundraLatitudeChange()  # -0.15, -0.05, 0.0, 0.1
-        self.grassLatitudeChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getGrassLatitudeChange()  # 0.0
-        self.desertBottomLatitudeChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getDesertBottomLatitudeChange()  # -0.1, 0.0
-        self.desertTopLatitudeChange = self.gc.getClimateInfo(
-            self.map.getClimate()).getDesertTopLatitudeChange()  # -0.1, -0.05, 0.0, 0.1
-        self.iceLatitude = self.gc.getClimateInfo(
-            self.map.getClimate()).getIceLatitude()  # 0.9, 0.95
-        self.randIceLatitude = self.gc.getClimateInfo(
-            self.map.getClimate()).getRandIceLatitude()  # 0.20, 0.25, 0.5
+        # default user settings
+        # self.seaLevelChange = self.gc.getSeaLevelInfo(
+        #     self.map.getSeaLevel()).getSeaLevelChange()  # -8, 0, 6
+        # self.desertPercentChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getDesertPercentChange()  # -10, 0, 20
+        # self.jungleLatitude = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getJungleLatitude()  # 2, 5, 6
+        # self.hillRange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getHillRange()  # 5, 7
+        # self.peakPercent = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getPeakPercent()  # 25, 35
+        # self.snowLatitudeChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getSnowLatitudeChange()  # -0.1, -0.025, 0.0, 0.1
+        # self.tundraLatitudeChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getTundraLatitudeChange()  # -0.15, -0.05, 0.0, 0.1
+        # self.grassLatitudeChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getGrassLatitudeChange()  # 0.0
+        # self.desertBottomLatitudeChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getDesertBottomLatitudeChange()  # -0.1, 0.0
+        # self.desertTopLatitudeChange = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getDesertTopLatitudeChange()  # -0.1, -0.05, 0.0, 0.1
+        # self.iceLatitude = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getIceLatitude()  # 0.9, 0.95
+        # self.randIceLatitude = self.gc.getClimateInfo(
+        #     self.map.getClimate()).getRandIceLatitude()  # 0.20, 0.25, 0.5
+        self.seaLevelChange = 0
+        self.desertPercentChange = 0
+        self.jungleLatitude = 5
+        self.hillRange = 5
+        self.peakPercent = 25
+        self.snowLatitudeChange = 0.0
+        self.tundraLatitudeChange = 0.0
+        self.grassLatitudeChange = 0.0
+        self.desertBottomLatitudeChange = 0.0
+        self.desertTopLatitudeChange = 0.0
+        self.iceLatitude = 0.95
+        self.randIceLatitude = 0.25
 
-        # Custom settings
+        # custom settings
         self.landPercent = 0.38
         self.coastPercent = 0.01
-        # General smoothing radius
+        # general smoothing radius
         self.PWSclimeSmoothingRadius = 4
-        # Mean annual land temperature, equator: 30C (lowland, away from coast) (Manaus, Brazil ~28C @100m)
-        # Mean annual land temperature, antarctica: -30C (lowland, away from coast) (Plateua, Antartica -56.7C @3,666m)
+        # mean annual land temperature, equator: 30C (lowland, away from coast) (Manaus, Brazil ~28C @100m)
+        # mean annual land temperature, antarctica: -30C (lowland, away from coast) (Plateua, Antartica -56.7C @3,666m)
         self.minimumTemp = -20.77
         self.maximumTemp = 29.0
-        # Max / min water temps
+        # max / min water temps
         self.maxWaterTempC = 35.0
         self.minWaterTempC = -10.0
-        # Max elevation
+        # max elevation
         self.maxElev = 5.1
-        # Temperature lapse rate (C vs elevation)
+        # temperature lapse rate (C vs elevation)
         self.tempLapse = 1.3  # C/km
-        # Ocean currents
+        # oceant currents
         self.currentAttenuation = 1.0
         self.currentAmplFactor = 10.0
-        # Winds
+        # winds
         self.tempGradientFactor = 0.2
-        # Rains
-        # Adjusts amount of rain, vs spread of moisture (higher concentrates the rain)
+        # rains
+        # adjusts amount of rain, vs spread of moisture (higher concentrates the rain)
         self.rainOverallFactor = 0.008
-        self.rainConvectionFactor = 0.07  # Rain due to temperature
-        self.rainOrographicFactor = 0.11  # Rain due to elevation gradients
-        self.rainFrontalFactor = 0.03  # Rain due to temperature+wind gradients
-        self.rainPerlinFactor = 0.05  # Factor for random rainfall
+        self.rainConvectionFactor = 0.07  # rain due to temperature
+        self.rainOrographicFactor = 0.11  # rain due to elevation gradients
+        self.rainFrontalFactor = 0.03  # rain due to temperature+wind gradients
+        self.rainPerlinFactor = 0.05  # factor for random rainfall
         # River thresholds
         self.riverGlacierSourceFactor = 4.0
         self.minRiverBasin = 10
         self.riverLengthFactor = 4.0
         self.PWSriverthreshold = 1.0
-        # Lakes
+        # lakes
         self.maxLakeSize = 9
         self.lakeSizeFactor = 0.25
-        # Continents
-        self.contN = 15  # Number of continental plates, wiki shows 15 major plates on earth
-        self.contMinDens = 0.8  # Minimum plate density (out of 1.0)
+        # continents
+        self.contN = 15  # number of continental plates, wiki shows 15 major plates on earth
+        self.contMinDens = 0.8  # minimum plate density (out of 1.0)
         self.contTwistAngle = -0.35
-        self.contPlumeN = 15  # Number of hotspot plume, wiki shows 9 major
-        self.contSlideFactor = 0.4  # Height of sliding faults compare to crushing faults
-        self.contBoundaryRadius = 1.0  # Radius of boundary anomalies
-        self.contBoundaryLift = 0.2  # Radius of boundary anomalies
-        self.contBoundaryLiftRadius = 7  # Radius of boundary anomalies
+        self.contPlumeN = 15  # number of hotspot plume, wiki shows 9 major
+        self.contSlideFactor = 0.4  # height of sliding faults compare to crushing faults
+        self.contBoundaryRadius = 1.0  # radius of boundary anomalies
+        self.contBoundaryLift = 0.2  # radius of boundary anomalies
+        self.contBoundaryLiftRadius = 7  # radius of boundary anomalies
         self.contHotSpotPeriod = 100
         self.contHotSpotDecay = 6
         self.contHotSpotRadius = 3
@@ -220,19 +116,19 @@ class ElevationMap:
         self.volcanicFieldRadius = 2.0   # Radius multiplier for volcanic fields
         # Intensity reduction across plate boundaries
         self.crossPlateIntensityFactor = 0.3
-        self.volcanoSizeVariation = 0.3  # Random size variation (+/-30%)
-        self.contDensFactor = 1.3  # Factor for base height based on density
-        self.contVelFactor = 4.0  # Height change of plate due to velocity direction
+        self.volcanoSizeVariation = 0.3  # Random size variation (±30%)
+        self.contDensFactor = 1.3  # factor for base height based on density
+        self.contVelFactor = 4.0  # height change of plate due to velocity direction
         self.contBoundarySmooth = 3
-        self.contBuoyHeightFactor = 0.9  # Height factor
-        self.contBoundaryFactor = 3.5  # Height of sliding faults compare to crushing faults
-        self.contPerlinFactor = 0.3  # Weight of perlin noise on map
-        # Features
-        self.minBarePeaks = 0.2  # Minimum percentage of peaks without forests
-        # Chance of single forest square spreading to peak
+        self.contBuoyHeightFactor = 0.9  # height factor
+        self.contBoundaryFactor = 3.5  # height of sliding faults compare to crushing faults
+        self.contPerlinFactor = 0.3  # weight of perlin noise on map
+        # features
+        self.minBarePeaks = 0.2  # minimum percentage of peaks without forests
+        # chance of single forest square spreading to peak
         self.MountainForestChance = 0.08
 
-        # Maps
+        # maps
         self.continentID = [self.contN + 1] * (self.iNumPlots)
         self.seedList = list()
         self.continentU = [0.0] * self.iNumPlots
@@ -250,24 +146,28 @@ class ElevationMap:
         self.dx_centroid = [0.0] * self.iNumPlots
         self.dy_centroid = [0.0] * self.iNumPlots
 
+        return
+
     def GenerateElevationMap(self):
-        # Pre-calculated neighbours of every tile
+
+        # pre-calced neighbours of every tile
         self.neighbours = {}
         for i in range(self.iNumPlots):
             x = i % self.iNumPlotsX
             y = i // self.iNumPlotsX
-            nlist = [self.GetNeighbor(x, y, dir) for dir in range(9)]
+            nlist = [self.GetNeighbor(
+                x, y, dir) for dir in range(9)]
             self.neighbours[i] = nlist
 
         # 1) Generate continental plates
         self.improved_continent_growth()
         self.smooth_continent_edges()
 
-        # Update self.seedList with continent sizes, centroids, mass, and inertia
+        # update self.seedList with continent sizes, centroids, mass, and inertia
         for s in self.seedList:
             s["mass"] = s["size"]*s["plateDensity"]
 
-        # Continent moments
+        # continent moments
         for i in range(self.iNumPlots):
             x = i % self.iNumPlotsX
             y = i // self.iNumPlotsX
@@ -292,13 +192,13 @@ class ElevationMap:
                 (dx**2 + dy**2)
 
         # 2) Calculate continental plate velocities
-        # Hot spot plumes:
+        # hot spot plumes:
         xlist_shuffled = list(range(int(self.iNumPlotsX)))
         ylist_shuffled = list(range(int(self.iNumPlotsY)))
         random.shuffle(xlist_shuffled)
         random.shuffle(ylist_shuffled)
         for i in range(self.contPlumeN):
-            # Plume ID list: (ID,x,y)
+            # plume ID list: (ID,x,y)
             self.plumeList.append(
                 {"ID": i, "x": xlist_shuffled[i], "y": ylist_shuffled[i],
                  "x_wrap_plus": x + self.iNumPlotsX if self.wrapX else None,
@@ -308,19 +208,19 @@ class ElevationMap:
 
         self.calculate_realistic_plate_velocities()
 
-        # 3) Generate height maps based on plate tectonics
-        # Plate heights:
+        # 3) Generate heigh maps based on plate tectonics
+        # plate heights:
         self.elevationBaseMap = list(
             map(lambda x: 1.0 - self.seedList[x]["plateDensity"], self.continentID))
         self.elevationBaseMap = self.Normalize(self.elevationBaseMap)
 
-        # Gradient due to velocity
+        # gradient due to velocity
         for i in range(self.iNumPlots):
             x = i % self.iNumPlotsX
             y = i // self.iNumPlotsX
             id = self.continentID[i]
 
-            # Add in x dir
+            # add in x dir
             if self.continentU[i] > 0:
                 dir = self.E
                 xx, yy = self.neighbours[i][dir]
@@ -336,7 +236,7 @@ class ElevationMap:
                 xx, yy = self.neighbours[ii][dir]
                 ii = yy * self.iNumPlotsX + xx
 
-            # Add in y dir
+            # add in y dir
             if self.continentV[i] > 0:
                 dir = self.N
                 xx, yy = self.neighbours[i][dir]
@@ -348,7 +248,8 @@ class ElevationMap:
             else:
                 ii = -1
             while (ii >= 0) and (self.continentID[ii] == id):
-                self.elevationVelMap[ii] += abs(self.continentV[i])
+                self.elevationVelMap[ii] += abs(
+                    self.continentV[i])
                 xx, yy = self.neighbours[ii][dir]
                 ii = yy * self.iNumPlotsX + xx
         self.elevationVelMap = self.Normalize(self.elevationVelMap)
@@ -468,10 +369,10 @@ class ElevationMap:
                 volcano_radius = max(
                     1, int(base_radius * math.pow(volcano_intensity / base_intensity, 0.3)))
 
-                # Add some randomization for natural variation (+/-20%)
+                # Add some randomization for natural variation (±20%)
                 intensity_variation = 1.0 + (random.random() - 0.5) * 0.4
-                radius_variation = max(1, int(
-                    volcano_radius * (1.0 + (random.random() - 0.5) * self.volcanoSizeVariation)))
+                radius_variation = max(
+                    1, int(volcano_radius * (1.0 + (random.random() - 0.5) * self.volcanoSizeVariation)))
 
                 # Only add volcano if intensity is significant enough
                 if volcano_intensity * intensity_variation > base_intensity * self.hotSpotMinIntensity:
@@ -508,13 +409,24 @@ class ElevationMap:
 
         self.add_volcanic_field_clustering()
 
-        # Add all together
+        # add all together
         for i in range(self.iNumPlots):
-            self.elevationMap[i] = self.elevationPrelMap[i] + \
-                self.contBoundaryFactor * self.elevationBoundaryMap[i]
+            self.elevationMap[i] = self.elevationPrelMap[i] + self.contBoundaryFactor * \
+                self.elevationBoundaryMap[i]
         self.elevationMap = self.Normalize(self.elevationMap)
 
         # 4) Finish up elevation maps items
+        # add some pepper, perlin noise:
+        # perl = [x + y + z for x, y, z in zip(self.generate_perlin_grid(scale=4.0),
+        #                                      self.generate_perlin_grid(
+        #                                          scale=8.0),
+        #                                      self.generate_perlin_grid(scale=16.0))]
+        # perl = self.Normalize(perl)
+        # for i in range(self.iNumPlots):
+        #     self.elevationMap[i] = self.elevationMap[i] + \
+        #         self.contPerlinFactor * perl[i]
+        # self.elevationMap = self.Normalize(self.elevationMap)
+
         # Sea Level
         land = self.landPercent
         land -= self.seaLevelChange / 100.0
@@ -529,7 +441,7 @@ class ElevationMap:
         self.coastLevelThreshold = self.FindValueFromPercent(
             waterTiles, self.coastPercent, descending=True)
 
-        # Prominence map
+        # prominence map
         for i in range(self.iNumPlots):
             x = i % self.iNumPlotsX
             y = i // self.iNumPlotsX
@@ -546,12 +458,17 @@ class ElevationMap:
 
         # Find the peak and hill heights
         peakPercent = (self.peakPercent / 100.0) * self.landPercent
-        hillPercent = peakPercent + (4.0 * self.hillRange / 100.0)
+        hillPercent = peakPercent + \
+            (4.0 * self.hillRange / 100.0)
         peakMap = [x for x, y in zip(
             self.prominenceMap, self.elevationMap) if y > self.seaLevelThreshold]
 
-        self.hillHeight = self.FindValueFromPercent(peakMap, hillPercent, True)
-        self.peakHeight = self.FindValueFromPercent(peakMap, peakPercent, True)
+        self.hillHeight = self.FindValueFromPercent(
+            peakMap, hillPercent, True)
+        self.peakHeight = self.FindValueFromPercent(
+            peakMap, peakPercent, True)
+
+        return
 
     def has_available_neighbors(self, i):
         """Check if a plot has any unclaimed neighbors that could potentially be grown to"""
@@ -564,7 +481,9 @@ class ElevationMap:
         return False
 
     def improved_continent_growth(self):
-        """Enhanced continent growth with more natural, organic shapes"""
+        """
+        Enhanced continent growth with more natural, organic shapes
+        """
         # Initialize with multiple seed points per continent for more complex shapes
         gridFactor = 1
         xlist_shuffled = list(range(int(self.iNumPlotsX / gridFactor)))
@@ -573,6 +492,7 @@ class ElevationMap:
         random.shuffle(ylist_shuffled)
 
         # Create multiple seeds per continent for more complex shapes
+        # 2-4 seeds per continent
         seeds_per_continent = 1  # 2 + random.randint(0, 2)
         queue = deque()
 
@@ -662,11 +582,15 @@ class ElevationMap:
             roughness_factor = 1.0 + \
                 continent["roughness"] * (random.random() - 0.5)
 
+            # Generation-based decay (prevents infinite growth)
+            generation_factor = math.exp(-generation * 0.05)
+
             # Combined growth probability
-            growth_prob = base_growth * distance_factor * direction_factor * roughness_factor
+            growth_prob = base_growth * distance_factor * \
+                direction_factor * roughness_factor  # * generation_factor
 
             # Try to grow to neighbors
-            neighbours = list(self.neighbours[i])
+            neighbours = self.neighbours[i].copy()
             random.shuffle(neighbours)
 
             for xx, yy in neighbours:
@@ -702,6 +626,7 @@ class ElevationMap:
             if self.has_available_neighbors(i):
                 queue.append((i, k, generation))
 
+    # Also add some post-processing to smooth continent edges
     def smooth_continent_edges(self):
         """Post-process to create more natural coastlines"""
         changes = []
@@ -749,7 +674,9 @@ class ElevationMap:
             self.seedList[new_id]["size"] += 1
 
     def calculate_realistic_plate_velocities(self):
-        """More realistic plate velocity calculation with edge boundary forces"""
+        """
+        More realistic plate velocity calculation with edge boundary forces
+        """
         # Initialize forces
         U = [0] * self.contN
         V = [0] * self.contN
@@ -812,7 +739,10 @@ class ElevationMap:
                               self.dy_centroid[i] * Fx) * moment_factor
 
     def add_slab_pull_forces(self, U, V):
-        """Add realistic slab pull forces based on subduction zone detection"""
+        """
+        Add realistic slab pull forces based on subduction zone detection.
+        Slab pull occurs when a denser oceanic plate subducts beneath a less dense plate.
+        """
         # Detect subduction zones and calculate forces
         subduction_zones = self.detect_subduction_zones()
 
@@ -821,7 +751,10 @@ class ElevationMap:
             self.apply_slab_pull_force(zone, U, V)
 
     def detect_subduction_zones(self):
-        """Detect potential subduction zones by analyzing plate boundaries"""
+        """
+        Detect potential subduction zones by analyzing plate boundaries.
+        Returns a list of subduction zone data structures.
+        """
         subduction_zones = []
         boundary_segments = {}  # Track boundary segments for each plate pair
 
@@ -910,7 +843,10 @@ class ElevationMap:
         return subduction_zones
 
     def apply_slab_pull_force(self, zone, U, V):
-        """Apply slab pull force for a specific subduction zone"""
+        """
+        Apply slab pull force for a specific subduction zone.
+        The force pulls the subducting plate toward the subduction zone.
+        """
         subducting_plate = zone['subducting_plate']
         density_contrast = zone['density_contrast']
         boundary_length = zone['boundary_length']
@@ -1014,7 +950,10 @@ class ElevationMap:
             R[id] *= (1.0 - drag_coefficient)
 
     def apply_edge_boundary_forces(self, U, V, R):
-        """Apply forces from immovable edge boundaries instead of simple damping"""
+        """
+        Apply forces from immovable edge boundaries instead of simple damping.
+        Treats non-wrapped edges as infinite-mass immovable plates.
+        """
         edge_influence_distance = min(self.iNumPlotsX, self.iNumPlotsY) * 0.25
         base_edge_force = 1.5  # Strength of edge repulsion
 
@@ -1215,7 +1154,8 @@ class ElevationMap:
         self.apply_erosion_effects(boundary_age_factor=0.3)
 
         # Normalize the final boundary map
-        self.elevationBoundaryMap = self.Normalize(self.elevationBoundaryMap)
+        self.elevationBoundaryMap = self.Normalize(
+            self.elevationBoundaryMap)
 
     def apply_asymmetric_boundary_effects(self, i, boundary_dir, collision_type, collision_intensity, plate_density_diff):
         """Create asymmetric mountain ranges and rift valleys"""
@@ -1519,6 +1459,59 @@ class ElevationMap:
                     (0.1 + random.random() * 0.2)
                 self.AddMountain(field_x, field_y, field_intensity, 1)
 
+    def interpolate_2d_map(self, map, i, v, width, reverse):
+        """
+        Interpolate a 2D map stored as a flat list
+
+        Args:
+            map: Flat list representing 2D matrix
+            width: Width of each row
+            i: x-axis index
+            v: y-axis value to interpolate
+        """
+        # Convert to row index and interpolation factor
+        n_rows = len(map) // width
+        row_float = v * (n_rows - 1)
+        row_low = int(row_float)
+        row_high = min(row_low + 1, n_rows - 1)
+        frac = row_float - row_low
+
+        # Get values from both rows
+        if reverse:
+            i = width - i - 1
+        val_low = map[row_low * width + i]
+        val_high = map[row_high * width + i]
+
+        # Linearly interpolate
+        return val_low + frac * (val_high - val_low)
+
+    # def IsBelowSeaLevel(self, x, y):
+    #     i = y * self.iNumPlotsX + x
+    #     if self[i] < self.seaLevelThreshold:
+    #         return True
+    #     return False
+
+    # def IsBelowCoastLevel(self, x, y):
+    #     i = y * self.iNumPlotsX + x
+    #     if self[i] < self.coastLevelThreshold:
+    #         return True
+    #     return False
+
+    # def GetAltitudeAboveSeaLevel(self, x, y):
+    #     i = y * self.iNumPlotsX + x
+    #     if i == -1:
+    #         return 0.0
+    #     altitude = self[i]
+    #     if altitude <= self.seaLevelThreshold:
+    #         return 0.0
+    #     altitude = (altitude - self.seaLevelThreshold) / \
+    #         (1.0 - self.seaLevelThreshold)
+    #     return altitude
+
+    # def FillInLakes(self):
+
+        # new
+
     def GetNeighbor(self, x, y, direction):
         xx, yy = x, y
 
@@ -1656,6 +1649,16 @@ class ElevationMap:
             v = y if h < 4 else x
             return (u if (h & 1) == 0 else -u) + (v if (h & 2) == 0 else -v)
 
+    def generate_perlin_grid(self, scale=10.0, seed=None):
+        perlin = self.Perlin2D(seed)
+        grid = []
+        for y in range(self.iNumPlotsY):
+            for x in range(self.iNumPlotsX):
+                nx = x / scale
+                ny = y / scale
+                grid.append(perlin.noise(nx, ny))
+        return grid
+
     def get_perlin_noise(self, x, y, seed=None):
         """Perlin noise scaled to approximate original frequency"""
         if not hasattr(self, '_perlin_instance'):
@@ -1675,3 +1678,20 @@ class ElevationMap:
         if index >= len(ilist):
             index = len(ilist) - 1
         return sorted_list[index]
+
+
+def generatePlotTypes():
+    em = ElevationMap()
+    em.GenerateElevationMap()
+
+    for i in range(em.iNumPlots):
+        if em.elevationMap[i] <= em.seaLevelThreshold:
+            em.plotTypes[i] = PlotTypes.PLOT_OCEAN
+        elif em.prominenceMap[i] > em.peakHeight:
+            em.plotTypes[i] = PlotTypes.PLOT_PEAK
+        elif em.prominenceMap[i] > em.hillHeight:
+            em.plotTypes[i] = PlotTypes.PLOT_HILLS
+        else:
+            em.plotTypes[i] = PlotTypes.PLOT_LAND
+
+    return em.plotTypes
