@@ -145,7 +145,7 @@ class ClimateMap:
                                     smoothed_temp[i] * inertia_factor)
 
     def _generate_ocean_currents(self):
-        """Generate realistic ocean current patterns based on atmospheric circulation"""
+        """Generate realistic ocean current patterns based on atmospheric circulation and temperature gradients"""
         # Generate currents for each atmospheric cell
         circulation_cells = [
             # (ymin_lat, ymax_lat, rotation)
@@ -167,6 +167,13 @@ class ClimateMap:
                 self._generate_counterclockwise_currents(ymin, ymax)
 
             self._smooth_current_map(ymin, ymax, 5)
+
+        # Add temperature gradient-driven currents
+        self._add_temperature_gradient_currents()
+
+        # Apply coastal interactions and depth effects
+        self._apply_coastal_current_interactions()
+        self._apply_depth_current_effects()
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""
@@ -331,32 +338,73 @@ class ClimateMap:
             self._apply_current_temperature_effects(ymin, ymax)
 
     def _apply_current_temperature_effects(self, ymin, ymax):
-        """Apply temperature changes due to ocean currents in a specific zone"""
-        # Calculate temperature range for this zone
-        lat_ymax = self.GetLatitudeForY(ymax)
-        lat_ymin = self.GetLatitudeForY(ymin)
-
-        temp_ymax = self._calculate_zone_temperature(lat_ymax)
-        temp_ymin = self._calculate_zone_temperature(lat_ymin)
-
+        """Apply temperature changes due to ocean currents using both U and V components for proper heat transport"""
         for y in range(ymin, ymax + 1):
             for x in range(self.mc.iNumPlotsX):
                 i = y * self.mc.iNumPlotsX + x
-                if self.em.IsBelowSeaLevel(i):
-                    i = y * self.mc.iNumPlotsX + x
+                if not self.em.IsBelowSeaLevel(i):
+                    continue
 
-                    # Normalize current temperature to zone range
-                    if temp_ymin != temp_ymax:
-                        normalized_temp = (self.TemperatureMap[i] - temp_ymax) / (temp_ymin - temp_ymax)
-                    else:
-                        normalized_temp = 0.5
+                # Calculate current magnitude and direction
+                current_u = self.OceanCurrentU[i]
+                current_v = self.OceanCurrentV[i]
+                current_magnitude = math.sqrt(current_u*current_u + current_v*current_v)
 
-                    # Apply current effects
-                    current_effect = self.mc.currentAmplFactor * self.OceanCurrentV[i]
-                    modified_temp = max(0, min(1, normalized_temp + current_effect))
+                if current_magnitude < 0.001:
+                    continue
 
-                    # Convert back to absolute temperature
-                    self.TemperatureMap[i] = modified_temp * (temp_ymin - temp_ymax) + temp_ymax
+                # Calculate heat transport based on current direction and temperature gradients
+                heat_transport = self._calculate_heat_transport(i, current_u, current_v, current_magnitude)
+
+                # Apply heat transport effect to temperature
+                self.TemperatureMap[i] += heat_transport * self.mc.heatTransportFactor
+
+    def _calculate_heat_transport(self, ocean_index, current_u, current_v, current_magnitude):
+        """Calculate heat transport by ocean currents based on temperature gradients"""
+        x = ocean_index % self.mc.iNumPlotsX
+        y = ocean_index // self.mc.iNumPlotsX
+
+        # Get current temperature
+        current_temp = self.TemperatureMap[ocean_index]
+
+        # Calculate temperature gradients in current direction
+        # Sample temperature in the direction the current is flowing FROM (upwind/upcurrent)
+        sample_distance = 2  # Sample 2 tiles away for better gradient calculation
+
+        # Calculate source positions (where water is flowing from)
+        source_x = x - int(current_u / current_magnitude * sample_distance)
+        source_y = y - int(current_v / current_magnitude * sample_distance)
+
+        # Wrap coordinates
+        source_x = self._wrap_coordinate(source_x, self.mc.iNumPlotsX, self.mc.wrapX)
+        source_y = self._wrap_coordinate(source_y, self.mc.iNumPlotsY, self.mc.wrapY)
+
+        if not self._is_valid_position(source_x, source_y):
+            return 0.0
+
+        source_index = source_y * self.mc.iNumPlotsX + source_x
+
+        # Only transport heat between ocean tiles
+        if not self.em.IsBelowSeaLevel(source_index):
+            return 0.0
+
+        # Calculate temperature difference (source - current)
+        temp_difference = self.TemperatureMap[source_index] - current_temp
+
+        # Heat transport is proportional to current strength and temperature difference
+        heat_transport = temp_difference * current_magnitude * 0.1
+
+        # Add latitude-based effects (warm currents moving poleward, cold currents moving equatorward)
+        latitude = self.GetLatitudeForY(y)
+        latitude_factor = abs(latitude) / self.mc.topLatitude  # 0 at equator, 1 at poles
+
+        # Enhance warm currents moving toward poles
+        if current_v > 0 and latitude > 0:  # Northward flow in northern hemisphere
+            heat_transport *= (1.0 + latitude_factor * 0.5)
+        elif current_v < 0 and latitude < 0:  # Southward flow in southern hemisphere
+            heat_transport *= (1.0 + latitude_factor * 0.5)
+
+        return heat_transport
 
     def _calculate_zone_temperature(self, latitude):
         """Calculate base ocean temperature for a given latitude"""
@@ -1364,3 +1412,172 @@ class ClimateMap:
                 normalized_y = y / scale
                 grid.append(perlin.noise(normalized_x, normalized_y))
         return grid
+
+    def _add_temperature_gradient_currents(self):
+        """Add temperature gradient-driven currents for realistic warm/cold current patterns"""
+        for y in range(1, self.mc.iNumPlotsY - 1):
+            for x in range(self.mc.iNumPlotsX):
+                i = y * self.mc.iNumPlotsX + x
+
+                if not self.em.IsBelowSeaLevel(i):
+                    continue
+
+                # Calculate temperature gradients in north-south direction
+                y_north = (y + 1) % self.mc.iNumPlotsY if self.mc.wrapY else min(y + 1, self.mc.iNumPlotsY - 1)
+                y_south = (y - 1) % self.mc.iNumPlotsY if self.mc.wrapY else max(y - 1, 0)
+
+                i_north = y_north * self.mc.iNumPlotsX + x
+                i_south = y_south * self.mc.iNumPlotsX + x
+
+                # Only calculate gradients between ocean tiles
+                if self.em.IsBelowSeaLevel(i_north) and self.em.IsBelowSeaLevel(i_south):
+                    # Temperature gradient drives north-south current component
+                    temp_gradient = (self.TemperatureMap[i_north] - self.TemperatureMap[i_south]) * 0.5
+
+                    # Warm water flows toward cold water (down the temperature gradient)
+                    gradient_current_v = -temp_gradient * self.mc.temperatureCurrentFactor
+
+                    # Apply Coriolis effect (stronger away from equator)
+                    coriolis_factor = abs(1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5))
+                    gradient_current_v *= coriolis_factor
+
+                    # Add to existing current
+                    self.OceanCurrentV[i] += gradient_current_v
+
+                # Calculate temperature gradients in east-west direction for completeness
+                x_east = (x + 1) % self.mc.iNumPlotsX if self.mc.wrapX else min(x + 1, self.mc.iNumPlotsX - 1)
+                x_west = (x - 1) % self.mc.iNumPlotsX if self.mc.wrapX else max(x - 1, 0)
+
+                i_east = y * self.mc.iNumPlotsX + x_east
+                i_west = y * self.mc.iNumPlotsX + x_west
+
+                if self.em.IsBelowSeaLevel(i_east) and self.em.IsBelowSeaLevel(i_west):
+                    temp_gradient_x = (self.TemperatureMap[i_east] - self.TemperatureMap[i_west]) * 0.5
+                    gradient_current_u = -temp_gradient_x * self.mc.temperatureCurrentFactor * 0.5  # Weaker E-W effect
+
+                    self.OceanCurrentU[i] += gradient_current_u
+
+    def _apply_coastal_current_interactions(self):
+        """Apply coastal current deflection and upwelling/downwelling effects"""
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            x = i % self.mc.iNumPlotsX
+            y = i // self.mc.iNumPlotsX
+
+            # Check for nearby coastlines
+            coast_distance, coast_direction = self._find_nearest_coast(x, y)
+
+            if coast_distance <= 3:  # Within 3 tiles of coast
+                # Apply coastal deflection
+                self._apply_coastal_deflection(i, coast_direction, coast_distance)
+
+                # Apply upwelling/downwelling effects
+                self._apply_coastal_upwelling_downwelling(i, coast_direction)
+
+    def _find_nearest_coast(self, x, y):
+        """Find the nearest coastline and return distance and direction"""
+        min_distance = float('inf')
+        coast_direction = None
+
+        # Check in expanding radius around the point
+        for radius in range(1, 4):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if abs(dx) != radius and abs(dy) != radius:
+                        continue  # Only check perimeter
+
+                    check_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
+                    check_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+
+                    if not self._is_valid_position(check_x, check_y):
+                        continue
+
+                    check_i = check_y * self.mc.iNumPlotsX + check_x
+
+                    # Found land (coast)
+                    if not self.em.IsBelowSeaLevel(check_i):
+                        distance = math.sqrt(dx*dx + dy*dy)
+                        if distance < min_distance:
+                            min_distance = distance
+                            # Direction from coast to ocean point
+                            coast_direction = math.atan2(dy, dx)
+
+        return min_distance, coast_direction
+
+    def _apply_coastal_deflection(self, ocean_index, coast_direction, coast_distance):
+        """Apply current deflection around coastlines"""
+        if coast_direction is None:
+            return
+
+        # Calculate deflection strength (stronger closer to coast)
+        deflection_strength = self.mc.coastalDeflectionFactor * (1.0 - coast_distance / 3.0)
+
+        # Calculate deflection direction (parallel to coast)
+        deflection_angle = coast_direction + math.pi / 2  # Perpendicular to coast-ocean direction
+
+        # Apply deflection to current
+        deflection_u = deflection_strength * math.cos(deflection_angle) * 0.3
+        deflection_v = deflection_strength * math.sin(deflection_angle) * 0.3
+
+        self.OceanCurrentU[ocean_index] += deflection_u
+        self.OceanCurrentV[ocean_index] += deflection_v
+
+    def _apply_coastal_upwelling_downwelling(self, ocean_index, coast_direction):
+        """Apply upwelling/downwelling temperature effects based on wind-coast interaction"""
+        if coast_direction is None:
+            return
+
+        # Get wind direction at this location
+        wind_u = self.WindU[ocean_index]
+        wind_v = self.WindV[ocean_index]
+
+        if abs(wind_u) < 0.001 and abs(wind_v) < 0.001:
+            return
+
+        wind_direction = math.atan2(wind_v, wind_u)
+
+        # Calculate angle between wind and coast-normal direction
+        coast_normal = coast_direction + math.pi  # Direction from ocean to coast
+        angle_diff = abs(wind_direction - coast_normal)
+        angle_diff = min(angle_diff, 2*math.pi - angle_diff)  # Take smaller angle
+
+        # Upwelling occurs when wind blows parallel to coast (angle ~90 degrees)
+        # Downwelling occurs when wind blows toward/away from coast (angle ~0 or 180 degrees)
+        upwelling_factor = math.sin(angle_diff)  # Maximum at 90 degrees
+
+        # Apply temperature effect
+        if upwelling_factor > 0.5:  # Significant upwelling
+            # Upwelling brings cold water to surface
+            temperature_effect = -self.mc.upwellingTemperatureEffect * upwelling_factor
+        else:  # Downwelling
+            # Downwelling keeps warm surface water
+            temperature_effect = self.mc.upwellingTemperatureEffect * (1.0 - upwelling_factor) * 0.5
+
+        # Apply temperature modification
+        self.TemperatureMap[ocean_index] += temperature_effect
+
+    def _apply_depth_current_effects(self):
+        """Apply depth-based modifications to current strength using elevation as depth proxy"""
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            # Use elevation below sea level as depth proxy
+            # Lower elevation = deeper water = stronger currents
+            depth_proxy = self.em.seaLevelThreshold - self.em.elevationMap[i]
+
+            # Normalize depth (0 = shallow, 1 = deep)
+            max_depth = self.em.seaLevelThreshold  # Maximum possible depth
+            if max_depth > 0:
+                normalized_depth = min(1.0, depth_proxy / max_depth)
+            else:
+                normalized_depth = 0.5
+
+            # Calculate depth factor (deeper water = stronger currents)
+            depth_factor = self.mc.depthCurrentFactor + (1.0 - self.mc.depthCurrentFactor) * normalized_depth
+
+            # Apply depth effect to currents
+            self.OceanCurrentU[i] *= depth_factor
+            self.OceanCurrentV[i] *= depth_factor

@@ -125,6 +125,14 @@ class MapConstants:
         self.ridgeDeflectionDistance = 3   # Distance for wind deflection around ridges
         self.foehWindFactor = 1.2          # Warming factor for descending air
 
+        # Enhanced ocean current parameters
+        self.temperatureCurrentFactor = 0.4     # Temperature gradient current strength
+        self.coastalDeflectionFactor = 0.6      # Coastal current deflection strength
+        self.upwellingTemperatureEffect = 0.3   # Temperature effect of upwelling/downwelling
+        self.depthCurrentFactor = 0.8           # Depth effect on current strength
+        self.heatTransportFactor = 1.2          # Ocean heat transport efficiency
+        self.coastalUpwellingFactor = 0.5       # Coastal upwelling intensity
+
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""
         # Plate tectonics parameters
