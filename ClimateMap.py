@@ -176,32 +176,82 @@ class ClimateMap:
         return min(y, self.mc.iNumPlotsY - 1)  # Clamp to valid range
 
     def _generate_clockwise_currents(self, ymin, ymax):
-        """Generate clockwise ocean current circulation"""
+        """Generate clockwise ocean current circulation with proper U and V components"""
         ycentre = int((ymin + ymax) / 2.0)
 
-        # Bottom half - westward flow
-        for y in range(ymin, ycentre):
-            strength = self._calculate_current_strength(y, ymin, ymax)
-            self._apply_westward_current(y, strength)
+        # Create circular flow pattern for clockwise circulation
+        for y in range(ymin, ymax + 1):
+            # Calculate position within circulation cell (0 to 1)
+            cell_position = float(y - ymin) / float(ymax - ymin) if ymax > ymin else 0.5
 
-        # Top half - eastward flow
-        for y in range(ymax, ycentre, -1):
-            strength = self._calculate_current_strength(y, ymin, ymax)
-            self._apply_eastward_current(y, strength)
+            # Calculate distance from center for circulation strength
+            distance_from_center = abs(cell_position - 0.5) * 2.0  # 0 at center, 1 at edges
+            circulation_strength = 1.0 - distance_from_center * 0.5  # Stronger in center
+
+            # Calculate current components for clockwise circulation
+            if y < ycentre:
+                # Bottom half: westward flow (negative U) + northward flow (positive V)
+                u_component = -circulation_strength * (1.0 - cell_position)
+                v_component = circulation_strength * 0.5
+            elif y > ycentre:
+                # Top half: eastward flow (positive U) + southward flow (negative V)
+                u_component = circulation_strength * (cell_position - 0.5) * 2.0
+                v_component = -circulation_strength * 0.5
+            else:
+                # Center: primarily horizontal flow
+                u_component = 0.0
+                v_component = 0.0
+
+            # Apply Coriolis effect
+            coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
+            u_component *= coriolis_factor
+            v_component *= coriolis_factor
+
+            # Apply currents to all ocean tiles in this latitude band
+            for x in range(self.mc.iNumPlotsX):
+                i = y * self.mc.iNumPlotsX + x
+                if self.em.IsBelowSeaLevel(i):
+                    self.OceanCurrentU[i] += u_component
+                    self.OceanCurrentV[i] += v_component
 
     def _generate_counterclockwise_currents(self, ymin, ymax):
-        """Generate counterclockwise ocean current circulation"""
+        """Generate counterclockwise ocean current circulation with proper U and V components"""
         ycentre = int((ymin + ymax) / 2.0)
 
-        # Bottom half - eastward flow
-        for y in range(ymin, ycentre):
-            strength = self._calculate_current_strength(y, ymin, ymax)
-            self._apply_eastward_current(y, strength)
+        # Create circular flow pattern for counterclockwise circulation
+        for y in range(ymin, ymax + 1):
+            # Calculate position within circulation cell (0 to 1)
+            cell_position = float(y - ymin) / float(ymax - ymin) if ymax > ymin else 0.5
 
-        # Top half - westward flow
-        for y in range(ymax, ycentre, -1):
-            strength = self._calculate_current_strength(y, ymin, ymax)
-            self._apply_westward_current(y, strength)
+            # Calculate distance from center for circulation strength
+            distance_from_center = abs(cell_position - 0.5) * 2.0  # 0 at center, 1 at edges
+            circulation_strength = 1.0 - distance_from_center * 0.5  # Stronger in center
+
+            # Calculate current components for counterclockwise circulation
+            if y < ycentre:
+                # Bottom half: eastward flow (positive U) + southward flow (negative V)
+                u_component = circulation_strength * (1.0 - cell_position)
+                v_component = -circulation_strength * 0.5
+            elif y > ycentre:
+                # Top half: westward flow (negative U) + northward flow (positive V)
+                u_component = -circulation_strength * (cell_position - 0.5) * 2.0
+                v_component = circulation_strength * 0.5
+            else:
+                # Center: primarily horizontal flow
+                u_component = 0.0
+                v_component = 0.0
+
+            # Apply Coriolis effect
+            coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
+            u_component *= coriolis_factor
+            v_component *= coriolis_factor
+
+            # Apply currents to all ocean tiles in this latitude band
+            for x in range(self.mc.iNumPlotsX):
+                i = y * self.mc.iNumPlotsX + x
+                if self.em.IsBelowSeaLevel(i):
+                    self.OceanCurrentU[i] += u_component
+                    self.OceanCurrentV[i] += v_component
 
     def _calculate_current_strength(self, y, ymin, ymax):
         """Calculate current strength based on position and Coriolis effect"""
