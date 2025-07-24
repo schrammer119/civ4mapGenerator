@@ -21,6 +21,14 @@ class MapConstants:
     NR = 0  # No river (for ClimateMap compatibility)
     O = 9   # Ocean (for ClimateMap compatibility)
 
+    # Plot Types
+    NO_PLOT = -1
+    PLOT_PEAK = 0
+    PLOT_HILLS = 1
+    PLOT_LAND = 2
+    PLOT_OCEAN = 3
+    NUM_PLOT_TYPES = 4
+
     def __init__(self):
         """Initialize map constants and Civilization IV integration"""
         # Initialize Civilization IV context
@@ -39,6 +47,8 @@ class MapConstants:
         self._initialize_geological_parameters()
         self._initialize_algorithm_parameters()
         self._initialize_performance_parameters()
+
+        self._precalculate_neighbours()
 
     def _initialize_civ_settings(self):
         """Initialize vanilla Civilization IV climate and sea level settings"""
@@ -100,15 +110,9 @@ class MapConstants:
         # Plate tectonics parameters
         self.plateCount = 15                    # Number of continental plates (Earth has ~15 major plates)
         self.minPlateDensity = 0.8             # Minimum plate density (0.0-1.0)
-        self.plateTwistAngle = -0.35           # Plate rotation tendency
         self.hotspotCount = 15                 # Number of hotspot plumes (Earth has ~9 major)
-        self.plateSlideFactor = 0.4            # Height ratio: sliding vs crushing faults
-        self.crossPlateIntensityFactor = 0.3   # Intensity reduction across boundaries
 
         # Boundary processing parameters
-        self.boundaryRadius = 1.0              # Radius of boundary anomalies
-        self.boundaryLift = 0.2                # Base boundary lift amount
-        self.boundaryLiftRadius = 7            # Radius for boundary lift effects
         self.boundaryFactor = 3.5              # Height multiplier for boundaries
         self.boundarySmoothing = 3             # Smoothing radius for boundaries
 
@@ -116,8 +120,7 @@ class MapConstants:
         self.hotspotPeriod = 5                 # Distance between hotspot traces
         self.hotspotDecay = 4                  # Number of historical hotspot positions
         self.hotspotRadius = 2                 # Base radius of hotspot effects
-        self.hotspotFactor = 0.3               # Intensity of hotspot volcanism
-        self.volcanoSizeVariation = 0.3        # Random size variation (+/-30%)
+        self.hotspotFactor = 0.3               # Intensity of hotspot volcanism=
 
         # Plate dynamics parameters
         self.plateDensityFactor = 1.3          # Height factor based on plate density
@@ -173,3 +176,51 @@ class MapConstants:
         self.boundaryAgeFactor = 0.5           # How much boundaries are affected by age
         self.erosionVariation = 0.4            # Random variation in erosion (+/-40%)
         self.minErosionFactor = 0.3            # Minimum erosion factor to prevent negative values
+
+    def _precalculate_neighbours(self):
+        """Pre-calculate neighbor relationships for all tiles for performance"""
+        self.neighbours = {}
+        for i in range(self.iNumPlots):
+            x = i % self.iNumPlotsX
+            y = i // self.iNumPlotsX
+            neighbor_list = [self.GetNeighbor(x, y, direction) for direction in range(9)]
+            self.neighbours[i] = neighbor_list
+
+    # Legacy method compatibility
+    def GetNeighbor(self, x, y, direction):
+        """Get neighbor coordinates in specified direction (legacy compatibility)"""
+        neighbor_x, neighbor_y = x, y
+
+        if direction == self.N:
+            neighbor_y += 1
+        elif direction == self.S:
+            neighbor_y -= 1
+        elif direction == self.E:
+            neighbor_x += 1
+        elif direction == self.W:
+            neighbor_x -= 1
+        elif direction == self.NE:
+            neighbor_x += 1
+            neighbor_y += 1
+        elif direction == self.NW:
+            neighbor_x -= 1
+            neighbor_y += 1
+        elif direction == self.SE:
+            neighbor_x += 1
+            neighbor_y -= 1
+        elif direction == self.SW:
+            neighbor_x -= 1
+            neighbor_y -= 1
+
+        # Handle wrapping and bounds
+        if self.wrapY:
+            neighbor_y = neighbor_y % self.iNumPlotsY
+        elif neighbor_y < 0 or neighbor_y >= self.iNumPlotsY:
+            return -1, -1
+
+        if self.wrapX:
+            neighbor_x = neighbor_x % self.iNumPlotsX
+        elif neighbor_x < 0 or neighbor_x >= self.iNumPlotsX:
+            return -1, -1
+
+        return neighbor_x, neighbor_y

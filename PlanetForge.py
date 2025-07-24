@@ -78,19 +78,7 @@ def generatePlotTypes():
     elevationMap = ElevationMap(mapConstants)
     elevationMap.GenerateElevationMap()
 
-    # Convert elevation data to plot types
-    plotTypes = []
-    for i in range(elevationMap.iNumPlots):
-        if elevationMap.elevationMap[i] <= elevationMap.seaLevelThreshold:
-            plotTypes.append(PlotTypes.PLOT_OCEAN)
-        elif elevationMap.prominenceMap[i] > elevationMap.peakHeight:
-            plotTypes.append(PlotTypes.PLOT_PEAK)
-        elif elevationMap.prominenceMap[i] > elevationMap.hillHeight:
-            plotTypes.append(PlotTypes.PLOT_HILLS)
-        else:
-            plotTypes.append(PlotTypes.PLOT_LAND)
-
-    return plotTypes
+    return elevationMap.plotTypes
 
 
 def generateTerrain():
@@ -98,8 +86,7 @@ def generateTerrain():
     global mapConstants, elevationMap, climateMap
 
     # Initialize climate map with shared constants and elevation data
-    # Note: terrain_map parameter is None since we don't have terrain data yet
-    climateMap = ClimateMap(elevationMap, None, mapConstants)
+    climateMap = ClimateMap(elevationMap, mapConstants)
     climateMap.GenerateClimateMap()
 
     # TODO: Implement climate-based terrain generation using climateMap data

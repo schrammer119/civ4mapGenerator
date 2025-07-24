@@ -13,48 +13,48 @@ class ElevationMap:
         else:
             self.mc = map_constants
 
-        # Get map dimensions from MapConstants
-        self.iNumPlotsX = self.mc.iNumPlotsX
-        self.iNumPlotsY = self.mc.iNumPlotsY
-        self.iNumPlots = self.mc.iNumPlots
-        self.wrapX = self.mc.wrapX
-        self.wrapY = self.mc.wrapY
-
         # Initialize data structures
         self._initialize_data_structures()
 
+    # Public methods
+
+    def IsBelowSeaLevel(self, i):
+        if self.elevationMap[i] < self.seaLevelThreshold:
+            return True
+        return False
+
+    # Private methods
 
     def _initialize_data_structures(self):
         """Initialize all data structures used by the elevation map"""
         # Plate identification and properties
-        self.continentID = [self.mc.plateCount + 1] * self.iNumPlots
+        self.continentID = [self.mc.plateCount + 1] * self.mc.iNumPlots
         self.seedList = []
         self.plumeList = []
 
         # Velocity and motion maps
-        self.continentU = [0.0] * self.iNumPlots
-        self.continentV = [0.0] * self.iNumPlots
+        self.continentU = [0.0] * self.mc.iNumPlots
+        self.continentV = [0.0] * self.mc.iNumPlots
 
         # Elevation component maps
-        self.elevationBaseMap = [0.0] * self.iNumPlots
-        self.elevationVelMap = [0.0] * self.iNumPlots
-        self.elevationBuoyMap = [0.0] * self.iNumPlots
-        self.elevationPrelMap = [0.0] * self.iNumPlots
-        self.elevationBoundaryMap = [0.0] * self.iNumPlots
-        self.elevationMap = [0.0] * self.iNumPlots
-        self.prominenceMap = [0.0] * self.iNumPlots
+        self.elevationBaseMap = [0.0] * self.mc.iNumPlots
+        self.elevationVelMap = [0.0] * self.mc.iNumPlots
+        self.elevationBuoyMap = [0.0] * self.mc.iNumPlots
+        self.elevationPrelMap = [0.0] * self.mc.iNumPlots
+        self.elevationBoundaryMap = [0.0] * self.mc.iNumPlots
+        self.elevationMap = [0.0] * self.mc.iNumPlots
+        self.prominenceMap = [0.0] * self.mc.iNumPlots
 
         # Utility maps
-        self.plotTypes = [0] * self.iNumPlots
-        self.neighbours = {}
-        self.dx_centroid = [0.0] * self.iNumPlots
-        self.dy_centroid = [0.0] * self.iNumPlots
-        self.d_centroid = [0.0] * self.iNumPlots
+        self.dx_centroid = [0.0] * self.mc.iNumPlots
+        self.dy_centroid = [0.0] * self.mc.iNumPlots
+        self.d_centroid = [0.0] * self.mc.iNumPlots
+
+        # Output map
+        self.plotTypes = [self.mc.NO_PLOT] * self.mc.iNumPlots
 
     def GenerateElevationMap(self):
         """Main method to generate the complete elevation map using plate tectonics"""
-        # Pre-calculate neighbor relationships for performance
-        self._precalculate_neighbors()
 
         # Generate continental plates using improved organic growth
         self._generate_continental_plates()
@@ -86,15 +86,7 @@ class ElevationMap:
         self._calculate_sea_levels()
         self._calculate_prominence_map()
         self._calculate_terrain_thresholds()
-
-    def _precalculate_neighbors(self):
-        """Pre-calculate neighbor relationships for all tiles for performance"""
-        self.neighbours = {}
-        for i in range(self.iNumPlots):
-            x = i % self.iNumPlotsX
-            y = i // self.iNumPlotsX
-            neighbor_list = [self.GetNeighbor(x, y, direction) for direction in range(9)]
-            self.neighbours[i] = neighbor_list
+        self._calculate_plot_types()
 
     def _generate_continental_plates(self):
         """Generate continental plates using improved organic growth algorithm"""
@@ -104,8 +96,8 @@ class ElevationMap:
     def _place_continent_seeds(self):
         """Place initial seeds for continental plate growth"""
         # Create shuffled coordinate lists for random placement
-        x_coords = list(range(self.iNumPlotsX))
-        y_coords = list(range(self.iNumPlotsY))
+        x_coords = list(range(self.mc.iNumPlotsX))
+        y_coords = list(range(self.mc.iNumPlotsY))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
@@ -115,7 +107,7 @@ class ElevationMap:
             # Place primary seed
             main_x = x_coords[continent_id]
             main_y = y_coords[continent_id]
-            main_index = main_y * self.iNumPlotsX + main_x
+            main_index = main_y * self.mc.iNumPlotsX + main_x
 
             # Create continent data structure with geological properties
             continent_data = {
@@ -155,7 +147,7 @@ class ElevationMap:
             if seed_index < len(x_coords):
                 sec_x = x_coords[seed_index]
                 sec_y = y_coords[seed_index]
-                sec_index = sec_y * self.iNumPlotsX + sec_x
+                sec_index = sec_y * self.mc.iNumPlotsX + sec_x
 
                 if self.continentID[sec_index] > self.mc.plateCount:  # Not claimed yet
                     continent_data["seeds"].append({"x": sec_x, "y": sec_y, "i": sec_index})
@@ -174,8 +166,8 @@ class ElevationMap:
 
         while growth_queue:
             plot_index, continent_id, generation = growth_queue.popleft()
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
 
             continent = self.seedList[continent_id]
 
@@ -183,14 +175,14 @@ class ElevationMap:
             growth_probability = self._calculate_growth_probability(continent, x, y)
 
             # Attempt to grow to neighboring plots
-            neighbors = list(self.neighbours[plot_index])
-            random.shuffle(neighbors)
+            neighbours = list(self.mc.neighbours[plot_index])
+            random.shuffle(neighbours)
 
-            for neighbor_x, neighbor_y in neighbors:
-                if neighbor_x < 0 or neighbor_y < 0:
+            for neighbour_x, neighbour_y in neighbours:
+                if neighbour_x < 0 or neighbour_y < 0:
                     continue
 
-                neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+                neighbor_index = neighbour_y * self.mc.iNumPlotsX + neighbour_x
                 if (neighbor_index >= 0 and
                     self.continentID[neighbor_index] > self.mc.plateCount and
                     random.random() < growth_probability):
@@ -250,20 +242,20 @@ class ElevationMap:
         continent_coordinates = []
         continent_id = continent["ID"]
 
-        for plot_index in range(self.iNumPlots):
+        for plot_index in range(self.mc.iNumPlots):
             if self.continentID[plot_index] == continent_id:
-                plot_x = plot_index % self.iNumPlotsX
-                plot_y = plot_index // self.iNumPlotsX
+                plot_x = plot_index % self.mc.iNumPlotsX
+                plot_y = plot_index // self.mc.iNumPlotsX
                 continent_coordinates.append((plot_x, plot_y))
 
         continent["x_centroid"], continent["y_centroid"] = self._calculate_wrap_aware_centroid(continent_coordinates)
 
     def _has_available_neighbors(self, plot_index):
         """Check if a plot has any unclaimed neighbors"""
-        for neighbor_x, neighbor_y in self.neighbours[plot_index]:
+        for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
             if neighbor_x < 0 or neighbor_y < 0:
                 continue
-            neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
             if (neighbor_index >= 0 and
                 self.continentID[neighbor_index] > self.mc.plateCount):
                 return True
@@ -275,15 +267,15 @@ class ElevationMap:
         isolation_threshold = 0.6
         flip_probability = 0.3
 
-        for plot_index in range(self.iNumPlots):
+        for plot_index in range(self.mc.iNumPlots):
             current_continent = self.continentID[plot_index]
             same_neighbors = 0
             total_neighbors = 0
 
             # Count neighbors of same continent
-            for neighbor_x, neighbor_y in self.neighbours[plot_index]:
+            for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
                 if neighbor_x >= 0 and neighbor_y >= 0:
-                    neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+                    neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
                     total_neighbors += 1
                     if self.continentID[neighbor_index] == current_continent:
                         same_neighbors += 1
@@ -303,9 +295,9 @@ class ElevationMap:
     def _find_most_common_neighbor_continent(self, plot_index):
         """Find the most common continent among neighbors"""
         neighbor_counts = {}
-        for neighbor_x, neighbor_y in self.neighbours[plot_index]:
+        for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
             if neighbor_x >= 0 and neighbor_y >= 0:
-                neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
                 neighbor_continent = self.continentID[neighbor_index]
                 neighbor_counts[neighbor_continent] = neighbor_counts.get(neighbor_continent, 0) + 1
 
@@ -328,9 +320,9 @@ class ElevationMap:
             continent["mass"] = continent["size"] * continent["plateDensity"]
 
         # Calculate moments of inertia
-        for plot_index in range(self.iNumPlots):
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+        for plot_index in range(self.mc.iNumPlots):
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
             continent_id = self.continentID[plot_index]
 
             if continent_id < self.mc.plateCount:
@@ -340,8 +332,8 @@ class ElevationMap:
 
     def _generate_hotspot_plumes(self):
         """Generate hotspot plume locations"""
-        x_coords = list(range(self.iNumPlotsX))
-        y_coords = list(range(self.iNumPlotsY))
+        x_coords = list(range(self.mc.iNumPlotsX))
+        y_coords = list(range(self.mc.iNumPlotsY))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
@@ -353,10 +345,10 @@ class ElevationMap:
                 "ID": plume_id,
                 "x": x,
                 "y": y,
-                "x_wrap_plus": x + self.iNumPlotsX if self.wrapX else None,
-                "x_wrap_minus": x - self.iNumPlotsX if self.wrapX else None,
-                "y_wrap_plus": y + self.iNumPlotsY if self.wrapY else None,
-                "y_wrap_minus": y - self.iNumPlotsY if self.wrapY else None
+                "x_wrap_plus": x + self.mc.iNumPlotsX if self.mc.wrapX else None,
+                "x_wrap_minus": x - self.mc.iNumPlotsX if self.mc.wrapX else None,
+                "y_wrap_plus": y + self.mc.iNumPlotsY if self.mc.wrapY else None,
+                "y_wrap_minus": y - self.mc.iNumPlotsY if self.mc.wrapY else None
             }
             self.plumeList.append(plume_data)
 
@@ -382,15 +374,15 @@ class ElevationMap:
 
     def _add_hotspot_forces(self, u_forces, v_forces, rotational_forces):
         """Add hotspot plume forces with realistic distance limits"""
-        max_influence_dist = min(self.iNumPlotsX, self.iNumPlotsY) * self.mc.maxInfluenceDistanceHotspot
+        max_influence_dist = min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistanceHotspot
 
-        for plot_index in range(self.iNumPlots):
+        for plot_index in range(self.mc.iNumPlots):
             continent_id = self.continentID[plot_index]
             if continent_id >= self.mc.plateCount:
                 continue
 
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
 
             for plume in self.plumeList:
                 dx, dy = self._get_wrapped_distance(x, y, plume["x"], plume["y"])
@@ -431,9 +423,9 @@ class ElevationMap:
         boundary_segments = {}
 
         # Scan all plots to find plate boundaries
-        for plot_index in range(self.iNumPlots):
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+        for plot_index in range(self.mc.iNumPlots):
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
             current_plate = self.continentID[plot_index]
 
             if current_plate >= self.mc.plateCount:
@@ -441,12 +433,12 @@ class ElevationMap:
 
             # Check cardinal directions for boundaries
             for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                neighbor_x, neighbor_y = self.neighbours[plot_index][direction]
+                neighbor_x, neighbor_y = self.mc.neighbours[plot_index][direction]
                 if neighbor_x < 0 or neighbor_y < 0:
                     continue
 
-                neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
-                if neighbor_index < 0 or neighbor_index >= self.iNumPlots:
+                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                if neighbor_index < 0 or neighbor_index >= self.mc.iNumPlots:
                     continue
 
                 neighbor_plate = self.continentID[neighbor_index]
@@ -556,7 +548,7 @@ class ElevationMap:
         length_factor = math.sqrt(boundary_length / 10.0)  # Normalize
 
         # Distance decay
-        max_influence_distance = min(self.iNumPlotsX, self.iNumPlotsY) * self.mc.maxInfluenceDistance
+        max_influence_distance = min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistance
         distance_factor = max(0.1, 1.0 - (distance / max_influence_distance))
 
         # Plate age approximation
@@ -585,7 +577,7 @@ class ElevationMap:
 
     def _add_plate_interaction_forces(self, u_forces, v_forces, rotational_forces):
         """Add forces from plate-plate interactions"""
-        max_interaction_distance = min(self.iNumPlotsX, self.iNumPlotsY) * self.mc.maxInfluenceDistance
+        max_interaction_distance = min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistance
 
         for i in range(self.mc.plateCount):
             for j in range(i + 1, self.mc.plateCount):
@@ -626,7 +618,7 @@ class ElevationMap:
 
     def _apply_edge_boundary_forces(self, u_forces, v_forces, rotational_forces):
         """Apply forces from immovable edge boundaries"""
-        edge_influence_distance = min(self.iNumPlotsX, self.iNumPlotsY) * self.mc.edgeInfluenceDistance
+        edge_influence_distance = min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.edgeInfluenceDistance
 
         for continent_id in range(self.mc.plateCount):
             centroid_x = self.seedList[continent_id]["x_centroid"]
@@ -634,12 +626,12 @@ class ElevationMap:
             plate_mass = max(self.seedList[continent_id]["mass"], 1.0)
 
             # X-direction edge forces
-            if not self.wrapX:
+            if not self.mc.wrapX:
                 self._apply_x_edge_forces(continent_id, centroid_x, plate_mass,
                                         edge_influence_distance, u_forces, rotational_forces)
 
             # Y-direction edge forces
-            if not self.wrapY:
+            if not self.mc.wrapY:
                 self._apply_y_edge_forces(continent_id, centroid_y, plate_mass,
                                         edge_influence_distance, v_forces, rotational_forces)
 
@@ -656,7 +648,7 @@ class ElevationMap:
                 rotational_forces[continent_id] += rotation_force / max(self.seedList[continent_id]["moment"], 1.0)
 
         # Right edge force
-        dist_to_right = self.iNumPlotsX - centroid_x
+        dist_to_right = self.mc.iNumPlotsX - centroid_x
         if dist_to_right < edge_distance:
             force_magnitude = self.mc.baseEdgeForce * (1.0 - dist_to_right / edge_distance)
             u_forces[continent_id] -= force_magnitude / plate_mass
@@ -678,7 +670,7 @@ class ElevationMap:
                 rotational_forces[continent_id] += rotation_force / max(self.seedList[continent_id]["moment"], 1.0)
 
         # Top edge force
-        dist_to_top = self.iNumPlotsY - centroid_y
+        dist_to_top = self.mc.iNumPlotsY - centroid_y
         if dist_to_top < edge_distance:
             force_magnitude = self.mc.baseEdgeForce * (1.0 - dist_to_top / edge_distance)
             v_forces[continent_id] -= force_magnitude / plate_mass
@@ -689,7 +681,7 @@ class ElevationMap:
 
     def _convert_forces_to_velocities(self, u_forces, v_forces, rotational_forces):
         """Convert plate-level forces to per-plot velocities"""
-        for plot_index in range(self.iNumPlots):
+        for plot_index in range(self.mc.iNumPlots):
             continent_id = self.continentID[plot_index]
             if continent_id < self.mc.plateCount:
                 self.continentU[plot_index] = u_forces[continent_id] - rotational_forces[continent_id] * self.dy_centroid[plot_index]
@@ -697,9 +689,9 @@ class ElevationMap:
 
     def _calculate_centroid_distances(self):
         """Pre-calculate distances from each plot to its continent centroid"""
-        for plot_index in range(self.iNumPlots):
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+        for plot_index in range(self.mc.iNumPlots):
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
             continent_id = self.continentID[plot_index]
 
             if continent_id < self.mc.plateCount:
@@ -732,7 +724,7 @@ class ElevationMap:
     def _combine_preliminary_elevation(self):
         """Combine base, velocity, and buoyancy elevation components"""
         combined_elevation = []
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             elevation = (self.mc.plateDensityFactor * self.elevationBaseMap[i] +
                         self.mc.plateVelocityFactor * self.elevationVelMap[i] +
                         self.mc.plateBuoyancyFactor * self.elevationBuoyMap[i])
@@ -742,7 +734,7 @@ class ElevationMap:
 
     def _process_tectonic_boundaries(self):
         """Process all tectonic boundaries to create realistic mountain ranges and rifts"""
-        self.elevationBoundaryMap = [0.0] * self.iNumPlots
+        self.elevationBoundaryMap = [0.0] * self.mc.iNumPlots
         boundary_interactions = self._collect_boundary_interactions()
 
         for boundary in boundary_interactions:
@@ -755,9 +747,9 @@ class ElevationMap:
         """Collect all boundary interactions for processing"""
         boundary_queue = []
 
-        for plot_index in range(self.iNumPlots):
-            x = plot_index % self.iNumPlotsX
-            y = plot_index // self.iNumPlotsX
+        for plot_index in range(self.mc.iNumPlots):
+            x = plot_index % self.mc.iNumPlotsX
+            y = plot_index // self.mc.iNumPlotsX
             current_plate = self.continentID[plot_index]
 
             if current_plate >= self.mc.plateCount:
@@ -766,10 +758,10 @@ class ElevationMap:
             # Check neighbors for plate boundaries
             for direction_idx, direction_name in [(self.mc.N, "NS"), (self.mc.E, "EW"),
                                                  (self.mc.NE, "NE"), (self.mc.NW, "NW")]:
-                neighbor_x, neighbor_y = self.neighbours[plot_index][direction_idx]
-                neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+                neighbor_x, neighbor_y = self.mc.neighbours[plot_index][direction_idx]
+                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
 
-                if (neighbor_index < 0 or neighbor_index >= self.iNumPlots or
+                if (neighbor_index < 0 or neighbor_index >= self.mc.iNumPlots or
                     neighbor_x < 0 or neighbor_y < 0):
                     continue
 
@@ -834,8 +826,8 @@ class ElevationMap:
     def _apply_asymmetric_boundary_effects(self, boundary):
         """Create asymmetric mountain ranges and rift valleys"""
         plot_index = boundary['tile']
-        x = plot_index % self.iNumPlotsX
-        y = plot_index // self.iNumPlotsX
+        x = plot_index % self.mc.iNumPlotsX
+        y = plot_index // self.mc.iNumPlotsX
 
         boundary_type = boundary['type']
         intensity = boundary['intensity']
@@ -848,9 +840,9 @@ class ElevationMap:
         for side_multiplier in [-1, 1]:
             for distance in range(1, max_distance):
                 offset_x, offset_y = self._get_offset_coords(x, y, direction, distance * side_multiplier)
-                offset_index = offset_y * self.iNumPlotsX + offset_x
+                offset_index = offset_y * self.mc.iNumPlotsX + offset_x
 
-                if offset_index < 0 or offset_index >= self.iNumPlots:
+                if offset_index < 0 or offset_index >= self.mc.iNumPlots:
                     continue
 
                 # Generate elevation based on boundary type and geological processes
@@ -916,8 +908,8 @@ class ElevationMap:
         boundary_type = boundary['type']
         base_intensity = boundary['intensity']
 
-        x = center_index % self.iNumPlotsX
-        y = center_index // self.iNumPlotsX
+        x = center_index % self.mc.iNumPlotsX
+        y = center_index // self.mc.iNumPlotsX
         extent = max(2, min(6, int(base_intensity * 8)))
 
         for i in range(-extent, extent + 1):
@@ -926,9 +918,9 @@ class ElevationMap:
                     continue
 
                 target_x, target_y = self._wrap_coordinates(x + i, y + j)
-                target_index = target_y * self.iNumPlotsX + target_x
+                target_index = target_y * self.mc.iNumPlotsX + target_x
 
-                if target_index < 0 or target_index >= self.iNumPlots:
+                if target_index < 0 or target_index >= self.mc.iNumPlots:
                     continue
 
                 distance = math.sqrt(i**2 + j**2)
@@ -964,10 +956,10 @@ class ElevationMap:
         end_index = boundary['neighbor_tile']
         intensity = boundary['intensity']
 
-        start_x = start_index % self.iNumPlotsX
-        start_y = start_index // self.iNumPlotsX
-        end_x = end_index % self.iNumPlotsX
-        end_y = end_index // self.iNumPlotsX
+        start_x = start_index % self.mc.iNumPlotsX
+        start_y = start_index // self.mc.iNumPlotsX
+        end_x = end_index % self.mc.iNumPlotsX
+        end_y = end_index // self.mc.iNumPlotsX
 
         # Calculate fault direction and length
         dx, dy = self._get_wrapped_distance(start_x, start_y, end_x, end_y)
@@ -993,9 +985,9 @@ class ElevationMap:
 
             # Wrap coordinates and create valley
             fault_x, fault_y = self._wrap_coordinates(int(fault_x), int(fault_y))
-            fault_index = fault_y * self.iNumPlotsX + fault_x
+            fault_index = fault_y * self.mc.iNumPlotsX + fault_x
 
-            if fault_index >= 0 and fault_index < self.iNumPlots:
+            if fault_index >= 0 and fault_index < self.mc.iNumPlots:
                 valley_intensity = intensity * (0.6 + 0.4 * (1 - abs(progress - 0.5) * 2))
                 self.elevationBoundaryMap[fault_index] -= valley_intensity * (0.8 + 0.4 * random.random())
 
@@ -1010,15 +1002,15 @@ class ElevationMap:
                 side_y = fault_y + side * ridge_distance * math.sin(direction + math.pi/2)
 
                 side_x, side_y = self._wrap_coordinates(int(side_x), int(side_y))
-                side_index = side_y * self.iNumPlotsX + side_x
+                side_index = side_y * self.mc.iNumPlotsX + side_x
 
-                if side_index >= 0 and side_index < self.iNumPlots:
+                if side_index >= 0 and side_index < self.mc.iNumPlots:
                     ridge_height = intensity * (0.4 / ridge_distance) * (0.8 + 0.4 * random.random())
                     self.elevationBoundaryMap[side_index] += ridge_height
 
     def _apply_erosion_effects(self):
         """Simulate erosion and time effects on mountain ranges"""
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             if self.elevationBoundaryMap[i] > 0:
                 # Simulate erosion with age and randomness
                 erosion_factor = 1.0 - (self.mc.boundaryAgeFactor * 0.4)
@@ -1031,7 +1023,7 @@ class ElevationMap:
         for plume in self.plumeList:
             x = plume["x"]
             y = plume["y"]
-            plot_index = y * self.iNumPlotsX + x
+            plot_index = y * self.mc.iNumPlotsX + x
             plate_id = self.continentID[plot_index]
 
             # Create hotspot chain as plate moves over stationary plume
@@ -1064,7 +1056,7 @@ class ElevationMap:
                 if not self._coordinates_in_bounds(x, y):
                     break
 
-                plot_index = y * self.iNumPlotsX + x
+                plot_index = y * self.mc.iNumPlotsX + x
 
     def _add_volcanic_mountain(self, center_x, center_y, height, radius):
         """Add a single volcanic mountain with realistic shape"""
@@ -1107,14 +1099,14 @@ class ElevationMap:
                     final_height = base_height * directional_factor * roughness
 
                     target_x, target_y = self._wrap_coordinates(center_x + dx, center_y + dy)
-                    target_index = target_y * self.iNumPlotsX + target_x
+                    target_index = target_y * self.mc.iNumPlotsX + target_x
 
-                    if 0 <= target_index < self.iNumPlots:
+                    if 0 <= target_index < self.mc.iNumPlots:
                         self.elevationBoundaryMap[target_index] += max(0, final_height)
 
     def _combine_final_elevation(self):
         """Combine all elevation components into final elevation map"""
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             self.elevationMap[i] = (self.elevationPrelMap[i] +
                                    self.mc.boundaryFactor * self.elevationBoundaryMap[i])
         self.elevationMap = self._normalize_map(self.elevationMap)
@@ -1130,14 +1122,14 @@ class ElevationMap:
 
         # Combine octaves
         combined_noise = []
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             noise_value = sum(perlin_noise[octave][i] for octave in range(3))
             combined_noise.append(noise_value)
 
         combined_noise = self._normalize_map(combined_noise)
 
         # Add to elevation map
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             self.elevationMap[i] += self.mc.perlinNoiseFactor * combined_noise[i]
 
         self.elevationMap = self._normalize_map(self.elevationMap)
@@ -1163,18 +1155,16 @@ class ElevationMap:
 
     def _calculate_prominence_map(self):
         """Calculate prominence map for terrain features"""
-        for i in range(self.iNumPlots):
-            x = i % self.iNumPlotsX
-            y = i // self.iNumPlotsX
+        for i in range(self.mc.iNumPlots):
             max_elevation_diff = 0.0
 
             if self.elevationMap[i] > self.seaLevelThreshold:
                 # Check cardinal directions for maximum elevation difference
                 for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                    neighbor_x, neighbor_y = self.neighbours[i][direction]
+                    neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
                     if neighbor_x >= 0 and neighbor_y >= 0:
-                        neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
-                        if neighbor_index >= 0 and neighbor_index < self.iNumPlots:
+                        neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                        if neighbor_index >= 0 and neighbor_index < self.mc.iNumPlots:
                             neighbor_elevation = max(self.seaLevelThreshold, self.elevationMap[neighbor_index])
                             elevation_diff = self.elevationMap[i] - neighbor_elevation
                             max_elevation_diff = max(max_elevation_diff, elevation_diff)
@@ -1200,9 +1190,21 @@ class ElevationMap:
             self.peakHeight = 0.0
             self.hillHeight = 0.0
 
+    def _calculate_plot_types(self):
+        # Convert elevation data to plot types
+        for i in range(self.mc.iNumPlots):
+            if self.elevationMap[i] <= self.seaLevelThreshold:
+                self.plotTypes[i] = self.mc.PLOT_OCEAN
+            elif self.prominenceMap[i] > self.peakHeight:
+                self.plotTypes[i] = self.mc.PLOT_PEAK
+            elif self.prominenceMap[i] > self.hillHeight:
+                self.plotTypes[i] = self.mc.PLOT_HILLS
+            else:
+                self.plotTypes[i] = self.mc.PLOT_LAND
+
     def _calculate_velocity_gradient(self):
         """Calculate elevation changes due to plate velocity using flood-fill"""
-        for i in range(self.iNumPlots):
+        for i in range(self.mc.iNumPlots):
             if abs(self.continentU[i]) < 0.01 and abs(self.continentV[i]) < 0.01:
                 continue  # Skip stationary areas
 
@@ -1229,27 +1231,27 @@ class ElevationMap:
         """Add neighbors in the direction of plate velocity"""
         # Determine primary velocity directions
         if self.continentU[original_index] > 0:
-            neighbor_x, neighbor_y = self.neighbours[current_index][self.mc.E]
-            neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.E]
+            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
             if (neighbor_index > 0 and neighbor_index not in visited and
                 self.continentID[neighbor_index] == continent_id):
                 queue.append(neighbor_index)
         elif self.continentU[original_index] < 0:
-            neighbor_x, neighbor_y = self.neighbours[current_index][self.mc.W]
-            neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.W]
+            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
             if (neighbor_index > 0 and neighbor_index not in visited and
                 self.continentID[neighbor_index] == continent_id):
                 queue.append(neighbor_index)
 
         if self.continentV[original_index] > 0:
-            neighbor_x, neighbor_y = self.neighbours[current_index][self.mc.N]
-            neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.N]
+            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
             if (neighbor_index > 0 and neighbor_index not in visited and
                 self.continentID[neighbor_index] == continent_id):
                 queue.append(neighbor_index)
         elif self.continentV[original_index] < 0:
-            neighbor_x, neighbor_y = self.neighbours[current_index][self.mc.S]
-            neighbor_index = neighbor_y * self.iNumPlotsX + neighbor_x
+            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.S]
+            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
             if (neighbor_index > 0 and neighbor_index not in visited and
                 self.continentID[neighbor_index] == continent_id):
                 queue.append(neighbor_index)
@@ -1260,10 +1262,10 @@ class ElevationMap:
         dx = x1 - x2
         dy = y1 - y2
 
-        if self.wrapX and abs(dx) > self.iNumPlotsX / 2:
-            dx = dx - math.copysign(self.iNumPlotsX, dx)
-        if self.wrapY and abs(dy) > self.iNumPlotsY / 2:
-            dy = dy - math.copysign(self.iNumPlotsY, dy)
+        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+            dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+            dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
 
         return dx, dy
 
@@ -1276,26 +1278,26 @@ class ElevationMap:
         y_coords = [coord[1] for coord in coordinates]
 
         # Calculate X centroid
-        if self.wrapX:
-            x_angles = [2 * math.pi * x / self.iNumPlotsX for x in x_coords]
+        if self.mc.wrapX:
+            x_angles = [2 * math.pi * x / self.mc.iNumPlotsX for x in x_coords]
             x_sin_sum = sum(math.sin(angle) for angle in x_angles)
             x_cos_sum = sum(math.cos(angle) for angle in x_angles)
             x_mean_angle = math.atan2(x_sin_sum, x_cos_sum)
             if x_mean_angle < 0:
                 x_mean_angle += 2 * math.pi
-            x_centroid = x_mean_angle * self.iNumPlotsX / (2 * math.pi)
+            x_centroid = x_mean_angle * self.mc.iNumPlotsX / (2 * math.pi)
         else:
             x_centroid = sum(x_coords) / len(x_coords)
 
         # Calculate Y centroid
-        if self.wrapY:
-            y_angles = [2 * math.pi * y / self.iNumPlotsY for y in y_coords]
+        if self.mc.wrapY:
+            y_angles = [2 * math.pi * y / self.mc.iNumPlotsY for y in y_coords]
             y_sin_sum = sum(math.sin(angle) for angle in y_angles)
             y_cos_sum = sum(math.cos(angle) for angle in y_angles)
             y_mean_angle = math.atan2(y_sin_sum, y_cos_sum)
             if y_mean_angle < 0:
                 y_mean_angle += 2 * math.pi
-            y_centroid = y_mean_angle * self.iNumPlotsY / (2 * math.pi)
+            y_centroid = y_mean_angle * self.mc.iNumPlotsY / (2 * math.pi)
         else:
             y_centroid = sum(y_coords) / len(y_coords)
 
@@ -1303,23 +1305,23 @@ class ElevationMap:
 
     def _wrap_coordinates(self, x, y):
         """Wrap coordinates according to map settings"""
-        if self.wrapX:
-            x = x % self.iNumPlotsX
+        if self.mc.wrapX:
+            x = x % self.mc.iNumPlotsX
         else:
-            x = max(0, min(self.iNumPlotsX - 1, x))
+            x = max(0, min(self.mc.iNumPlotsX - 1, x))
 
-        if self.wrapY:
-            y = y % self.iNumPlotsY
+        if self.mc.wrapY:
+            y = y % self.mc.iNumPlotsY
         else:
-            y = max(0, min(self.iNumPlotsY - 1, y))
+            y = max(0, min(self.mc.iNumPlotsY - 1, y))
 
         return x, y
 
     def _coordinates_in_bounds(self, x, y):
         """Check if coordinates are within map bounds"""
-        if not self.wrapX and (x < 0 or x >= self.iNumPlotsX):
+        if not self.mc.wrapX and (x < 0 or x >= self.mc.iNumPlotsX):
             return False
-        if not self.wrapY and (y < 0 or y >= self.iNumPlotsY):
+        if not self.mc.wrapY and (y < 0 or y >= self.mc.iNumPlotsY):
             return False
         return True
 
@@ -1327,41 +1329,41 @@ class ElevationMap:
         """Get coordinates offset by distance in given direction"""
         if direction == "NS":
             new_y = y + distance
-            if self.wrapY:
-                new_y = new_y % self.iNumPlotsY
+            if self.mc.wrapY:
+                new_y = new_y % self.mc.iNumPlotsY
             else:
-                new_y = max(0, min(self.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
             return x, new_y
         elif direction == "EW":
             new_x = x + distance
-            if self.wrapX:
-                new_x = new_x % self.iNumPlotsX
+            if self.mc.wrapX:
+                new_x = new_x % self.mc.iNumPlotsX
             else:
-                new_x = max(0, min(self.iNumPlotsX - 1, new_x))
+                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
             return new_x, y
         elif direction == "NE":
             new_x = x + distance
             new_y = y + distance
-            if self.wrapX:
-                new_x = new_x % self.iNumPlotsX
+            if self.mc.wrapX:
+                new_x = new_x % self.mc.iNumPlotsX
             else:
-                new_x = max(0, min(self.iNumPlotsX - 1, new_x))
-            if self.wrapY:
-                new_y = new_y % self.iNumPlotsY
+                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
+            if self.mc.wrapY:
+                new_y = new_y % self.mc.iNumPlotsY
             else:
-                new_y = max(0, min(self.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
             return new_x, new_y
         elif direction == "NW":
             new_x = x - distance
             new_y = y + distance
-            if self.wrapX:
-                new_x = new_x % self.iNumPlotsX
+            if self.mc.wrapX:
+                new_x = new_x % self.mc.iNumPlotsX
             else:
-                new_x = max(0, min(self.iNumPlotsX - 1, new_x))
-            if self.wrapY:
-                new_y = new_y % self.iNumPlotsY
+                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
+            if self.mc.wrapY:
+                new_y = new_y % self.mc.iNumPlotsY
             else:
-                new_y = max(0, min(self.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
             return new_x, new_y
         else:
             return x, y
@@ -1399,42 +1401,42 @@ class ElevationMap:
         kernel = [v / kernel_sum for v in kernel]
 
         # Horizontal pass
-        temp_grid = [0.0] * self.iNumPlots
-        for i in range(self.iNumPlots):
-            x = i % self.iNumPlotsX
-            y = i // self.iNumPlotsX
+        temp_grid = [0.0] * self.mc.iNumPlots
+        for i in range(self.mc.iNumPlots):
+            x = i % self.mc.iNumPlotsX
+            y = i // self.mc.iNumPlotsX
             weighted_sum = 0.0
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
                 neighbor_x = x + k
-                if self.wrapX:
-                    neighbor_x = neighbor_x % self.iNumPlotsX
-                elif neighbor_x < 0 or neighbor_x >= self.iNumPlotsX:
+                if self.mc.wrapX:
+                    neighbor_x = neighbor_x % self.mc.iNumPlotsX
+                elif neighbor_x < 0 or neighbor_x >= self.mc.iNumPlotsX:
                     continue
 
-                neighbor_index = y * self.iNumPlotsX + neighbor_x
+                neighbor_index = y * self.mc.iNumPlotsX + neighbor_x
                 weighted_sum += grid[neighbor_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
             temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
 
         # Vertical pass
-        result_grid = [0.0] * self.iNumPlots
-        for i in range(self.iNumPlots):
-            x = i % self.iNumPlotsX
-            y = i // self.iNumPlotsX
+        result_grid = [0.0] * self.mc.iNumPlots
+        for i in range(self.mc.iNumPlots):
+            x = i % self.mc.iNumPlotsX
+            y = i // self.mc.iNumPlotsX
             weighted_sum = 0.0
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
                 neighbor_y = y + k
-                if self.wrapY:
-                    neighbor_y = neighbor_y % self.iNumPlotsY
-                elif neighbor_y < 0 or neighbor_y >= self.iNumPlotsY:
+                if self.mc.wrapY:
+                    neighbor_y = neighbor_y % self.mc.iNumPlotsY
+                elif neighbor_y < 0 or neighbor_y >= self.mc.iNumPlotsY:
                     continue
 
-                neighbor_index = neighbor_y * self.iNumPlotsX + x
+                neighbor_index = neighbor_y * self.mc.iNumPlotsX + x
                 weighted_sum += temp_grid[neighbor_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
@@ -1515,8 +1517,8 @@ class ElevationMap:
         """Generate a grid of Perlin noise values"""
         perlin = self.Perlin2D(seed)
         grid = []
-        for y in range(self.iNumPlotsY):
-            for x in range(self.iNumPlotsX):
+        for y in range(self.mc.iNumPlotsY):
+            for x in range(self.mc.iNumPlotsX):
                 normalized_x = x / scale
                 normalized_y = y / scale
                 grid.append(perlin.noise(normalized_x, normalized_y))
@@ -1528,47 +1530,7 @@ class ElevationMap:
             self._perlin_instance = self.Perlin2D(seed)
 
         # Scale to match original frequency characteristics
-        scale = 0.05  # Approximately matches original frequency
-        return self._perlin_instance.noise(x * scale, y * scale)
-
-    # Legacy method compatibility
-    def GetNeighbor(self, x, y, direction):
-        """Get neighbor coordinates in specified direction (legacy compatibility)"""
-        neighbor_x, neighbor_y = x, y
-
-        if direction == self.mc.N:
-            neighbor_y += 1
-        elif direction == self.mc.S:
-            neighbor_y -= 1
-        elif direction == self.mc.E:
-            neighbor_x += 1
-        elif direction == self.mc.W:
-            neighbor_x -= 1
-        elif direction == self.mc.NE:
-            neighbor_x += 1
-            neighbor_y += 1
-        elif direction == self.mc.NW:
-            neighbor_x -= 1
-            neighbor_y += 1
-        elif direction == self.mc.SE:
-            neighbor_x += 1
-            neighbor_y -= 1
-        elif direction == self.mc.SW:
-            neighbor_x -= 1
-            neighbor_y -= 1
-
-        # Handle wrapping and bounds
-        if self.wrapY:
-            neighbor_y = neighbor_y % self.iNumPlotsY
-        elif neighbor_y < 0 or neighbor_y >= self.iNumPlotsY:
-            return -1, -1
-
-        if self.wrapX:
-            neighbor_x = neighbor_x % self.iNumPlotsX
-        elif neighbor_x < 0 or neighbor_x >= self.iNumPlotsX:
-            return -1, -1
-
-        return neighbor_x, neighbor_y
+        return self._perlin_instance.noise(x, y)
 
     # Legacy method compatibility
     def Normalize(self, data_list):
