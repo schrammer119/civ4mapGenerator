@@ -86,27 +86,63 @@ class ClimateMap:
         aboveSeaLevelMap = self._normalize_map(aboveSeaLevelMap)
 
     def _generate_base_temperature(self, aboveSeaLevelMap):
-        """Generate base temperature based on latitude and elevation"""
-        latRange = self.mc.topLatitude - self.mc.bottomLatitude
-
+        """Generate base temperature based on latitude and elevation using accurate solar radiation model"""
         for y in range(self.mc.iNumPlotsY):
             lat = self.GetLatitudeForY(y)
-            latPercent = (lat - self.mc.bottomLatitude) / latRange
 
-            # Solar heating based on latitude (sine wave approximation)
-            temp = math.sin(latPercent * math.pi * 2.0 - math.pi * 0.5) * 0.5 + 0.5
+            # Calculate solar radiation using cosine of latitude (physically accurate)
+            solar_factor = self._calculate_solar_radiation(lat)
 
             for x in range(self.mc.iNumPlotsX):
                 i = y * self.mc.iNumPlotsX + x
                 if self.em.IsBelowSeaLevel(i):
-                    # Ocean temperature
-                    self.TemperatureMap[i] = (temp * (self.mc.maxWaterTempC - self.mc.minWaterTempC) +
-                                                  self.mc.minWaterTempC)
+                    # Ocean temperature with thermal inertia
+                    base_ocean_temp = (solar_factor * (self.mc.maxWaterTempC - self.mc.minWaterTempC) +
+                                     self.mc.minWaterTempC)
+                    self.TemperatureMap[i] = base_ocean_temp
                 else:
                     # Land temperature with elevation lapse rate
-                    base_temp = temp * (self.mc.maximumTemp - self.mc.minimumTemp) + self.mc.minimumTemp
+                    base_land_temp = solar_factor * (self.mc.maximumTemp - self.mc.minimumTemp) + self.mc.minimumTemp
                     elevation_cooling = aboveSeaLevelMap[i] * self.mc.maxElev * self.mc.tempLapse
-                    self.TemperatureMap[i] = base_temp - elevation_cooling
+                    self.TemperatureMap[i] = base_land_temp - elevation_cooling
+
+        # Apply thermal inertia for more realistic temperature distribution
+        self._apply_thermal_inertia()
+
+    def _calculate_solar_radiation(self, latitude):
+        """Calculate solar radiation factor based on latitude using cosine law"""
+        # Convert latitude to radians for calculation
+        lat_rad = math.radians(latitude)
+
+        # Solar radiation follows cosine of latitude (Lambert's cosine law)
+        solar_factor = max(self.mc.minSolarFactor, math.cos(lat_rad))
+
+        # Account for Earth's albedo and atmospheric absorption
+        effective_solar = solar_factor * (1.0 - self.mc.earthAlbedo)
+
+        # Normalize to 0-1 range for temperature calculation
+        return min(1.0, effective_solar)
+
+    def _apply_thermal_inertia(self):
+        """Apply thermal inertia to smooth temperature changes and create more realistic patterns"""
+        # Create a copy of current temperature for reference
+        original_temp = self.TemperatureMap[:]
+
+        # Apply thermal inertia by blending with smoothed version
+        smoothed_temp = self._gaussian_blur_2d(self.TemperatureMap, 2)
+
+        for i in range(self.mc.iNumPlots):
+            # Apply thermal inertia - land has less inertia than ocean
+            if self.em.IsBelowSeaLevel(i):
+                # Ocean has high thermal inertia
+                inertia_factor = self.mc.thermalInertiaFactor * 0.8
+            else:
+                # Land has lower thermal inertia
+                inertia_factor = self.mc.thermalInertiaFactor * 1.2
+
+            # Blend original and smoothed temperatures
+            self.TemperatureMap[i] = (original_temp[i] * (1.0 - inertia_factor) +
+                                    smoothed_temp[i] * inertia_factor)
 
     def _generate_ocean_currents(self):
         """Generate realistic ocean current patterns based on atmospheric circulation"""
@@ -338,7 +374,21 @@ class ClimateMap:
                 self.WindV[i] += self.mc.tempGradientFactor * temp_grad_y
 
     def _apply_mountain_wind_blocking(self):
-        """Block and divert wind at mountain ranges"""
+        """Enhanced wind-topography interactions including blocking, deflection, and channeling"""
+        # Apply basic mountain blocking and deflection
+        self._apply_basic_mountain_blocking()
+
+        # Apply orographic lifting effects
+        self._apply_orographic_lifting()
+
+        # Apply valley wind channeling
+        self._apply_valley_wind_channeling()
+
+        # Apply ridge deflection over longer distances
+        self._apply_ridge_deflection()
+
+    def _apply_basic_mountain_blocking(self):
+        """Apply basic wind blocking and deflection at mountain peaks"""
         sign = lambda a: (a > 0) - (a < 0)
 
         for i in range(self.mc.iNumPlots):
@@ -367,6 +417,170 @@ class ClimateMap:
                 # Set wind at peak to zero
                 self.WindU[i] = 0
                 self.WindV[i] = 0
+
+    def _apply_orographic_lifting(self):
+        """Apply orographic lifting effects on windward slopes"""
+        sign = lambda a: (a > 0) - (a < 0)
+
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == self.mc.PLOT_HILLS or self.em.plotTypes[i] == self.mc.PLOT_PEAK:
+                x = i % self.mc.iNumPlotsX
+                y = i // self.mc.iNumPlotsX
+
+                # Calculate upwind direction
+                wind_u = self.WindU[i]
+                wind_v = self.WindV[i]
+
+                if abs(wind_u) < 0.001 and abs(wind_v) < 0.001:
+                    continue
+
+                # Check upwind elevation
+                upwind_x = x - sign(wind_u)
+                upwind_y = y - sign(wind_v)
+
+                upwind_x = self._wrap_coordinate(upwind_x, self.mc.iNumPlotsX, self.mc.wrapX)
+                upwind_y = self._wrap_coordinate(upwind_y, self.mc.iNumPlotsY, self.mc.wrapY)
+
+                if self._is_valid_position(upwind_x, upwind_y):
+                    upwind_i = upwind_y * self.mc.iNumPlotsX + upwind_x
+                    elevation_diff = self.em.elevationMap[i] - self.em.elevationMap[upwind_i]
+
+                    if elevation_diff > 0:
+                        # Windward slope - increase wind speed due to orographic lifting
+                        lift_factor = 1.0 + self.mc.orographicLiftFactor * elevation_diff
+                        self.WindU[i] *= lift_factor
+                        self.WindV[i] *= lift_factor
+
+    def _apply_valley_wind_channeling(self):
+        """Apply wind channeling effects in valleys and passes"""
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == self.mc.PLOT_LAND:
+                x = i % self.mc.iNumPlotsX
+                y = i // self.mc.iNumPlotsX
+
+                # Check if this is a valley (surrounded by higher terrain)
+                if self._is_valley_location(i):
+                    # Calculate valley orientation
+                    valley_direction = self._calculate_valley_direction(i)
+
+                    if valley_direction is not None:
+                        # Channel wind along valley direction
+                        wind_magnitude = math.sqrt(self.WindU[i]**2 + self.WindV[i]**2)
+                        channeled_magnitude = wind_magnitude * self.mc.valleyChannelingFactor
+
+                        self.WindU[i] = channeled_magnitude * math.cos(valley_direction)
+                        self.WindV[i] = channeled_magnitude * math.sin(valley_direction)
+
+    def _apply_ridge_deflection(self):
+        """Apply wind deflection around ridges over longer distances"""
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == self.mc.PLOT_PEAK:
+                x = i % self.mc.iNumPlotsX
+                y = i // self.mc.iNumPlotsX
+
+                # Apply deflection effects in a radius around the peak
+                for distance in range(1, self.mc.ridgeDeflectionDistance + 1):
+                    self._apply_deflection_at_distance(x, y, distance)
+
+    def _is_valley_location(self, i):
+        """Check if a location is in a valley (surrounded by higher terrain)"""
+        x = i % self.mc.iNumPlotsX
+        y = i // self.mc.iNumPlotsX
+        current_elevation = self.em.elevationMap[i]
+
+        higher_neighbors = 0
+        total_neighbors = 0
+
+        # Check all 8 neighbors
+        for direction in range(1, 9):
+            neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
+            if self._is_valid_position(neighbor_x, neighbor_y):
+                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                total_neighbors += 1
+
+                if self.em.elevationMap[neighbor_i] > current_elevation:
+                    higher_neighbors += 1
+
+        # Consider it a valley if more than half the neighbors are higher
+        return total_neighbors > 0 and (higher_neighbors / float(total_neighbors)) > 0.6
+
+    def _calculate_valley_direction(self, i):
+        """Calculate the primary direction of a valley"""
+        x = i % self.mc.iNumPlotsX
+        y = i // self.mc.iNumPlotsX
+        current_elevation = self.em.elevationMap[i]
+
+        # Find the direction of steepest descent
+        max_gradient = 0
+        best_direction = None
+
+        # Check cardinal and diagonal directions
+        directions = [
+            (1, 0, 0),      # East
+            (-1, 0, math.pi),   # West
+            (0, 1, math.pi/2),  # North
+            (0, -1, -math.pi/2), # South
+            (1, 1, math.pi/4),   # Northeast
+            (-1, 1, 3*math.pi/4), # Northwest
+            (1, -1, -math.pi/4),  # Southeast
+            (-1, -1, -3*math.pi/4) # Southwest
+        ]
+
+        for dx, dy, angle in directions:
+            neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
+            neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+
+            if self._is_valid_position(neighbor_x, neighbor_y):
+                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                gradient = current_elevation - self.em.elevationMap[neighbor_i]
+
+                if gradient > max_gradient:
+                    max_gradient = gradient
+                    best_direction = angle
+
+        return best_direction
+
+    def _apply_deflection_at_distance(self, peak_x, peak_y, distance):
+        """Apply wind deflection at a specific distance from a peak"""
+        # Apply deflection in a circle around the peak
+        for angle_step in range(0, 360, 45):  # Check 8 directions
+            angle = math.radians(angle_step)
+
+            # Calculate position at this distance and angle
+            offset_x = int(distance * math.cos(angle))
+            offset_y = int(distance * math.sin(angle))
+
+            target_x = self._wrap_coordinate(peak_x + offset_x, self.mc.iNumPlotsX, self.mc.wrapX)
+            target_y = self._wrap_coordinate(peak_y + offset_y, self.mc.iNumPlotsY, self.mc.wrapY)
+
+            if self._is_valid_position(target_x, target_y):
+                target_i = target_y * self.mc.iNumPlotsX + target_x
+
+                # Don't deflect wind at other peaks
+                if self.em.plotTypes[target_i] == self.mc.PLOT_PEAK:
+                    continue
+
+                # Calculate deflection strength (decreases with distance)
+                deflection_strength = 1.0 / (distance + 1)
+
+                # Calculate direction away from peak
+                dx = target_x - peak_x
+                dy = target_y - peak_y
+
+                # Handle wrapping
+                if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+                    dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+                if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+                    dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
+
+                if dx != 0 or dy != 0:
+                    deflection_distance = math.sqrt(dx*dx + dy*dy)
+                    deflection_u = (dx / deflection_distance) * deflection_strength * 0.3
+                    deflection_v = (dy / deflection_distance) * deflection_strength * 0.3
+
+                    # Apply deflection
+                    self.WindU[target_i] += deflection_u
+                    self.WindV[target_i] += deflection_v
 
     def _smooth_wind_map(self, iterations):
         """Smooth wind patterns while preserving mountain blocking"""
@@ -548,14 +762,61 @@ class ClimateMap:
                 i = y * self.mc.iNumPlotsX + x
 
                 if not self.em.IsBelowSeaLevel(i):
-                    # Convective rainfall (temperature-based)
-                    self.ConvectionRainfallMap[i] = self.TemperatureMap[i]
+                    # Calculate atmospheric stability for this location
+                    stability_factor = self._calculate_atmospheric_stability(i)
+
+                    # Convective rainfall (temperature-based with stability modification)
+                    base_convection = self.TemperatureMap[i]
+                    self.ConvectionRainfallMap[i] = base_convection * stability_factor
 
                     # Orographic rainfall (elevation change in wind direction)
                     self._calculate_orographic_rainfall(x, y, i)
 
                     # Frontal rainfall (temperature gradient in wind direction)
                     self._calculate_frontal_rainfall(x, y, i)
+
+    def _calculate_atmospheric_stability(self, i):
+        """Calculate atmospheric stability factor based on temperature profile and local conditions"""
+        x = i % self.mc.iNumPlotsX
+        y = i // self.mc.iNumPlotsX
+
+        # Get current temperature
+        current_temp = self.TemperatureMap[i]
+
+        # Calculate average temperature for this latitude
+        lat = self.GetLatitudeForY(y)
+        expected_temp = self._calculate_solar_radiation(lat)
+
+        # Calculate temperature difference from expected
+        temp_difference = current_temp - expected_temp
+
+        # Determine stability based on temperature difference
+        if abs(temp_difference) < self.mc.stabilityThreshold:
+            # Neutral stability
+            stability_factor = 1.0
+        elif temp_difference > self.mc.stabilityThreshold:
+            # Unstable atmosphere (warmer than expected) - promotes convection
+            stability_factor = self.mc.unstableConvectionFactor
+        else:
+            # Stable atmosphere (cooler than expected) - suppresses convection
+            stability_factor = self.mc.stableConvectionFactor
+
+        # Add elevation effects on stability
+        if not self.em.IsBelowSeaLevel(i):
+            elevation_factor = self.em.elevationMap[i]
+            # Higher elevations tend to be more stable due to cooling
+            stability_factor *= (1.0 - elevation_factor * 0.2)
+
+        # Add time-of-day/seasonal variation using position-based pseudo-randomness
+        seasonal_variation = 0.8 + 0.4 * math.sin(x * 0.1 + y * 0.1)
+        stability_factor *= seasonal_variation
+
+        # Apply temperature inversion effects in stable conditions
+        if stability_factor < 1.0:
+            inversion_effect = 1.0 - self.mc.inversionStrength * (1.0 - stability_factor)
+            stability_factor = max(0.1, inversion_effect)
+
+        return max(0.1, min(2.0, stability_factor))
 
     def _calculate_orographic_rainfall(self, x, y, i):
         """Calculate orographic rainfall based on elevation changes"""

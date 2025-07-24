@@ -55,6 +55,7 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 -   Add docstrings for complex algorithms
 -   Comment plate tectonic and climate model logic clearly
 -   Follow Python PEP 8 style guidelines where applicable
+-   avoid the use of magic numbers, create parameters instead
 
 ### Version Control
 

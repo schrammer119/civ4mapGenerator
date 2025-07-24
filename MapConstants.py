@@ -105,6 +105,26 @@ class MapConstants:
         self.horseLatitude = 30.0
         self.polarFrontLatitude = 60.0
 
+        # Enhanced climate modeling parameters
+        # Solar radiation parameters
+        self.solarConstant = 1361.0        # Solar constant (W/m2)
+        self.earthAlbedo = 0.3             # Earth's average albedo
+        self.minSolarFactor = 0.1          # Minimum solar heating (polar regions)
+        self.thermalInertiaFactor = 0.3    # Thermal inertia for temperature smoothing
+
+        # Atmospheric stability parameters
+        self.stabilityThreshold = 0.15     # Temperature difference threshold for stability
+        self.unstableConvectionFactor = 1.3 # Multiplier for unstable atmosphere
+        self.stableConvectionFactor = 0.7   # Multiplier for stable atmosphere
+        self.inversionStrength = 0.5        # Strength of temperature inversions
+
+        # Enhanced orographic parameters
+        self.orographicLiftFactor = 2.0    # Strength of orographic lifting
+        self.windShadowFactor = 0.4        # Strength of rain shadow effect
+        self.valleyChannelingFactor = 1.5  # Wind acceleration in valleys
+        self.ridgeDeflectionDistance = 3   # Distance for wind deflection around ridges
+        self.foehWindFactor = 1.2          # Warming factor for descending air
+
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""
         # Plate tectonics parameters
