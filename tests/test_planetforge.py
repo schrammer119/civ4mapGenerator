@@ -108,7 +108,7 @@ fig.colorbar(p)
 print("Map generation completed successfully!")
 print("Map size: %d x %d" % (em.iNumPlotsX, em.iNumPlotsY))
 print("Total plots: %d" % em.iNumPlots)
-print("Number of plates: %d" % em.contN)
+print("Number of plates: %d" % em.plateCount)
 print("Sea level threshold: %.3f" % em.seaLevelThreshold)
 print("Hill height threshold: %.3f" % em.hillHeight)
 print("Peak height threshold: %.3f" % em.peakHeight)
@@ -128,4 +128,3 @@ print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(em.iNumPlots)*100))
 
 
 plt.show()
-

@@ -111,7 +111,7 @@ class ElevationMap:
         self.hotspotDecay = 4                  # Number of historical hotspot positions
         self.hotspotRadius = 2                 # Base radius of hotspot effects
         self.hotspotFactor = 0.3               # Intensity of hotspot volcanism
-        self.volcanoSizeVariation = 0.3        # Random size variation (±30%)
+        self.volcanoSizeVariation = 0.3        # Random size variation (+/-30%)
 
         # Plate dynamics parameters
         self.plateDensityFactor = 1.3          # Height factor based on plate density
@@ -159,7 +159,7 @@ class ElevationMap:
 
         # Erosion and time effects
         self.boundaryAgeFactor = 0.5           # How much boundaries are affected by age
-        self.erosionVariation = 0.4            # Random variation in erosion (±40%)
+        self.erosionVariation = 0.4            # Random variation in erosion (+/-40%)
         self.minErosionFactor = 0.3            # Minimum erosion factor to prevent negative values
 
     def _initialize_data_structures(self):
