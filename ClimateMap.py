@@ -177,35 +177,43 @@ class ClimateMap:
 
     def _generate_clockwise_currents(self, ymin, ymax):
         """Generate clockwise ocean current circulation with proper U and V components"""
-        ycentre = int((ymin + ymax) / 2.0)
+        ycentre = float(ymin + ymax) / 2.0
+        cell_height = float(ymax - ymin)
+
+        if cell_height <= 0:
+            return
 
         # Create circular flow pattern for clockwise circulation
         for y in range(ymin, ymax + 1):
-            # Calculate position within circulation cell (0 to 1)
-            cell_position = float(y - ymin) / float(ymax - ymin) if ymax > ymin else 0.5
+            # Calculate normalized position from center (-1 to +1, where 0 is center)
+            y_from_center = (float(y) - ycentre) / (cell_height / 2.0)
+            y_from_center = max(-1.0, min(1.0, y_from_center))  # Clamp to [-1, 1]
 
-            # Calculate distance from center for circulation strength
-            distance_from_center = abs(cell_position - 0.5) * 2.0  # 0 at center, 1 at edges
-            circulation_strength = 1.0 - distance_from_center * 0.5  # Stronger in center
+            # Calculate circulation strength (stronger near edges, weaker at center)
+            circulation_strength = abs(y_from_center) * 0.8 + 0.2  # Range: 0.2 to 1.0
 
-            # Calculate current components for clockwise circulation
-            if y < ycentre:
-                # Bottom half: westward flow (negative U) + northward flow (positive V)
-                u_component = -circulation_strength * (1.0 - cell_position)
-                v_component = circulation_strength * 0.5
-            elif y > ycentre:
-                # Top half: eastward flow (positive U) + southward flow (negative V)
-                u_component = circulation_strength * (cell_position - 0.5) * 2.0
-                v_component = -circulation_strength * 0.5
+            # For clockwise circulation:
+            # - At bottom edge (y_from_center = -1): pure westward flow (U = -1, V = 0)
+            # - At center (y_from_center = 0): pure northward/southward flow (U = 0, V = max)
+            # - At top edge (y_from_center = +1): pure eastward flow (U = +1, V = 0)
+
+            # U component: varies sinusoidally from -1 (bottom) to +1 (top)
+            u_component = y_from_center * circulation_strength
+
+            # V component: maximum at center, zero at edges (cosine pattern)
+            # For clockwise: positive V (northward) in bottom half, negative V (southward) in top half
+            v_amplitude = math.sqrt(1.0 - y_from_center * y_from_center)  # Circular geometry
+            if y_from_center < 0:
+                # Bottom half: northward flow
+                v_component = v_amplitude * circulation_strength
             else:
-                # Center: primarily horizontal flow
-                u_component = 0.0
-                v_component = 0.0
+                # Top half: southward flow
+                v_component = -v_amplitude * circulation_strength
 
-            # Apply Coriolis effect
+            # Apply Coriolis effect (stronger away from equator)
             coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-            u_component *= coriolis_factor
-            v_component *= coriolis_factor
+            u_component *= abs(coriolis_factor)
+            v_component *= abs(coriolis_factor)
 
             # Apply currents to all ocean tiles in this latitude band
             for x in range(self.mc.iNumPlotsX):
@@ -216,35 +224,43 @@ class ClimateMap:
 
     def _generate_counterclockwise_currents(self, ymin, ymax):
         """Generate counterclockwise ocean current circulation with proper U and V components"""
-        ycentre = int((ymin + ymax) / 2.0)
+        ycentre = float(ymin + ymax) / 2.0
+        cell_height = float(ymax - ymin)
+
+        if cell_height <= 0:
+            return
 
         # Create circular flow pattern for counterclockwise circulation
         for y in range(ymin, ymax + 1):
-            # Calculate position within circulation cell (0 to 1)
-            cell_position = float(y - ymin) / float(ymax - ymin) if ymax > ymin else 0.5
+            # Calculate normalized position from center (-1 to +1, where 0 is center)
+            y_from_center = (float(y) - ycentre) / (cell_height / 2.0)
+            y_from_center = max(-1.0, min(1.0, y_from_center))  # Clamp to [-1, 1]
 
-            # Calculate distance from center for circulation strength
-            distance_from_center = abs(cell_position - 0.5) * 2.0  # 0 at center, 1 at edges
-            circulation_strength = 1.0 - distance_from_center * 0.5  # Stronger in center
+            # Calculate circulation strength (stronger near edges, weaker at center)
+            circulation_strength = abs(y_from_center) * 0.8 + 0.2  # Range: 0.2 to 1.0
 
-            # Calculate current components for counterclockwise circulation
-            if y < ycentre:
-                # Bottom half: eastward flow (positive U) + southward flow (negative V)
-                u_component = circulation_strength * (1.0 - cell_position)
-                v_component = -circulation_strength * 0.5
-            elif y > ycentre:
-                # Top half: westward flow (negative U) + northward flow (positive V)
-                u_component = -circulation_strength * (cell_position - 0.5) * 2.0
-                v_component = circulation_strength * 0.5
+            # For counterclockwise circulation:
+            # - At bottom edge (y_from_center = -1): pure eastward flow (U = +1, V = 0)
+            # - At center (y_from_center = 0): pure northward/southward flow (U = 0, V = max)
+            # - At top edge (y_from_center = +1): pure westward flow (U = -1, V = 0)
+
+            # U component: varies from +1 (bottom) to -1 (top) - opposite of clockwise
+            u_component = -y_from_center * circulation_strength
+
+            # V component: maximum at center, zero at edges (cosine pattern)
+            # For counterclockwise: negative V (southward) in bottom half, positive V (northward) in top half
+            v_amplitude = math.sqrt(1.0 - y_from_center * y_from_center)  # Circular geometry
+            if y_from_center < 0:
+                # Bottom half: southward flow
+                v_component = -v_amplitude * circulation_strength
             else:
-                # Center: primarily horizontal flow
-                u_component = 0.0
-                v_component = 0.0
+                # Top half: northward flow
+                v_component = v_amplitude * circulation_strength
 
-            # Apply Coriolis effect
+            # Apply Coriolis effect (stronger away from equator)
             coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-            u_component *= coriolis_factor
-            v_component *= coriolis_factor
+            u_component *= abs(coriolis_factor)
+            v_component *= abs(coriolis_factor)
 
             # Apply currents to all ocean tiles in this latitude band
             for x in range(self.mc.iNumPlotsX):
