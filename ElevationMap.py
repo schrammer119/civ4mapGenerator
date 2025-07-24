@@ -325,17 +325,16 @@ class ElevationMap:
                         continent_data["size"] += 1
                         continent_data["x_sum"] += sec_x
                         continent_data["y_sum"] += sec_y
-                        # Update centroid for secondary seeds
-                        raw_x_centroid = continent_data["x_sum"] / continent_data["size"]
-                        raw_y_centroid = continent_data["y_sum"] / continent_data["size"]
-                        if self.wrapX:
-                            continent_data["x_centroid"] = raw_x_centroid % self.iNumPlotsX
-                        else:
-                            continent_data["x_centroid"] = raw_x_centroid
-                        if self.wrapY:
-                            continent_data["y_centroid"] = raw_y_centroid % self.iNumPlotsY
-                        else:
-                            continent_data["y_centroid"] = raw_y_centroid
+                        # Update centroid for secondary seeds using wrap-aware calculation
+                        continent_coordinates = []
+                        for plot_i in range(self.iNumPlots):
+                            if self.continentID[plot_i] == i:
+                                plot_x = plot_i % self.iNumPlotsX
+                                plot_y = plot_i // self.iNumPlotsX
+                                continent_coordinates.append((plot_x, plot_y))
+
+                        # Calculate wrap-aware centroid
+                        continent_data["x_centroid"], continent_data["y_centroid"] = self.calculate_wrap_aware_centroid(continent_coordinates)
                         queue.append((sec_ii, i, 0))
 
         # Organic growth algorithm
@@ -400,25 +399,16 @@ class ElevationMap:
                         self.continentID[ii] = k
                         continent["size"] += 1
 
-                        # Update centroid using accumulator approach
-                        # Add the new coordinates to the sum
-                        continent["x_sum"] += xx
-                        continent["y_sum"] += yy
+                        # Collect all coordinates for wrap-aware centroid calculation
+                        continent_coordinates = []
+                        for plot_i in range(self.iNumPlots):
+                            if self.continentID[plot_i] == k:
+                                plot_x = plot_i % self.iNumPlotsX
+                                plot_y = plot_i // self.iNumPlotsX
+                                continent_coordinates.append((plot_x, plot_y))
 
-                        # Calculate the raw centroid
-                        raw_x_centroid = continent["x_sum"] / continent["size"]
-                        raw_y_centroid = continent["y_sum"] / continent["size"]
-
-                        # Apply wrapping only to the final centroid coordinates
-                        if self.wrapX:
-                            continent["x_centroid"] = raw_x_centroid % self.iNumPlotsX
-                        else:
-                            continent["x_centroid"] = raw_x_centroid
-
-                        if self.wrapY:
-                            continent["y_centroid"] = raw_y_centroid % self.iNumPlotsY
-                        else:
-                            continent["y_centroid"] = raw_y_centroid
+                        # Calculate wrap-aware centroid
+                        continent["x_centroid"], continent["y_centroid"] = self.calculate_wrap_aware_centroid(continent_coordinates)
 
                         queue.append((ii, k, generation + 1))
 
@@ -817,6 +807,47 @@ class ElevationMap:
             dy = dy - math.copysign(self.iNumPlotsY, dy)
 
         return dx, dy
+
+    def calculate_wrap_aware_centroid(self, coordinates):
+        """Calculate centroid considering map wrapping using circular mean"""
+        if not coordinates:
+            return 0.0, 0.0
+
+        # Convert coordinates to angles for circular mean calculation
+        x_coords = [coord[0] for coord in coordinates]
+        y_coords = [coord[1] for coord in coordinates]
+
+        # Calculate X centroid
+        if self.wrapX:
+            # Convert x coordinates to angles (0 to 2*pi)
+            x_angles = [2 * math.pi * x / self.iNumPlotsX for x in x_coords]
+            # Calculate circular mean
+            x_sin_sum = sum(math.sin(angle) for angle in x_angles)
+            x_cos_sum = sum(math.cos(angle) for angle in x_angles)
+            x_mean_angle = math.atan2(x_sin_sum, x_cos_sum)
+            # Convert back to coordinate
+            if x_mean_angle < 0:
+                x_mean_angle += 2 * math.pi
+            x_centroid = x_mean_angle * self.iNumPlotsX / (2 * math.pi)
+        else:
+            x_centroid = sum(x_coords) / len(x_coords)
+
+        # Calculate Y centroid
+        if self.wrapY:
+            # Convert y coordinates to angles (0 to 2*pi)
+            y_angles = [2 * math.pi * y / self.iNumPlotsY for y in y_coords]
+            # Calculate circular mean
+            y_sin_sum = sum(math.sin(angle) for angle in y_angles)
+            y_cos_sum = sum(math.cos(angle) for angle in y_angles)
+            y_mean_angle = math.atan2(y_sin_sum, y_cos_sum)
+            # Convert back to coordinate
+            if y_mean_angle < 0:
+                y_mean_angle += 2 * math.pi
+            y_centroid = y_mean_angle * self.iNumPlotsY / (2 * math.pi)
+        else:
+            y_centroid = sum(y_coords) / len(y_coords)
+
+        return x_centroid, y_centroid
 
     def calculate_centroid_distances(self):
         """Pre-calculate distances from each plot to its continent centroid"""
