@@ -10,6 +10,8 @@ from collections import deque
 
 # when finish, re-incorporate into this file
 from ElevationMap import *
+from ClimateMap import *
+from MapConstants import MapConstants
 
 """
 PlanetForge Map Script
@@ -22,8 +24,10 @@ natural-looking worlds with:
 - Balanced gameplay while maintaining realism
 """
 
-# Global elevation map instance - shared across all generation functions
+# Global map instances - shared across all generation functions
+mapConstants = None
 elevationMap = None
+climateMap = None
 
 
 def getDescription():
@@ -65,10 +69,13 @@ def beforeGeneration():
 
 def generatePlotTypes():
     """Generate the basic plot types using plate tectonic simulation"""
-    global elevationMap
+    global mapConstants, elevationMap
 
-    # Initialize and generate elevation map
-    elevationMap = ElevationMap()
+    # Initialize shared MapConstants instance
+    mapConstants = MapConstants()
+
+    # Initialize and generate elevation map with shared constants
+    elevationMap = ElevationMap(mapConstants)
     elevationMap.GenerateElevationMap()
 
     # Convert elevation data to plot types
@@ -88,8 +95,14 @@ def generatePlotTypes():
 
 def generateTerrain():
     """Generate terrain types based on climate modeling"""
-    global elevationMap
-    # TODO: Implement climate-based terrain generation using elevationMap
+    global mapConstants, elevationMap, climateMap
+
+    # Initialize climate map with shared constants and elevation data
+    # Note: terrain_map parameter is None since we don't have terrain data yet
+    climateMap = ClimateMap(elevationMap, None, mapConstants)
+    climateMap.GenerateClimateMap()
+
+    # TODO: Implement climate-based terrain generation using climateMap data
     # For now, fall back to default implementation
     CyPythonMgr().allowDefaultImpl()
 

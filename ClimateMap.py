@@ -3,6 +3,7 @@ import CvUtil
 import random
 import math
 from array import array
+from MapConstants import MapConstants
 
 class ClimateMap:
     """
@@ -25,11 +26,16 @@ class ClimateMap:
     NR = 0  # No river
     O = 9   # Ocean
 
-    def __init__(self, elevation_map, terrain_map, map_constants):
+    def __init__(self, elevation_map, terrain_map, map_constants=None):
         """Initialize climate map with required dependencies"""
         self.em = elevation_map
         self.tm = terrain_map
-        self.mc = map_constants
+
+        # Use provided MapConstants or create new instance
+        if map_constants is None:
+            self.mc = MapConstants()
+        else:
+            self.mc = map_constants
 
         # Initialize map dimensions from elevation map
         self.width = self.em.width
@@ -38,50 +44,9 @@ class ClimateMap:
         self.wrapY = self.em.wrapY
         self.length = self.width * self.height
 
-        # Initialize climate parameters
-        self._initialize_climate_parameters()
-
         # Initialize data structures
         self._initialize_data_structures()
 
-    def _initialize_climate_parameters(self):
-        """Initialize climate-specific parameters"""
-        # Temperature parameters
-        self.topLatitude = getattr(self.mc, 'topLatitude', 70.0)
-        self.bottomLatitude = getattr(self.mc, 'bottomLatitude', -70.0)
-        self.maxWaterTempC = getattr(self.mc, 'maxWaterTempC', 35.0)
-        self.minWaterTempC = getattr(self.mc, 'minWaterTempC', -10.0)
-        self.maximumTemp = getattr(self.mc, 'maximumTemp', 29.0)
-        self.minimumTemp = getattr(self.mc, 'minimumTemp', -20.77)
-        self.maxElev = getattr(self.mc, 'maxElev', 5.1)
-        self.tempLapse = getattr(self.mc, 'tempLapse', 1.3)
-
-        # Ocean current parameters
-        self.horseLatitude = getattr(self.mc, 'horseLatitude', 30.0)
-        self.polarFrontLatitude = getattr(self.mc, 'polarFrontLatitude', 60.0)
-        self.currentAttenuation = getattr(self.mc, 'currentAttenuation', 1.0)
-        self.currentAmplFactor = getattr(self.mc, 'currentAmplFactor', 10.0)
-
-        # Wind parameters
-        self.tempGradientFactor = getattr(self.mc, 'tempGradientFactor', 0.2)
-
-        # Rainfall parameters
-        self.rainOverallFactor = getattr(self.mc, 'rainOverallFactor', 0.008)
-        self.rainConvectionFactor = getattr(self.mc, 'rainConvectionFactor', 0.07)
-        self.rainOrographicFactor = getattr(self.mc, 'rainOrographicFactor', 0.11)
-        self.rainFrontalFactor = getattr(self.mc, 'rainFrontalFactor', 0.03)
-        self.rainPerlinFactor = getattr(self.mc, 'rainPerlinFactor', 0.05)
-
-        # River parameters
-        self.riverGlacierSourceFactor = getattr(self.mc, 'riverGlacierSourceFactor', 4.0)
-        self.minRiverBasin = getattr(self.mc, 'minRiverBasin', 10)
-        self.riverLengthFactor = getattr(self.mc, 'riverLengthFactor', 4.0)
-        self.riverThreshold = getattr(self.mc, 'riverThreshold', 1.0)
-        self.maxLakeSize = getattr(self.mc, 'maxLakeSize', 9)
-        self.lakeSizeFactor = getattr(self.mc, 'lakeSizeFactor', 0.25)
-
-        # Smoothing parameters
-        self.climateSmoothing = getattr(self.mc, 'climateSmoothing', 4)
 
     def _initialize_data_structures(self):
         """Initialize all climate data structures"""
@@ -161,11 +126,11 @@ class ClimateMap:
 
     def _generate_base_temperature(self, aboveSeaLevelMap):
         """Generate base temperature based on latitude and elevation"""
-        latRange = self.topLatitude - self.bottomLatitude
+        latRange = self.mc.topLatitude - self.mc.bottomLatitude
 
         for y in range(self.height):
             lat = self.TemperatureMap.GetLatitudeForY(y)
-            latPercent = (lat - self.bottomLatitude) / latRange
+            latPercent = (lat - self.mc.bottomLatitude) / latRange
 
             # Solar heating based on latitude (sine wave approximation)
             temp = math.sin(latPercent * math.pi * 2.0 - math.pi * 0.5) * 0.5 + 0.5
@@ -174,12 +139,12 @@ class ClimateMap:
                 i = self.TemperatureMap.GetIndex(x, y)
                 if self.em.IsBelowSeaLevel(x, y):
                     # Ocean temperature
-                    self.TemperatureMap.data[i] = (temp * (self.maxWaterTempC - self.minWaterTempC) +
-                                                  self.minWaterTempC)
+                    self.TemperatureMap.data[i] = (temp * (self.mc.maxWaterTempC - self.mc.minWaterTempC) +
+                                                  self.mc.minWaterTempC)
                 else:
                     # Land temperature with elevation lapse rate
-                    base_temp = temp * (self.maximumTemp - self.minimumTemp) + self.minimumTemp
-                    elevation_cooling = aboveSeaLevelMap.data[i] * self.maxElev * self.tempLapse
+                    base_temp = temp * (self.mc.maximumTemp - self.mc.minimumTemp) + self.mc.minimumTemp
+                    elevation_cooling = aboveSeaLevelMap.data[i] * self.mc.maxElev * self.mc.tempLapse
                     self.TemperatureMap.data[i] = base_temp - elevation_cooling
 
     def _generate_ocean_currents(self):
@@ -187,12 +152,12 @@ class ClimateMap:
         # Generate currents for each atmospheric cell
         circulation_cells = [
             # (ymin_lat, ymax_lat, rotation)
-            (0.0, self.horseLatitude, 'CW'),                    # North Hadley
-            (-self.horseLatitude, 0.0, 'CCW'),                 # South Hadley
-            (self.horseLatitude, self.polarFrontLatitude, 'CCW'), # North Ferrel
-            (-self.polarFrontLatitude, -self.horseLatitude, 'CW'), # South Ferrel
-            (self.polarFrontLatitude, self.topLatitude, 'CW'),   # North Polar
-            (self.bottomLatitude, -self.polarFrontLatitude, 'CCW') # South Polar
+            (0.0, self.mc.horseLatitude, 'CW'),                    # North Hadley
+            (-self.mc.horseLatitude, 0.0, 'CCW'),                 # South Hadley
+            (self.mc.horseLatitude, self.mc.polarFrontLatitude, 'CCW'), # North Ferrel
+            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude, 'CW'), # South Ferrel
+            (self.mc.polarFrontLatitude, self.mc.topLatitude, 'CW'),   # North Polar
+            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude, 'CCW') # South Polar
         ]
 
         for ymin_lat, ymax_lat, rotation in circulation_cells:
@@ -208,8 +173,8 @@ class ClimateMap:
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""
-        lat_range = self.topLatitude - self.bottomLatitude
-        normalized_lat = (latitude - self.bottomLatitude) / lat_range
+        lat_range = self.mc.topLatitude - self.mc.bottomLatitude
+        normalized_lat = (latitude - self.mc.bottomLatitude) / lat_range
         return int(normalized_lat * self.height)
 
     def _generate_clockwise_currents(self, ymin, ymax):
@@ -287,12 +252,12 @@ class ClimateMap:
     def _apply_ocean_current_effects(self):
         """Apply ocean current effects on temperature"""
         circulation_cells = [
-            (0.0, self.horseLatitude),
-            (-self.horseLatitude, 0.0),
-            (self.horseLatitude, self.polarFrontLatitude),
-            (-self.polarFrontLatitude, -self.horseLatitude),
-            (self.polarFrontLatitude, self.topLatitude),
-            (self.bottomLatitude, -self.polarFrontLatitude)
+            (0.0, self.mc.horseLatitude),
+            (-self.mc.horseLatitude, 0.0),
+            (self.mc.horseLatitude, self.mc.polarFrontLatitude),
+            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude),
+            (self.mc.polarFrontLatitude, self.mc.topLatitude),
+            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude)
         ]
 
         for ymin_lat, ymax_lat in circulation_cells:
@@ -321,7 +286,7 @@ class ClimateMap:
                         normalized_temp = 0.5
 
                     # Apply current effects
-                    current_effect = self.currentAmplFactor * self.OceanCurrentV.data[i]
+                    current_effect = self.mc.currentAmplFactor * self.OceanCurrentV.data[i]
                     modified_temp = max(0, min(1, normalized_temp + current_effect))
 
                     # Convert back to absolute temperature
@@ -329,22 +294,22 @@ class ClimateMap:
 
     def _calculate_zone_temperature(self, latitude):
         """Calculate base ocean temperature for a given latitude"""
-        latRange = self.topLatitude - self.bottomLatitude
-        latPercent = (latitude - self.bottomLatitude) / latRange
+        latRange = self.mc.topLatitude - self.mc.bottomLatitude
+        latPercent = (latitude - self.mc.bottomLatitude) / latRange
         temp = math.sin(latPercent * math.pi * 2.0 - math.pi * 0.5) * 0.5 + 0.5
-        return temp * (self.maxWaterTempC - self.minWaterTempC) + self.minWaterTempC
+        return temp * (self.mc.maxWaterTempC - self.mc.minWaterTempC) + self.mc.minWaterTempC
 
     def _generate_wind_patterns(self):
         """Generate wind patterns based on atmospheric circulation"""
         # Generate winds for each atmospheric circulation cell
         wind_cells = [
             # (ymin_lat, ymax_lat, u_pattern, v_pattern)
-            (0.0, self.horseLatitude, 'negative_linear', 'negative_peak'),      # North Hadley
-            (-self.horseLatitude, 0.0, 'negative_linear', 'positive_peak'),    # South Hadley
-            (self.horseLatitude, self.polarFrontLatitude, 'positive_linear', 'positive_peak'), # North Ferrel
-            (-self.polarFrontLatitude, -self.horseLatitude, 'positive_linear', 'negative_peak'), # South Ferrel
-            (self.polarFrontLatitude, self.topLatitude, 'negative_linear', 'negative_peak'), # North Polar
-            (self.bottomLatitude, -self.polarFrontLatitude, 'negative_linear', 'positive_peak') # South Polar
+            (0.0, self.mc.horseLatitude, 'negative_linear', 'negative_peak'),      # North Hadley
+            (-self.mc.horseLatitude, 0.0, 'negative_linear', 'positive_peak'),    # South Hadley
+            (self.mc.horseLatitude, self.mc.polarFrontLatitude, 'positive_linear', 'positive_peak'), # North Ferrel
+            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude, 'positive_linear', 'negative_peak'), # South Ferrel
+            (self.mc.polarFrontLatitude, self.mc.topLatitude, 'negative_linear', 'negative_peak'), # North Polar
+            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude, 'negative_linear', 'positive_peak') # South Polar
         ]
 
         for ymin_lat, ymax_lat, u_pattern, v_pattern in wind_cells:
@@ -405,8 +370,8 @@ class ClimateMap:
                               self.TemperatureMap.data[self.TemperatureMap.GetIndex(x, y_prev)]) * 0.5
 
                 # Add gradient effects to wind
-                self.WindU.data[i] += self.tempGradientFactor * temp_grad_x
-                self.WindV.data[i] += self.tempGradientFactor * temp_grad_y
+                self.WindU.data[i] += self.mc.tempGradientFactor * temp_grad_x
+                self.WindV.data[i] += self.mc.tempGradientFactor * temp_grad_y
 
     def _apply_mountain_wind_blocking(self):
         """Block and divert wind at mountain ranges"""
@@ -469,8 +434,8 @@ class ClimateMap:
 
     def _apply_temperature_smoothing(self):
         """Apply smoothing to temperature map"""
-        self._smooth_temperature_land_only(self.climateSmoothing)
-        self.TemperatureMap.Smooth(self.climateSmoothing)
+        self._smooth_temperature_land_only(self.mc.climateSmoothing)
+        self.TemperatureMap.Smooth(self.mc.climateSmoothing)
 
     def _smooth_temperature_land_only(self, radius):
         """Smooth temperature for land tiles only"""
@@ -527,7 +492,7 @@ class ClimateMap:
                     moistureMap.data[i] = 0.5 * (1 - self.TemperatureMap.data[i])
 
         # Diffuse moisture to coastal areas
-        moistureMap.Smooth(self.climateSmoothing)
+        moistureMap.Smooth(self.mc.climateSmoothing)
         self._add_coastal_moisture(moistureMap)
 
     def _add_coastal_moisture(self, moistureMap):
@@ -741,10 +706,10 @@ class ClimateMap:
                 continue
 
             # Calculate total precipitation factor
-            rain_factor = max(0.0, self.rainOverallFactor * (
-                self.rainConvectionFactor * self.ConvectionRainfallMap.data[current_index] +
-                self.rainOrographicFactor * self.OrographicRainfallMap.data[current_index] +
-                self.rainFrontalFactor * self.WeatherFrontRainfallMap.data[current_index]
+            rain_factor = max(0.0, self.mc.rainOverallFactor * (
+                self.mc.rainConvectionFactor * self.ConvectionRainfallMap.data[current_index] +
+                self.mc.rainOrographicFactor * self.OrographicRainfallMap.data[current_index] +
+                self.mc.rainFrontalFactor * self.WeatherFrontRainfallMap.data[current_index]
             ))
 
             # Apply precipitation
@@ -816,11 +781,11 @@ class ClimateMap:
 
         # Add noise to rainfall
         for i in range(self.length):
-            self.RainfallMap.data[i] += self.rainPerlinFactor * perlin_map.data[i]
+            self.RainfallMap.data[i] += self.mc.rainPerlinFactor * perlin_map.data[i]
 
     def _finalize_rainfall_map(self):
         """Finalize rainfall map with smoothing and normalization"""
-        self._smooth_rainfall(self.climateSmoothing // 2)
+        self._smooth_rainfall(self.mc.climateSmoothing // 2)
         self.RainfallMap.Normalize()
 
     def _smooth_rainfall(self, radius):

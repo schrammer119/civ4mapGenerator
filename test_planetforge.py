@@ -3,9 +3,13 @@ import matplotlib as mpl
 import numpy as np
 
 from PlanetForge import *
+from MapConstants import MapConstants
 
-# Initialize the elevation map
-em = ElevationMap()
+# Initialize shared MapConstants instance
+mc = MapConstants()
+
+# Initialize the elevation map with shared constants
+em = ElevationMap(mc)
 em.GenerateElevationMap()
 
 # Convert elevation data to plot types (same logic as in generatePlotTypes)
@@ -120,6 +124,55 @@ print("Land: %d (%.1f%%)" % (land_count, land_count/float(em.iNumPlots)*100))
 print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(em.iNumPlots)*100))
 print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(em.iNumPlots)*100))
 
+# Test climate system integration
+print("\nTesting climate system integration...")
+try:
+    from ClimateMap import ClimateMap
 
+    # Initialize climate map with shared constants and elevation data
+    cm = ClimateMap(em, None, mc)
+    cm.GenerateClimateMap()
+
+    print("Climate system initialized successfully!")
+    print("Temperature map generated: %s" % ("Yes" if hasattr(cm, 'TemperatureMap') else "No"))
+    print("Rainfall map generated: %s" % ("Yes" if hasattr(cm, 'RainfallMap') else "No"))
+    print("Wind maps generated: %s" % ("Yes" if hasattr(cm, 'WindU') and hasattr(cm, 'WindV') else "No"))
+
+    # Add climate visualizations
+    if hasattr(cm, 'TemperatureMap') and hasattr(cm.TemperatureMap, 'data'):
+        Z_temp = np.array(cm.TemperatureMap.data).reshape(em.iNumPlotsY, em.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z_temp, origin='lower', cmap=mpl.cm.coolwarm)
+        ax.set_title('Temperature Map')
+        fig.colorbar(p)
+
+    if hasattr(cm, 'RainfallMap') and hasattr(cm.RainfallMap, 'data'):
+        Z_rain = np.array(cm.RainfallMap.data).reshape(em.iNumPlotsY, em.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues)
+        ax.set_title('Rainfall Map')
+        fig.colorbar(p)
+
+    if (hasattr(cm, 'WindU') and hasattr(cm.WindU, 'data') and
+        hasattr(cm, 'WindV') and hasattr(cm.WindV, 'data')):
+        U_wind = np.array(cm.WindU.data).reshape(em.iNumPlotsY, em.iNumPlotsX)
+        V_wind = np.array(cm.WindV.data).reshape(em.iNumPlotsY, em.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        # Sample every 4th point for cleaner visualization
+        step = 4
+        X, Y = np.meshgrid(range(0, em.iNumPlotsX, step), range(0, em.iNumPlotsY, step))
+        U_sample = U_wind[::step, ::step]
+        V_sample = V_wind[::step, ::step]
+
+        ax.quiver(X, Y, U_sample, V_sample, scale=20, alpha=0.7)
+        ax.set_title('Wind Patterns')
+        ax.set_xlim(0, em.iNumPlotsX)
+        ax.set_ylim(0, em.iNumPlotsY)
+
+except Exception as e:
+    print("Climate system test failed: %s" % str(e))
 
 plt.show()
