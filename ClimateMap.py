@@ -37,6 +37,11 @@ class ClimateMap:
         self.OceanCurrentU = [0.0] * self.mc.iNumPlots
         self.OceanCurrentV = [0.0] * self.mc.iNumPlots
 
+        # Current momentum maps
+        self.CurrentMomentumU = [0.0] * self.mc.iNumPlots
+        self.CurrentMomentumV = [0.0] * self.mc.iNumPlots
+        self.CurrentMomentumMagnitude = [0.0] * self.mc.iNumPlots
+
         # Wind maps
         self.WindU = [0.0] * self.mc.iNumPlots
         self.WindV = [0.0] * self.mc.iNumPlots
@@ -174,6 +179,11 @@ class ClimateMap:
         # Apply coastal interactions and depth effects
         self._apply_coastal_current_interactions()
         self._apply_depth_current_effects()
+
+        # Apply momentum modeling for realistic boundary currents
+        self._calculate_current_momentum()
+        self._apply_momentum_deflection()
+        self._propagate_momentum_currents()
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""
@@ -1581,3 +1591,292 @@ class ClimateMap:
             # Apply depth effect to currents
             self.OceanCurrentU[i] *= depth_factor
             self.OceanCurrentV[i] *= depth_factor
+
+    def _calculate_current_momentum(self):
+        """Calculate momentum for ocean currents based on strength and persistence"""
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            # Calculate current magnitude
+            current_magnitude = math.sqrt(self.OceanCurrentU[i]**2 + self.OceanCurrentV[i]**2)
+
+            # Only track momentum for currents above threshold
+            if current_magnitude >= self.mc.minimumMomentumThreshold:
+                # Store momentum components
+                self.CurrentMomentumU[i] = self.OceanCurrentU[i]
+                self.CurrentMomentumV[i] = self.OceanCurrentV[i]
+                self.CurrentMomentumMagnitude[i] = current_magnitude
+            else:
+                # Clear momentum for weak currents
+                self.CurrentMomentumU[i] = 0.0
+                self.CurrentMomentumV[i] = 0.0
+                self.CurrentMomentumMagnitude[i] = 0.0
+
+    def _apply_momentum_deflection(self):
+        """Apply momentum deflection when strong currents hit landforms"""
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            # Only process tiles with significant momentum
+            if self.CurrentMomentumMagnitude[i] < self.mc.minimumMomentumThreshold:
+                continue
+
+            x = i % self.mc.iNumPlotsX
+            y = i // self.mc.iNumPlotsX
+
+            # Check if current is hitting a landform
+            collision_info = self._detect_current_landform_collision(i, x, y)
+
+            if collision_info['collision']:
+                # Apply momentum deflection
+                self._deflect_current_momentum(i, collision_info)
+
+    def _detect_current_landform_collision(self, ocean_index, x, y):
+        """Detect if a current is about to hit a landform"""
+        current_u = self.CurrentMomentumU[ocean_index]
+        current_v = self.CurrentMomentumV[ocean_index]
+
+        if abs(current_u) < 0.001 and abs(current_v) < 0.001:
+            return {'collision': False}
+
+        # Calculate direction of current flow
+        current_direction = math.atan2(current_v, current_u)
+
+        # Check for landforms in the direction of current flow
+        check_distance = 2  # Look ahead 2 tiles
+        for distance in range(1, check_distance + 1):
+            # Calculate position in current direction
+            check_x = x + int(distance * math.cos(current_direction))
+            check_y = y + int(distance * math.sin(current_direction))
+
+            # Wrap coordinates
+            check_x = self._wrap_coordinate(check_x, self.mc.iNumPlotsX, self.mc.wrapX)
+            check_y = self._wrap_coordinate(check_y, self.mc.iNumPlotsY, self.mc.wrapY)
+
+            if not self._is_valid_position(check_x, check_y):
+                continue
+
+            check_i = check_y * self.mc.iNumPlotsX + check_x
+
+            # Found landform
+            if not self.em.IsBelowSeaLevel(check_i):
+                # Calculate coastline orientation
+                coastline_angle = self._calculate_coastline_orientation(check_x, check_y)
+
+                return {
+                    'collision': True,
+                    'landform_x': check_x,
+                    'landform_y': check_y,
+                    'distance': distance,
+                    'coastline_angle': coastline_angle,
+                    'current_direction': current_direction
+                }
+
+        return {'collision': False}
+
+    def _calculate_coastline_orientation(self, land_x, land_y):
+        """Calculate the orientation of the coastline at a given land position"""
+        # Sample points around the landform to determine coastline direction
+        ocean_directions = []
+
+        # Check all 8 directions around the land tile
+        for direction in range(1, 9):
+            neighbor_x, neighbor_y = self.mc.neighbours[land_y * self.mc.iNumPlotsX + land_x][direction]
+
+            if self._is_valid_position(neighbor_x, neighbor_y):
+                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+
+                # If neighbor is ocean, record the direction
+                if self.em.IsBelowSeaLevel(neighbor_i):
+                    # Calculate angle from land to ocean
+                    dx = neighbor_x - land_x
+                    dy = neighbor_y - land_y
+
+                    # Handle wrapping
+                    if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+                        dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+                    if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+                        dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
+
+                    if dx != 0 or dy != 0:
+                        angle = math.atan2(dy, dx)
+                        ocean_directions.append(angle)
+
+        if not ocean_directions:
+            return 0.0  # Default orientation
+
+        # Calculate average direction to ocean (coastline is perpendicular to this)
+        avg_sin = sum(math.sin(angle) for angle in ocean_directions) / len(ocean_directions)
+        avg_cos = sum(math.cos(angle) for angle in ocean_directions) / len(ocean_directions)
+        ocean_direction = math.atan2(avg_sin, avg_cos)
+
+        # Coastline is perpendicular to ocean direction
+        coastline_angle = ocean_direction + math.pi / 2
+        return coastline_angle
+
+    def _deflect_current_momentum(self, ocean_index, collision_info):
+        """Deflect current momentum when it hits a landform"""
+        current_direction = collision_info['current_direction']
+        coastline_angle = collision_info['coastline_angle']
+
+        # Calculate deflection angle based on coastline orientation
+        # Current should deflect to flow parallel to the coast
+        angle_to_coast = coastline_angle - current_direction
+
+        # Normalize angle to [-π, π]
+        while angle_to_coast > math.pi:
+            angle_to_coast -= 2 * math.pi
+        while angle_to_coast < -math.pi:
+            angle_to_coast += 2 * math.pi
+
+        # Choose deflection direction (left or right) based on which is smaller angle
+        if abs(angle_to_coast) < abs(angle_to_coast + math.pi):
+            deflection_angle = coastline_angle
+        else:
+            deflection_angle = coastline_angle + math.pi
+
+        # Calculate momentum conservation
+        original_magnitude = self.CurrentMomentumMagnitude[ocean_index]
+        conserved_magnitude = original_magnitude * self.mc.currentMomentumFactor
+
+        # Apply boundary current acceleration
+        accelerated_magnitude = conserved_magnitude * self.mc.boundaryCurrentAcceleration
+
+        # Calculate new momentum components
+        new_momentum_u = accelerated_magnitude * math.cos(deflection_angle)
+        new_momentum_v = accelerated_magnitude * math.sin(deflection_angle)
+
+        # Update momentum
+        self.CurrentMomentumU[ocean_index] = new_momentum_u
+        self.CurrentMomentumV[ocean_index] = new_momentum_v
+        self.CurrentMomentumMagnitude[ocean_index] = accelerated_magnitude
+
+        # Also update the actual current
+        self.OceanCurrentU[ocean_index] = new_momentum_u
+        self.OceanCurrentV[ocean_index] = new_momentum_v
+
+    def _propagate_momentum_currents(self):
+        """Propagate momentum effects downstream to create persistent boundary currents"""
+        # Create a list of high-momentum tiles to process
+        momentum_tiles = []
+        for i in range(self.mc.iNumPlots):
+            if (self.em.IsBelowSeaLevel(i) and
+                self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold):
+                momentum_tiles.append(i)
+
+        # Process momentum propagation iteratively
+        for iteration in range(self.mc.coastalChannelingDistance):
+            new_momentum_tiles = []
+
+            for source_index in momentum_tiles:
+                if self.CurrentMomentumMagnitude[source_index] < self.mc.minimumMomentumThreshold:
+                    continue
+
+                # Propagate momentum to downstream neighbors
+                self._propagate_momentum_to_neighbors(source_index, new_momentum_tiles)
+
+            # Apply momentum decay
+            for i in momentum_tiles:
+                self.CurrentMomentumMagnitude[i] *= self.mc.momentumDecayRate
+                self.CurrentMomentumU[i] *= self.mc.momentumDecayRate
+                self.CurrentMomentumV[i] *= self.mc.momentumDecayRate
+
+                # Update actual currents with decayed momentum
+                if self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold:
+                    self.OceanCurrentU[i] = self.CurrentMomentumU[i]
+                    self.OceanCurrentV[i] = self.CurrentMomentumV[i]
+
+            # Update momentum tiles for next iteration
+            momentum_tiles = [i for i in new_momentum_tiles
+                            if self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold]
+
+            if not momentum_tiles:
+                break  # No more momentum to propagate
+
+    def _propagate_momentum_to_neighbors(self, source_index, new_momentum_tiles):
+        """Propagate momentum from source to downstream neighbors"""
+        source_x = source_index % self.mc.iNumPlotsX
+        source_y = source_index // self.mc.iNumPlotsX
+
+        momentum_u = self.CurrentMomentumU[source_index]
+        momentum_v = self.CurrentMomentumV[source_index]
+        momentum_magnitude = self.CurrentMomentumMagnitude[source_index]
+
+        if momentum_magnitude < self.mc.minimumMomentumThreshold:
+            return
+
+        # Calculate momentum direction
+        momentum_direction = math.atan2(momentum_v, momentum_u)
+
+        # Find neighbors in the direction of momentum flow
+        propagation_targets = self._find_momentum_propagation_targets(
+            source_x, source_y, momentum_direction
+        )
+
+        for target_x, target_y, alignment_factor in propagation_targets:
+            target_index = target_y * self.mc.iNumPlotsX + target_x
+
+            # Only propagate to ocean tiles
+            if not self.em.IsBelowSeaLevel(target_index):
+                continue
+
+            # Calculate propagated momentum
+            propagated_magnitude = (momentum_magnitude * self.mc.momentumPropagationFactor *
+                                  alignment_factor)
+
+            if propagated_magnitude >= self.mc.minimumMomentumThreshold:
+                # Add to existing momentum (don't replace)
+                existing_magnitude = self.CurrentMomentumMagnitude[target_index]
+
+                if propagated_magnitude > existing_magnitude:
+                    # Update with stronger momentum
+                    self.CurrentMomentumU[target_index] = momentum_u * self.mc.momentumPropagationFactor
+                    self.CurrentMomentumV[target_index] = momentum_v * self.mc.momentumPropagationFactor
+                    self.CurrentMomentumMagnitude[target_index] = propagated_magnitude
+
+                    # Update actual current
+                    self.OceanCurrentU[target_index] = self.CurrentMomentumU[target_index]
+                    self.OceanCurrentV[target_index] = self.CurrentMomentumV[target_index]
+
+                    # Add to processing list
+                    if target_index not in new_momentum_tiles:
+                        new_momentum_tiles.append(target_index)
+
+    def _find_momentum_propagation_targets(self, source_x, source_y, momentum_direction):
+        """Find neighbor tiles in the direction of momentum flow"""
+        targets = []
+
+        # Check all 8 neighbors
+        for direction in range(1, 9):
+            neighbor_x, neighbor_y = self.mc.neighbours[source_y * self.mc.iNumPlotsX + source_x][direction]
+
+            if not self._is_valid_position(neighbor_x, neighbor_y):
+                continue
+
+            # Calculate direction from source to neighbor
+            dx = neighbor_x - source_x
+            dy = neighbor_y - source_y
+
+            # Handle wrapping
+            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+                dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+                dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
+
+            if dx == 0 and dy == 0:
+                continue
+
+            neighbor_direction = math.atan2(dy, dx)
+
+            # Calculate alignment with momentum direction
+            angle_diff = abs(momentum_direction - neighbor_direction)
+            angle_diff = min(angle_diff, 2*math.pi - angle_diff)  # Take smaller angle
+
+            # Only propagate to neighbors that are roughly in the momentum direction
+            if angle_diff <= math.pi / 2:  # Within 90 degrees
+                alignment_factor = math.cos(angle_diff)  # 1.0 for perfect alignment, 0.0 for perpendicular
+                targets.append((neighbor_x, neighbor_y, alignment_factor))
+
+        return targets

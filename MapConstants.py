@@ -133,6 +133,14 @@ class MapConstants:
         self.heatTransportFactor = 1.2          # Ocean heat transport efficiency
         self.coastalUpwellingFactor = 0.5       # Coastal upwelling intensity
 
+        # Current momentum modeling parameters
+        self.currentMomentumFactor = 0.8        # How much momentum is conserved during deflection
+        self.boundaryCurrentAcceleration = 1.5  # Speed increase when current flows along coast
+        self.momentumDecayRate = 0.95           # How slowly momentum decays (per tile)
+        self.minimumMomentumThreshold = 0.3     # Minimum current strength to build momentum
+        self.coastalChannelingDistance = 8      # How far momentum effects propagate
+        self.momentumPropagationFactor = 0.7    # Strength of momentum propagation to neighbors
+
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""
         # Plate tectonics parameters
