@@ -44,6 +44,7 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ### Testing and Validation
 
+-   Use powershell commands, we are developing on a windows 10 system
 -   Use `tests/CvPythonExtensions.py` as a dummy library for unit testing
 -   Test map generation with various world sizes and settings
 -   Validate starting position balance and resource distribution

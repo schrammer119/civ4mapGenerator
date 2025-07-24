@@ -3,169 +3,31 @@ import CvUtil
 import random
 import math
 from collections import deque
+from MapConstants import MapConstants
 
 class ElevationMap:
-    # Direction constants
-    L = 0
-    N = 1
-    S = 2
-    E = 3
-    W = 4
-    NE = 5
-    NW = 6
-    SE = 7
-    SW = 8
+    def __init__(self, map_constants=None):
+        # Use provided MapConstants or create new instance
+        if map_constants is None:
+            self.mc = MapConstants()
+        else:
+            self.mc = map_constants
 
-    def __init__(self):
-        self.gc = CyGlobalContext()
-        self.map = self.gc.getMap()
-        self.iNumPlotsX = self.map.getGridWidth()
-        self.iNumPlotsY = self.map.getGridHeight()
-        self.iNumPlots = self.iNumPlotsX * self.iNumPlotsY
-        self.wrapX = self.map.isWrapX()
-        self.wrapY = self.map.isWrapY()
-
-        # Initialize Civilization IV climate settings
-        self._initialize_civ_settings()
-
-        # Initialize custom geological parameters
-        self._initialize_geological_parameters()
-
-        # Initialize algorithm parameters
-        self._initialize_algorithm_parameters()
-
-        # Initialize performance parameters
-        self._initialize_performance_parameters()
+        # Get map dimensions from MapConstants
+        self.iNumPlotsX = self.mc.iNumPlotsX
+        self.iNumPlotsY = self.mc.iNumPlotsY
+        self.iNumPlots = self.mc.iNumPlots
+        self.wrapX = self.mc.wrapX
+        self.wrapY = self.mc.wrapY
 
         # Initialize data structures
         self._initialize_data_structures()
 
-    def _initialize_civ_settings(self):
-        """Initialize vanilla Civilization IV climate and sea level settings"""
-        climate_info = self.gc.getClimateInfo(self.map.getClimate())
-        sea_level_info = self.gc.getSeaLevelInfo(self.map.getSeaLevel())
-
-        # Sea level settings (-8, 0, 6)
-        self.seaLevelChange = sea_level_info.getSeaLevelChange()
-
-        # Climate settings
-        self.desertPercentChange = climate_info.getDesertPercentChange()  # -10, 0, 20
-        self.jungleLatitude = climate_info.getJungleLatitude()  # 2, 5, 6
-        self.hillRange = climate_info.getHillRange()  # 5, 7
-        self.peakPercent = climate_info.getPeakPercent()  # 25, 35
-        self.snowLatitudeChange = climate_info.getSnowLatitudeChange()  # -0.1, -0.025, 0.0, 0.1
-        self.tundraLatitudeChange = climate_info.getTundraLatitudeChange()  # -0.15, -0.05, 0.0, 0.1
-        self.grassLatitudeChange = climate_info.getGrassLatitudeChange()  # 0.0
-        self.desertBottomLatitudeChange = climate_info.getDesertBottomLatitudeChange()  # -0.1, 0.0
-        self.desertTopLatitudeChange = climate_info.getDesertTopLatitudeChange()  # -0.1, -0.05, 0.0, 0.1
-        self.iceLatitude = climate_info.getIceLatitude()  # 0.9, 0.95
-        self.randIceLatitude = climate_info.getRandIceLatitude()  # 0.20, 0.25, 0.5
-
-    def _initialize_geological_parameters(self):
-        """Initialize parameters based on real-world geological processes"""
-        # Basic land/water distribution
-        self.landPercent = 0.38
-        self.coastPercent = 0.01
-
-        # Temperature parameters (Celsius)
-        self.minimumTemp = -20.77  # Antarctica plateau temperature
-        self.maximumTemp = 29.0    # Equatorial lowland temperature (Manaus ~28C)
-        self.maxWaterTempC = 35.0  # Maximum ocean temperature
-        self.minWaterTempC = -10.0 # Minimum ocean temperature
-        self.tempLapse = 1.3       # Temperature lapse rate (C/km)
-
-        # Elevation parameters
-        self.maxElev = 5.1  # Maximum elevation in km
-
-        # Ocean and atmospheric parameters
-        self.currentAttenuation = 1.0
-        self.currentAmplFactor = 10.0
-        self.tempGradientFactor = 0.2
-
-        # Precipitation parameters
-        self.rainOverallFactor = 0.008
-        self.rainConvectionFactor = 0.07   # Rain due to temperature
-        self.rainOrographicFactor = 0.11   # Rain due to elevation gradients
-        self.rainFrontalFactor = 0.03      # Rain due to temperature+wind gradients
-        self.rainPerlinFactor = 0.05       # Random rainfall factor
-
-    def _initialize_algorithm_parameters(self):
-        """Initialize parameters that control algorithm behavior"""
-        # Plate tectonics parameters
-        self.plateCount = 15                    # Number of continental plates (Earth has ~15 major plates)
-        self.minPlateDensity = 0.8             # Minimum plate density (0.0-1.0)
-        self.plateTwistAngle = -0.35           # Plate rotation tendency
-        self.hotspotCount = 15                 # Number of hotspot plumes (Earth has ~9 major)
-        self.plateSlideFactor = 0.4            # Height ratio: sliding vs crushing faults
-        self.crossPlateIntensityFactor = 0.3   # Intensity reduction across boundaries
-
-        # Boundary processing parameters
-        self.boundaryRadius = 1.0              # Radius of boundary anomalies
-        self.boundaryLift = 0.2                # Base boundary lift amount
-        self.boundaryLiftRadius = 7            # Radius for boundary lift effects
-        self.boundaryFactor = 3.5              # Height multiplier for boundaries
-        self.boundarySmoothing = 3             # Smoothing radius for boundaries
-
-        # Hotspot parameters
-        self.hotspotPeriod = 5                 # Distance between hotspot traces
-        self.hotspotDecay = 4                  # Number of historical hotspot positions
-        self.hotspotRadius = 2                 # Base radius of hotspot effects
-        self.hotspotFactor = 0.3               # Intensity of hotspot volcanism
-        self.volcanoSizeVariation = 0.3        # Random size variation (+/-30%)
-
-        # Plate dynamics parameters
-        self.plateDensityFactor = 1.3          # Height factor based on plate density
-        self.plateVelocityFactor = 4.0         # Height change due to velocity
-        self.plateBuoyancyFactor = 0.9         # Buoyancy-based height factor
-
-        # River and lake parameters
-        self.riverGlacierSourceFactor = 4.0
-        self.minRiverBasin = 10
-        self.riverLengthFactor = 4.0
-        self.riverThreshold = 1.0
-        self.maxLakeSize = 9
-        self.lakeSizeFactor = 0.25
-
-        # Noise and variation parameters
-        self.perlinNoiseFactor = 0.2           # Weight of Perlin noise on final map
-        self.minBarePeaks = 0.2                # Minimum percentage of peaks without forests
-        self.mountainForestChance = 0.08       # Chance of forest spreading to peaks
-
-    def _initialize_performance_parameters(self):
-        """Initialize parameters that affect performance and quality trade-offs"""
-        self.climateSmoothing = 4              # General smoothing radius for climate
-        self.perlinNoiseSize = 256             # Size of Perlin noise permutation array
-
-        # Growth algorithm parameters
-        self.continentGrowthSeeds = 1          # Seeds per continent for complex shapes
-        self.growthFactorMin = 0.3             # Minimum growth probability
-        self.growthFactorRange = 0.4           # Range of growth probability variation
-        self.roughnessMin = 0.1                # Minimum edge roughness
-        self.roughnessRange = 0.3              # Range of edge roughness
-        self.anisotropyMin = 0.5               # Minimum directional growth preference
-        self.anisotropyRange = 1.0             # Range of anisotropy variation
-
-        # Boundary detection thresholds
-        self.minDensityDifference = 0.05       # Minimum density difference for subduction
-        self.minBoundaryLength = 3             # Minimum boundary length for processing
-        self.maxInfluenceDistance = 0.3        # Maximum influence distance (fraction of map)
-        self.maxInfluenceDistanceHotspot = 0.4 # Maximum hotspot influence distance
-
-        # Force calculation parameters
-        self.baseSlabtPull = 0.9               # Base slab pull strength
-        self.baseEdgeForce = 1.5               # Strength of edge repulsion
-        self.dragCoefficient = 0.1             # Drag coefficient for plate motion
-        self.edgeInfluenceDistance = 0.25      # Edge influence distance (fraction of map)
-
-        # Erosion and time effects
-        self.boundaryAgeFactor = 0.5           # How much boundaries are affected by age
-        self.erosionVariation = 0.4            # Random variation in erosion (+/-40%)
-        self.minErosionFactor = 0.3            # Minimum erosion factor to prevent negative values
 
     def _initialize_data_structures(self):
         """Initialize all data structures used by the elevation map"""
         # Plate identification and properties
-        self.continentID = [self.plateCount + 1] * self.iNumPlots
+        self.continentID = [self.mc.plateCount + 1] * self.iNumPlots
         self.seedList = []
         self.plumeList = []
 
@@ -1674,24 +1536,24 @@ class ElevationMap:
         """Get neighbor coordinates in specified direction (legacy compatibility)"""
         neighbor_x, neighbor_y = x, y
 
-        if direction == self.N:
+        if direction == self.mc.N:
             neighbor_y += 1
-        elif direction == self.S:
+        elif direction == self.mc.S:
             neighbor_y -= 1
-        elif direction == self.E:
+        elif direction == self.mc.E:
             neighbor_x += 1
-        elif direction == self.W:
+        elif direction == self.mc.W:
             neighbor_x -= 1
-        elif direction == self.NE:
+        elif direction == self.mc.NE:
             neighbor_x += 1
             neighbor_y += 1
-        elif direction == self.NW:
+        elif direction == self.mc.NW:
             neighbor_x -= 1
             neighbor_y += 1
-        elif direction == self.SE:
+        elif direction == self.mc.SE:
             neighbor_x += 1
             neighbor_y -= 1
-        elif direction == self.SW:
+        elif direction == self.mc.SW:
             neighbor_x -= 1
             neighbor_y -= 1
 
