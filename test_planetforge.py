@@ -139,44 +139,99 @@ try:
     print("Rainfall map generated: %s" % ("Yes" if hasattr(cm, 'RainfallMap') else "No"))
     print("Wind maps generated: %s" % ("Yes" if hasattr(cm, 'WindU') and hasattr(cm, 'WindV') else "No"))
 
-    # Add climate visualizations
+    # Create landform background data
+    landform_map = np.array(plotTypes).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    elevation_background = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
+    # Create land/ocean mask (True for land, False for ocean)
+    land_mask = elevation_background > em.seaLevelThreshold
 
+    # Add climate visualizations with landform backgrounds
     U_ocean = np.array(cm.OceanCurrentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     V_ocean = np.array(cm.OceanCurrentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 8))
     X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
 
-    ax.quiver(X, Y, U_ocean, V_ocean, scale=20, alpha=0.7)
-    ax.set_title('Ocean Currents')
+    # Create landform background
+    landform_colors = np.where(land_mask, 0.8, 0.3)  # Light gray for land, dark gray for ocean
+    ax.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.6, vmin=0, vmax=1)
+
+    # Mask ocean currents to only show over ocean areas
+    U_masked = np.where(~land_mask, U_ocean, 0)
+    V_masked = np.where(~land_mask, V_ocean, 0)
+
+    # Plot ocean currents with color based on magnitude
+    current_magnitude = np.sqrt(U_masked**2 + V_masked**2)
+    q = ax.quiver(X, Y, U_masked, V_masked, current_magnitude,
+                  scale=20, alpha=0.8, cmap='Blues', width=0.003)
+
+    ax.set_title('Ocean Currents with Landforms')
     ax.set_xlim(0, mc.iNumPlotsX)
     ax.set_ylim(0, mc.iNumPlotsY)
+    fig.colorbar(q, ax=ax, label='Current Magnitude')
 
     Z_temp = np.array(cm.TemperatureMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
-    fig, ax = plt.subplots()
-    p = ax.imshow(Z_temp, origin='lower', cmap=mpl.cm.coolwarm)
-    ax.set_title('Temperature Map')
-    fig.colorbar(p)
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Create landform background
+    ax.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.4, vmin=0, vmax=1)
+
+    # Overlay temperature data with transparency
+    p = ax.imshow(Z_temp, origin='lower', cmap=mpl.cm.coolwarm, alpha=0.8)
+
+    # Add contour lines to show land boundaries
+    ax.contour(elevation_background, levels=[em.seaLevelThreshold],
+               colors='black', linewidths=1, alpha=0.6)
+
+    ax.set_title('Temperature Map with Landforms')
+    fig.colorbar(p, ax=ax, label='Temperature')
 
     Z_rain = np.array(cm.RainfallMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
-    fig, ax = plt.subplots()
-    p = ax.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues)
-    ax.set_title('Rainfall Map')
-    fig.colorbar(p)
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Create landform background
+    ax.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.4, vmin=0, vmax=1)
+
+    # Overlay rainfall data with transparency
+    p = ax.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues, alpha=0.8)
+
+    # Add contour lines to show land boundaries
+    ax.contour(elevation_background, levels=[em.seaLevelThreshold],
+               colors='black', linewidths=1, alpha=0.6)
+    ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
+            i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+
+    ax.set_title('Rainfall Map with Landforms')
+    fig.colorbar(p, ax=ax, label='Rainfall')
 
     U_wind = np.array(cm.WindU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 8))
     X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
 
-    ax.quiver(X, Y, U_wind, V_wind, scale=20, alpha=0.7)
-    ax.set_title('Wind Patterns')
+    # Create topographic background for wind patterns (shows elevation)
+    topo_background = ax.imshow(elevation_background, origin='lower',
+                               cmap='terrain', alpha=0.5, vmin=0, vmax=1)
+
+    # Plot wind patterns with color based on magnitude
+    wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
+    q = ax.quiver(X, Y, U_wind, V_wind, wind_magnitude,
+                  scale=20, alpha=0.8, cmap='plasma', width=0.003)
+
+    # Add contour lines to show major elevation features
+    ax.contour(elevation_background, levels=[em.seaLevelThreshold],
+               colors=['blue', 'brown', 'red'], linewidths=[1, 0.8, 0.6], alpha=0.7)
+    ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
+            i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+
+    ax.set_title('Wind Patterns with Topography')
     ax.set_xlim(0, mc.iNumPlotsX)
     ax.set_ylim(0, mc.iNumPlotsY)
+    fig.colorbar(q, ax=ax, label='Wind Magnitude')
 
 except Exception as e:
     print("Climate system test failed: %s" % str(e))
