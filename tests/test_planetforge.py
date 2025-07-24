@@ -105,8 +105,6 @@ p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
 ax.set_title('Prominence Map')
 fig.colorbar(p)
 
-plt.show()
-
 print("Map generation completed successfully!")
 print("Map size: %d x %d" % (em.iNumPlotsX, em.iNumPlotsY))
 print("Total plots: %d" % em.iNumPlots)
@@ -126,3 +124,8 @@ print("Ocean: %d (%.1f%%)" % (ocean_count, ocean_count/float(em.iNumPlots)*100))
 print("Land: %d (%.1f%%)" % (land_count, land_count/float(em.iNumPlots)*100))
 print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(em.iNumPlots)*100))
 print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(em.iNumPlots)*100))
+
+
+
+plt.show()
+
