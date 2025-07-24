@@ -236,7 +236,6 @@ class ElevationMap:
 
     def _generate_continental_plates(self):
         """Generate continental plates using improved organic growth algorithm"""
-        self._place_continent_seeds()
         self._grow_continents_organically()
         self._smooth_continent_edges()
 
@@ -1667,7 +1666,7 @@ class ElevationMap:
             self._perlin_instance = self.Perlin2D(seed)
 
         # Scale to match original frequency characteristics
-        scale = 0.015  # Approximately matches original frequency
+        scale = 0.05  # Approximately matches original frequency
         return self._perlin_instance.noise(x * scale, y * scale)
 
     # Legacy method compatibility
