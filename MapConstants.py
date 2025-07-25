@@ -107,10 +107,12 @@ class MapConstants:
 
         # Enhanced climate modeling parameters
         # Solar radiation parameters
-        self.solarConstant = 1361.0        # Solar constant (W/m2)
-        self.earthAlbedo = 0.3             # Earth's average albedo
-        self.minSolarFactor = 0.1          # Minimum solar heating (polar regions)
-        self.thermalInertiaFactor = 0.3    # Thermal inertia for temperature smoothing
+        self.solarConstant = 1361.0         # Solar constant (W/m2)
+        self.earthAlbedo = 0.3              # Earth's average albedo
+        self.minSolarFactor = 0.1           # Minimum solar heating (polar regions)
+        self.solarHadleyCellEffects = -0.12 # Hadley cell cooling at equator/warming at subtropics
+        self.solarFifthOrder = 0.04         #
+        self.thermalInertiaFactor = 0.3     # Thermal inertia for temperature smoothing
 
         # Atmospheric stability parameters
         self.stabilityThreshold = 0.15     # Temperature difference threshold for stability
@@ -125,21 +127,13 @@ class MapConstants:
         self.ridgeDeflectionDistance = 3   # Distance for wind deflection around ridges
         self.foehWindFactor = 1.2          # Warming factor for descending air
 
-        # Enhanced ocean current parameters
-        self.temperatureCurrentFactor = 0.4     # Temperature gradient current strength
-        self.coastalDeflectionFactor = 0.6      # Coastal current deflection strength
-        self.upwellingTemperatureEffect = 0.3   # Temperature effect of upwelling/downwelling
-        self.depthCurrentFactor = 0.8           # Depth effect on current strength
-        self.heatTransportFactor = 1.2          # Ocean heat transport efficiency
-        self.coastalUpwellingFactor = 0.5       # Coastal upwelling intensity
-
-        # Current momentum modeling parameters
-        self.currentMomentumFactor = 0.8        # How much momentum is conserved during deflection
-        self.boundaryCurrentAcceleration = 1.5  # Speed increase when current flows along coast
-        self.momentumDecayRate = 0.95           # How slowly momentum decays (per tile)
-        self.minimumMomentumThreshold = 0.3     # Minimum current strength to build momentum
-        self.coastalChannelingDistance = 8      # How far momentum effects propagate
-        self.momentumPropagationFactor = 0.7    # Strength of momentum propagation to neighbors
+        # Ocean current solver parameters
+        self.oceanCurrentK0 = 1.0              # Base conductance scalar
+        self.currentSolverIterations = 1500    # Jacobi iteration count
+        self.thermalGradientFactor = 0.5       # Temperature gradient forcing strength
+        self.latitudinalForcingStrength = 1.0  # Primary east/west forcing strength
+        self.coriolisStrength = 1.0            # Coriolis effect strength modifier
+        self.earthRotationRate = 7.27e-5      # Earth's rotation rate (rad/s)
 
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""

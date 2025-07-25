@@ -76,7 +76,6 @@ class ClimateMap:
         self._calculate_elevation_effects(aboveSeaLevelMap)
         self._generate_base_temperature(aboveSeaLevelMap)
         self._generate_ocean_currents()
-        self._apply_ocean_current_effects()
         self._generate_wind_patterns()
         self._apply_temperature_smoothing()
         self._apply_polar_cooling()
@@ -120,7 +119,7 @@ class ClimateMap:
         lat_rad = math.radians(latitude)
 
         # Solar radiation follows cosine of latitude (Lambert's cosine law)
-        solar_factor = max(self.mc.minSolarFactor, math.cos(lat_rad))
+        solar_factor = max(self.mc.minSolarFactor, math.cos(lat_rad) + self.mc.solarHadleyCellEffects * math.cos(3 * lat_rad) + self.mc.solarFifthOrder * math.cos(5 * lat_rad))
 
         # Account for Earth's albedo and atmospheric absorption
         effective_solar = solar_factor * (1.0 - self.mc.earthAlbedo)
@@ -150,40 +149,272 @@ class ClimateMap:
                                     smoothed_temp[i] * inertia_factor)
 
     def _generate_ocean_currents(self):
-        """Generate realistic ocean current patterns based on atmospheric circulation and temperature gradients"""
-        # Generate currents for each atmospheric cell
-        circulation_cells = [
-            # (ymin_lat, ymax_lat, rotation)
-            (0.0, self.mc.horseLatitude, 'CW'),                    # North Hadley
-            (-self.mc.horseLatitude, 0.0, 'CCW'),                 # South Hadley
-            (self.mc.horseLatitude, self.mc.polarFrontLatitude, 'CCW'), # North Ferrel
-            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude, 'CW'), # South Ferrel
-            (self.mc.polarFrontLatitude, self.mc.topLatitude, 'CW'),   # North Polar
-            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude, 'CCW') # South Polar
+        """Generate realistic ocean current patterns using steady-state surface flow model"""
+        print("Generating Ocean Currents")
+
+        # Step 1: Generate forcing fields
+        force_U, force_V = self._generate_forcing_fields()
+
+        # Step 2: Precompute connectivity and conductances
+        neighbors, conduct, sumK = self._precompute_ocean_connectivity()
+
+        # Step 3: Compute forcing divergence
+        force_div = self._compute_forcing_divergence(force_U, force_V)
+
+        # Step 4: Solve pressure with Coriolis effects
+        pressure = self._solve_pressure_with_coriolis(neighbors, conduct, sumK, force_div)
+
+        # Step 5: Compute velocities from pressure
+        self._compute_ocean_velocities(neighbors, conduct, pressure)
+
+    def _calculate_direction_vector(self, i, j):
+        """Calculate unit vector (dx, dy) from tile i to tile j"""
+        x_i = i % self.mc.iNumPlotsX
+        y_i = i // self.mc.iNumPlotsX
+        x_j = j % self.mc.iNumPlotsX
+        y_j = j // self.mc.iNumPlotsX
+
+        # Calculate raw differences
+        dx = x_j - x_i
+        dy = y_j - y_i
+
+        # Handle wrapping
+        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+            dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+            dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
+
+        # Normalize to unit vector
+        distance = math.sqrt(dx*dx + dy*dy)
+        if distance > 0:
+            return dx / distance, dy / distance
+        else:
+            return 0.0, 0.0
+
+    def _generate_forcing_fields(self):
+        """Generate forcing fields for ocean currents"""
+        force_U = [0.0] * self.mc.iNumPlots
+        force_V = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            if self.em.IsBelowSeaLevel(i):
+                y = i // self.mc.iNumPlotsX
+                latitude = self.GetLatitudeForY(y)
+                latitude_rad = math.radians(latitude)
+
+                # Primary latitude-based forcing (east/west only)
+                force_U[i] = -self.mc.latitudinalForcingStrength * math.sin(2 * latitude_rad)
+                force_V[i] = 0.0  # No primary north/south forcing
+
+                # Secondary temperature gradient forcing
+                temp_grad_u, temp_grad_v = self._calculate_temperature_gradients(i)
+                force_U[i] += self.mc.thermalGradientFactor * temp_grad_u
+                force_V[i] += self.mc.thermalGradientFactor * temp_grad_v
+
+        return force_U, force_V
+
+    def _calculate_temperature_gradients(self, i):
+        """Calculate temperature gradients at a given tile"""
+        x = i % self.mc.iNumPlotsX
+        y = i // self.mc.iNumPlotsX
+
+        # Calculate gradients using 8-neighbor stencil
+        grad_u = 0.0
+        grad_v = 0.0
+        count = 0
+
+        # Use the 8-neighbor offsets from the original specification
+        offsets = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (1, -1), (-1, 1), (-1, -1)
         ]
 
-        for ymin_lat, ymax_lat, rotation in circulation_cells:
-            ymin = self._latitude_to_y(ymin_lat)
-            ymax = self._latitude_to_y(ymax_lat)
+        for dx, dy in offsets:
+            neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
+            neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
 
-            if rotation == 'CW':
-                self._generate_clockwise_currents(ymin, ymax)
-            else:
-                self._generate_counterclockwise_currents(ymin, ymax)
+            if self._is_valid_position(neighbor_x, neighbor_y):
+                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                if self.em.IsBelowSeaLevel(neighbor_i):
+                    temp_diff = self.TemperatureMap[neighbor_i] - self.TemperatureMap[i]
+                    grad_u += temp_diff * dx / 8.0
+                    grad_v += temp_diff * dy / 8.0
+                    count += 1
 
-            self._smooth_current_map(ymin, ymax, 5)
+        return grad_u, grad_v
 
-        # Add temperature gradient-driven currents
-        self._add_temperature_gradient_currents()
+    def _precompute_ocean_connectivity(self):
+        """Precompute connectivity and conductances for ocean tiles"""
+        neighbors = [[] for _ in range(self.mc.iNumPlots)]
+        conduct = [[] for _ in range(self.mc.iNumPlots)]
+        sumK = [0.0] * self.mc.iNumPlots
 
-        # Apply coastal interactions and depth effects
-        self._apply_coastal_current_interactions()
-        self._apply_depth_current_effects()
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
 
-        # Apply momentum modeling for realistic boundary currents
-        self._calculate_current_momentum()
-        self._apply_momentum_deflection()
-        self._propagate_momentum_currents()
+            # Calculate depth for this tile
+            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
+
+            # Check all 8 neighbors (directions 1-8, skip 0 which is self)
+            for direction in range(1, 9):
+                neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
+                if neighbor_x == -1 or neighbor_y == -1:
+                    continue
+
+                j = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                if not self.em.IsBelowSeaLevel(j):
+                    continue
+
+                # Calculate depth for neighbor
+                depth_j = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[j])
+
+                # Calculate conductance (no distance correction for simplicity)
+                k = self.mc.oceanCurrentK0 * (depth_i + depth_j) * 0.5
+
+                neighbors[i].append(j)
+                conduct[i].append(k)
+                sumK[i] += k
+
+        return neighbors, conduct, sumK
+
+    def _compute_forcing_divergence(self, force_U, force_V):
+        """Compute forcing divergence from force fields"""
+        force_div = [0.0] * self.mc.iNumPlots
+
+        # Use the 8-neighbor offsets (equal weights, no distance correction)
+        offsets = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (1, -1), (-1, 1), (-1, -1)
+        ]
+
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            x = i % self.mc.iNumPlotsX
+            y = i // self.mc.iNumPlotsX
+            acc = 0.0
+
+            for dx, dy in offsets:
+                neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
+                neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+
+                if not self._is_valid_position(neighbor_x, neighbor_y):
+                    continue
+
+                j = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                if not self.em.IsBelowSeaLevel(j):
+                    continue
+
+                dU = force_U[j] - force_U[i]
+                dV = force_V[j] - force_V[i]
+                acc += (dU * dx + dV * dy) / 16.0  # 8 neighbors, factor of 2 from original
+
+            force_div[i] = acc
+
+        return force_div
+
+    def _solve_pressure_with_coriolis(self, neighbors, conduct, sumK, force_div):
+        """Solve pressure with Coriolis effects using modified Jacobi iteration"""
+        pressure = [0.0] * self.mc.iNumPlots
+
+        for iteration in range(self.mc.currentSolverIterations):
+            # Calculate current velocities for Coriolis terms
+            ux, uy = self._estimate_velocities_from_pressure(pressure, neighbors, conduct)
+
+            # Calculate Coriolis terms
+            coriolis_terms = self._calculate_coriolis_terms(ux, uy)
+
+            # Update pressure with Coriolis
+            pressure_new = pressure[:]
+            for i in range(self.mc.iNumPlots):
+                if not self.em.IsBelowSeaLevel(i):
+                    continue
+
+                if sumK[i] == 0:
+                    continue
+
+                acc = force_div[i] + coriolis_terms[i]
+                for idx, j in enumerate(neighbors[i]):
+                    acc += conduct[i][idx] * pressure[j]
+
+                pressure_new[i] = acc / sumK[i]
+
+            pressure = pressure_new
+
+        return pressure
+
+    def _estimate_velocities_from_pressure(self, pressure, neighbors, conduct):
+        """Estimate velocities from current pressure field"""
+        ux = [0.0] * self.mc.iNumPlots
+        uy = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
+            vx = 0.0
+            vy = 0.0
+
+            for idx, j in enumerate(neighbors[i]):
+                dx, dy = self._calculate_direction_vector(i, j)
+                flow = conduct[i][idx] * (pressure[i] - pressure[j])
+                vx += flow * dx
+                vy += flow * dy
+
+            ux[i] = vx / depth_i
+            uy[i] = vy / depth_i
+
+        return ux, uy
+
+    def _calculate_coriolis_terms(self, ux, uy):
+        """Calculate Coriolis terms for pressure equation"""
+        coriolis_terms = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                continue
+
+            y = i // self.mc.iNumPlotsX
+            latitude = self.GetLatitudeForY(y)
+            latitude_rad = math.radians(latitude)
+
+            # Calculate Coriolis parameter
+            f = 2 * self.mc.earthRotationRate * math.sin(latitude_rad)
+
+            # Coriolis force is perpendicular to velocity
+            # In the northern hemisphere, deflects to the right
+            # In the southern hemisphere, deflects to the left
+            coriolis_u = -f * uy[i]  # Coriolis effect on u-component
+            coriolis_v = f * ux[i]   # Coriolis effect on v-component
+
+            # Convert to pressure term (simplified)
+            coriolis_terms[i] = self.mc.coriolisStrength * (coriolis_u + coriolis_v) * 0.5
+
+        return coriolis_terms
+
+    def _compute_ocean_velocities(self, neighbors, conduct, pressure):
+        """Compute final ocean velocities from pressure field"""
+        for i in range(self.mc.iNumPlots):
+            if not self.em.IsBelowSeaLevel(i):
+                self.OceanCurrentU[i] = 0.0
+                self.OceanCurrentV[i] = 0.0
+                continue
+
+            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
+            vx = 0.0
+            vy = 0.0
+
+            for idx, j in enumerate(neighbors[i]):
+                dx, dy = self._calculate_direction_vector(i, j)
+                flow = conduct[i][idx] * (pressure[i] - pressure[j])
+                vx += flow * dx
+                vy += flow * dy
+
+            self.OceanCurrentU[i] = vx / depth_i
+            self.OceanCurrentV[i] = vy / depth_i
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""
@@ -191,237 +422,6 @@ class ClimateMap:
         normalized_lat = (latitude - self.mc.bottomLatitude) / lat_range
         y = int(normalized_lat * self.mc.iNumPlotsY)
         return min(y, self.mc.iNumPlotsY - 1)  # Clamp to valid range
-
-    def _generate_clockwise_currents(self, ymin, ymax):
-        """Generate clockwise ocean current circulation with proper U and V components"""
-        ycentre = float(ymin + ymax) / 2.0
-        cell_height = float(ymax - ymin)
-
-        if cell_height <= 0:
-            return
-
-        # Create circular flow pattern for clockwise circulation
-        for y in range(ymin, ymax + 1):
-            # Calculate normalized position from center (-1 to +1, where 0 is center)
-            y_from_center = (float(y) - ycentre) / (cell_height / 2.0)
-            y_from_center = max(-1.0, min(1.0, y_from_center))  # Clamp to [-1, 1]
-
-            # Calculate circulation strength (stronger near edges, weaker at center)
-            circulation_strength = abs(y_from_center) * 0.8 + 0.2  # Range: 0.2 to 1.0
-
-            # For clockwise circulation:
-            # - At bottom edge (y_from_center = -1): pure westward flow (U = -1, V = 0)
-            # - At center (y_from_center = 0): pure northward/southward flow (U = 0, V = max)
-            # - At top edge (y_from_center = +1): pure eastward flow (U = +1, V = 0)
-
-            # U component: varies sinusoidally from -1 (bottom) to +1 (top)
-            u_component = y_from_center * circulation_strength
-
-            # V component: maximum at center, zero at edges (cosine pattern)
-            # For clockwise: positive V (northward) in bottom half, negative V (southward) in top half
-            v_amplitude = math.sqrt(1.0 - y_from_center * y_from_center)  # Circular geometry
-            if y_from_center < 0:
-                # Bottom half: northward flow
-                v_component = v_amplitude * circulation_strength
-            else:
-                # Top half: southward flow
-                v_component = -v_amplitude * circulation_strength
-
-            # Apply Coriolis effect (stronger away from equator)
-            coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-            u_component *= abs(coriolis_factor)
-            v_component *= abs(coriolis_factor)
-
-            # Apply currents to all ocean tiles in this latitude band
-            for x in range(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                if self.em.IsBelowSeaLevel(i):
-                    self.OceanCurrentU[i] += u_component
-                    self.OceanCurrentV[i] += v_component
-
-    def _generate_counterclockwise_currents(self, ymin, ymax):
-        """Generate counterclockwise ocean current circulation with proper U and V components"""
-        ycentre = float(ymin + ymax) / 2.0
-        cell_height = float(ymax - ymin)
-
-        if cell_height <= 0:
-            return
-
-        # Create circular flow pattern for counterclockwise circulation
-        for y in range(ymin, ymax + 1):
-            # Calculate normalized position from center (-1 to +1, where 0 is center)
-            y_from_center = (float(y) - ycentre) / (cell_height / 2.0)
-            y_from_center = max(-1.0, min(1.0, y_from_center))  # Clamp to [-1, 1]
-
-            # Calculate circulation strength (stronger near edges, weaker at center)
-            circulation_strength = abs(y_from_center) * 0.8 + 0.2  # Range: 0.2 to 1.0
-
-            # For counterclockwise circulation:
-            # - At bottom edge (y_from_center = -1): pure eastward flow (U = +1, V = 0)
-            # - At center (y_from_center = 0): pure northward/southward flow (U = 0, V = max)
-            # - At top edge (y_from_center = +1): pure westward flow (U = -1, V = 0)
-
-            # U component: varies from +1 (bottom) to -1 (top) - opposite of clockwise
-            u_component = -y_from_center * circulation_strength
-
-            # V component: maximum at center, zero at edges (cosine pattern)
-            # For counterclockwise: negative V (southward) in bottom half, positive V (northward) in top half
-            v_amplitude = math.sqrt(1.0 - y_from_center * y_from_center)  # Circular geometry
-            if y_from_center < 0:
-                # Bottom half: southward flow
-                v_component = -v_amplitude * circulation_strength
-            else:
-                # Top half: northward flow
-                v_component = v_amplitude * circulation_strength
-
-            # Apply Coriolis effect (stronger away from equator)
-            coriolis_factor = 1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-            u_component *= abs(coriolis_factor)
-            v_component *= abs(coriolis_factor)
-
-            # Apply currents to all ocean tiles in this latitude band
-            for x in range(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                if self.em.IsBelowSeaLevel(i):
-                    self.OceanCurrentU[i] += u_component
-                    self.OceanCurrentV[i] += v_component
-
-    def _calculate_current_strength(self, y, ymin, ymax):
-        """Calculate current strength based on position and Coriolis effect"""
-        normalized_pos = float(y - ymin) / float(ymax + 1 - ymin)
-        coriolis_factor = 1 - 2 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-        return (-1.0 + normalized_pos * 2.0) * coriolis_factor
-
-    def _apply_westward_current(self, y, strength):
-        """Apply westward ocean current for a given latitude"""
-        for x in range(self.mc.iNumPlotsX - 1, -1, -1):  # Process right to left
-            i = y * self.mc.iNumPlotsX + x
-            if self.em.IsBelowSeaLevel(i):
-                self.OceanCurrentU[i] += -strength
-
-    def _apply_eastward_current(self, y, strength):
-        """Apply eastward ocean current for a given latitude"""
-        for x in range(self.mc.iNumPlotsX):  # Process left to right
-            i = y * self.mc.iNumPlotsX + x
-            if self.em.IsBelowSeaLevel(i):
-                self.OceanCurrentU[i] += strength
-
-    def _smooth_current_map(self, ymin, ymax, iterations):
-        """Smooth ocean current map in specified region"""
-        for n in range(iterations):
-            for y in range(ymin + 1, ymax):
-                for x in range(self.mc.iNumPlotsX):
-                    i = y * self.mc.iNumPlotsX + x
-                    if self.em.IsBelowSeaLevel(i):
-                        i = y * self.mc.iNumPlotsX + x
-                        sumU = self.OceanCurrentU[i]
-                        sumV = self.OceanCurrentV[i]
-                        count = 1.0
-
-                        # Average with ocean neighbors
-                        for direction in range(1, 9):
-                            neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-                            if self._is_valid_position(neighbor_x, neighbor_y):
-                                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                                if self.em.IsBelowSeaLevel(neighbor_i):
-                                    sumU += self.OceanCurrentU[neighbor_i]
-                                    sumV += self.OceanCurrentV[neighbor_i]
-                                    count += 1.0
-
-                        self.OceanCurrentU[i] = sumU / count
-                        self.OceanCurrentV[i] = sumV / count
-
-    def _apply_ocean_current_effects(self):
-        """Apply ocean current effects on temperature"""
-        circulation_cells = [
-            (0.0, self.mc.horseLatitude),
-            (-self.mc.horseLatitude, 0.0),
-            (self.mc.horseLatitude, self.mc.polarFrontLatitude),
-            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude),
-            (self.mc.polarFrontLatitude, self.mc.topLatitude),
-            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude)
-        ]
-
-        for ymin_lat, ymax_lat in circulation_cells:
-            ymin = self._latitude_to_y(ymin_lat)
-            ymax = self._latitude_to_y(ymax_lat)
-            self._apply_current_temperature_effects(ymin, ymax)
-
-    def _apply_current_temperature_effects(self, ymin, ymax):
-        """Apply temperature changes due to ocean currents using both U and V components for proper heat transport"""
-        for y in range(ymin, ymax + 1):
-            for x in range(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                if not self.em.IsBelowSeaLevel(i):
-                    continue
-
-                # Calculate current magnitude and direction
-                current_u = self.OceanCurrentU[i]
-                current_v = self.OceanCurrentV[i]
-                current_magnitude = math.sqrt(current_u*current_u + current_v*current_v)
-
-                if current_magnitude < 0.001:
-                    continue
-
-                # Calculate heat transport based on current direction and temperature gradients
-                heat_transport = self._calculate_heat_transport(i, current_u, current_v, current_magnitude)
-
-                # Apply heat transport effect to temperature
-                self.TemperatureMap[i] += heat_transport * self.mc.heatTransportFactor
-
-    def _calculate_heat_transport(self, ocean_index, current_u, current_v, current_magnitude):
-        """Calculate heat transport by ocean currents based on temperature gradients"""
-        x = ocean_index % self.mc.iNumPlotsX
-        y = ocean_index // self.mc.iNumPlotsX
-
-        # Get current temperature
-        current_temp = self.TemperatureMap[ocean_index]
-
-        # Calculate temperature gradients in current direction
-        # Sample temperature in the direction the current is flowing FROM (upwind/upcurrent)
-        sample_distance = 2  # Sample 2 tiles away for better gradient calculation
-
-        # Calculate source positions (where water is flowing from)
-        source_x = x - int(current_u / current_magnitude * sample_distance)
-        source_y = y - int(current_v / current_magnitude * sample_distance)
-
-        # Wrap coordinates
-        source_x = self._wrap_coordinate(source_x, self.mc.iNumPlotsX, self.mc.wrapX)
-        source_y = self._wrap_coordinate(source_y, self.mc.iNumPlotsY, self.mc.wrapY)
-
-        if not self._is_valid_position(source_x, source_y):
-            return 0.0
-
-        source_index = source_y * self.mc.iNumPlotsX + source_x
-
-        # Only transport heat between ocean tiles
-        if not self.em.IsBelowSeaLevel(source_index):
-            return 0.0
-
-        # Calculate temperature difference (source - current)
-        temp_difference = self.TemperatureMap[source_index] - current_temp
-
-        # Heat transport is proportional to current strength and temperature difference
-        heat_transport = temp_difference * current_magnitude * 0.1
-
-        # Add latitude-based effects (warm currents moving poleward, cold currents moving equatorward)
-        latitude = self.GetLatitudeForY(y)
-        latitude_factor = abs(latitude) / self.mc.topLatitude  # 0 at equator, 1 at poles
-
-        # Enhance warm currents moving toward poles
-        if current_v > 0 and latitude > 0:  # Northward flow in northern hemisphere
-            heat_transport *= (1.0 + latitude_factor * 0.5)
-        elif current_v < 0 and latitude < 0:  # Southward flow in southern hemisphere
-            heat_transport *= (1.0 + latitude_factor * 0.5)
-
-        return heat_transport
-
-    def _calculate_zone_temperature(self, latitude):
-        """Calculate base ocean temperature for a given latitude"""
-        latRange = self.mc.topLatitude - self.mc.bottomLatitude
-        latPercent = (latitude - self.mc.bottomLatitude) / latRange
-        temp = math.sin(latPercent * math.pi * 2.0 - math.pi * 0.5) * 0.5 + 0.5
-        return temp * (self.mc.maxWaterTempC - self.mc.minWaterTempC) + self.mc.minWaterTempC
 
     def _generate_wind_patterns(self):
         """Generate wind patterns based on atmospheric circulation"""
@@ -1422,461 +1422,3 @@ class ClimateMap:
                 normalized_y = y / scale
                 grid.append(perlin.noise(normalized_x, normalized_y))
         return grid
-
-    def _add_temperature_gradient_currents(self):
-        """Add temperature gradient-driven currents for realistic warm/cold current patterns"""
-        for y in range(1, self.mc.iNumPlotsY - 1):
-            for x in range(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-
-                if not self.em.IsBelowSeaLevel(i):
-                    continue
-
-                # Calculate temperature gradients in north-south direction
-                y_north = (y + 1) % self.mc.iNumPlotsY if self.mc.wrapY else min(y + 1, self.mc.iNumPlotsY - 1)
-                y_south = (y - 1) % self.mc.iNumPlotsY if self.mc.wrapY else max(y - 1, 0)
-
-                i_north = y_north * self.mc.iNumPlotsX + x
-                i_south = y_south * self.mc.iNumPlotsX + x
-
-                # Only calculate gradients between ocean tiles
-                if self.em.IsBelowSeaLevel(i_north) and self.em.IsBelowSeaLevel(i_south):
-                    # Temperature gradient drives north-south current component
-                    temp_gradient = (self.TemperatureMap[i_north] - self.TemperatureMap[i_south]) * 0.5
-
-                    # Warm water flows toward cold water (down the temperature gradient)
-                    gradient_current_v = -temp_gradient * self.mc.temperatureCurrentFactor
-
-                    # Apply Coriolis effect (stronger away from equator)
-                    coriolis_factor = abs(1.0 - 2.0 * abs(float(y) / self.mc.iNumPlotsY - 0.5))
-                    gradient_current_v *= coriolis_factor
-
-                    # Add to existing current
-                    self.OceanCurrentV[i] += gradient_current_v
-
-                # Calculate temperature gradients in east-west direction for completeness
-                x_east = (x + 1) % self.mc.iNumPlotsX if self.mc.wrapX else min(x + 1, self.mc.iNumPlotsX - 1)
-                x_west = (x - 1) % self.mc.iNumPlotsX if self.mc.wrapX else max(x - 1, 0)
-
-                i_east = y * self.mc.iNumPlotsX + x_east
-                i_west = y * self.mc.iNumPlotsX + x_west
-
-                if self.em.IsBelowSeaLevel(i_east) and self.em.IsBelowSeaLevel(i_west):
-                    temp_gradient_x = (self.TemperatureMap[i_east] - self.TemperatureMap[i_west]) * 0.5
-                    gradient_current_u = -temp_gradient_x * self.mc.temperatureCurrentFactor * 0.5  # Weaker E-W effect
-
-                    self.OceanCurrentU[i] += gradient_current_u
-
-    def _apply_coastal_current_interactions(self):
-        """Apply coastal current deflection and upwelling/downwelling effects"""
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-
-            # Check for nearby coastlines
-            coast_distance, coast_direction = self._find_nearest_coast(x, y)
-
-            if coast_distance <= 3:  # Within 3 tiles of coast
-                # Apply coastal deflection
-                self._apply_coastal_deflection(i, coast_direction, coast_distance)
-
-                # Apply upwelling/downwelling effects
-                self._apply_coastal_upwelling_downwelling(i, coast_direction)
-
-    def _find_nearest_coast(self, x, y):
-        """Find the nearest coastline and return distance and direction"""
-        min_distance = float('inf')
-        coast_direction = None
-
-        # Check in expanding radius around the point
-        for radius in range(1, 4):
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if abs(dx) != radius and abs(dy) != radius:
-                        continue  # Only check perimeter
-
-                    check_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
-                    check_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
-
-                    if not self._is_valid_position(check_x, check_y):
-                        continue
-
-                    check_i = check_y * self.mc.iNumPlotsX + check_x
-
-                    # Found land (coast)
-                    if not self.em.IsBelowSeaLevel(check_i):
-                        distance = math.sqrt(dx*dx + dy*dy)
-                        if distance < min_distance:
-                            min_distance = distance
-                            # Direction from coast to ocean point
-                            coast_direction = math.atan2(dy, dx)
-
-        return min_distance, coast_direction
-
-    def _apply_coastal_deflection(self, ocean_index, coast_direction, coast_distance):
-        """Apply current deflection around coastlines"""
-        if coast_direction is None:
-            return
-
-        # Calculate deflection strength (stronger closer to coast)
-        deflection_strength = self.mc.coastalDeflectionFactor * (1.0 - coast_distance / 3.0)
-
-        # Calculate deflection direction (parallel to coast)
-        deflection_angle = coast_direction + math.pi / 2  # Perpendicular to coast-ocean direction
-
-        # Apply deflection to current
-        deflection_u = deflection_strength * math.cos(deflection_angle) * 0.3
-        deflection_v = deflection_strength * math.sin(deflection_angle) * 0.3
-
-        self.OceanCurrentU[ocean_index] += deflection_u
-        self.OceanCurrentV[ocean_index] += deflection_v
-
-    def _apply_coastal_upwelling_downwelling(self, ocean_index, coast_direction):
-        """Apply upwelling/downwelling temperature effects based on wind-coast interaction"""
-        if coast_direction is None:
-            return
-
-        # Get wind direction at this location
-        wind_u = self.WindU[ocean_index]
-        wind_v = self.WindV[ocean_index]
-
-        if abs(wind_u) < 0.001 and abs(wind_v) < 0.001:
-            return
-
-        wind_direction = math.atan2(wind_v, wind_u)
-
-        # Calculate angle between wind and coast-normal direction
-        coast_normal = coast_direction + math.pi  # Direction from ocean to coast
-        angle_diff = abs(wind_direction - coast_normal)
-        angle_diff = min(angle_diff, 2*math.pi - angle_diff)  # Take smaller angle
-
-        # Upwelling occurs when wind blows parallel to coast (angle ~90 degrees)
-        # Downwelling occurs when wind blows toward/away from coast (angle ~0 or 180 degrees)
-        upwelling_factor = math.sin(angle_diff)  # Maximum at 90 degrees
-
-        # Apply temperature effect
-        if upwelling_factor > 0.5:  # Significant upwelling
-            # Upwelling brings cold water to surface
-            temperature_effect = -self.mc.upwellingTemperatureEffect * upwelling_factor
-        else:  # Downwelling
-            # Downwelling keeps warm surface water
-            temperature_effect = self.mc.upwellingTemperatureEffect * (1.0 - upwelling_factor) * 0.5
-
-        # Apply temperature modification
-        self.TemperatureMap[ocean_index] += temperature_effect
-
-    def _apply_depth_current_effects(self):
-        """Apply depth-based modifications to current strength using elevation as depth proxy"""
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            # Use elevation below sea level as depth proxy
-            # Lower elevation = deeper water = stronger currents
-            depth_proxy = self.em.seaLevelThreshold - self.em.elevationMap[i]
-
-            # Normalize depth (0 = shallow, 1 = deep)
-            max_depth = self.em.seaLevelThreshold  # Maximum possible depth
-            if max_depth > 0:
-                normalized_depth = min(1.0, depth_proxy / max_depth)
-            else:
-                normalized_depth = 0.5
-
-            # Calculate depth factor (deeper water = stronger currents)
-            depth_factor = self.mc.depthCurrentFactor + (1.0 - self.mc.depthCurrentFactor) * normalized_depth
-
-            # Apply depth effect to currents
-            self.OceanCurrentU[i] *= depth_factor
-            self.OceanCurrentV[i] *= depth_factor
-
-    def _calculate_current_momentum(self):
-        """Calculate momentum for ocean currents based on strength and persistence"""
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            # Calculate current magnitude
-            current_magnitude = math.sqrt(self.OceanCurrentU[i]**2 + self.OceanCurrentV[i]**2)
-
-            # Only track momentum for currents above threshold
-            if current_magnitude >= self.mc.minimumMomentumThreshold:
-                # Store momentum components
-                self.CurrentMomentumU[i] = self.OceanCurrentU[i]
-                self.CurrentMomentumV[i] = self.OceanCurrentV[i]
-                self.CurrentMomentumMagnitude[i] = current_magnitude
-            else:
-                # Clear momentum for weak currents
-                self.CurrentMomentumU[i] = 0.0
-                self.CurrentMomentumV[i] = 0.0
-                self.CurrentMomentumMagnitude[i] = 0.0
-
-    def _apply_momentum_deflection(self):
-        """Apply momentum deflection when strong currents hit landforms"""
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            # Only process tiles with significant momentum
-            if self.CurrentMomentumMagnitude[i] < self.mc.minimumMomentumThreshold:
-                continue
-
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-
-            # Check if current is hitting a landform
-            collision_info = self._detect_current_landform_collision(i, x, y)
-
-            if collision_info['collision']:
-                # Apply momentum deflection
-                self._deflect_current_momentum(i, collision_info)
-
-    def _detect_current_landform_collision(self, ocean_index, x, y):
-        """Detect if a current is about to hit a landform"""
-        current_u = self.CurrentMomentumU[ocean_index]
-        current_v = self.CurrentMomentumV[ocean_index]
-
-        if abs(current_u) < 0.001 and abs(current_v) < 0.001:
-            return {'collision': False}
-
-        # Calculate direction of current flow
-        current_direction = math.atan2(current_v, current_u)
-
-        # Check for landforms in the direction of current flow
-        check_distance = 2  # Look ahead 2 tiles
-        for distance in range(1, check_distance + 1):
-            # Calculate position in current direction
-            check_x = x + int(distance * math.cos(current_direction))
-            check_y = y + int(distance * math.sin(current_direction))
-
-            # Wrap coordinates
-            check_x = self._wrap_coordinate(check_x, self.mc.iNumPlotsX, self.mc.wrapX)
-            check_y = self._wrap_coordinate(check_y, self.mc.iNumPlotsY, self.mc.wrapY)
-
-            if not self._is_valid_position(check_x, check_y):
-                continue
-
-            check_i = check_y * self.mc.iNumPlotsX + check_x
-
-            # Found landform
-            if not self.em.IsBelowSeaLevel(check_i):
-                # Calculate coastline orientation
-                coastline_angle = self._calculate_coastline_orientation(check_x, check_y)
-
-                return {
-                    'collision': True,
-                    'landform_x': check_x,
-                    'landform_y': check_y,
-                    'distance': distance,
-                    'coastline_angle': coastline_angle,
-                    'current_direction': current_direction
-                }
-
-        return {'collision': False}
-
-    def _calculate_coastline_orientation(self, land_x, land_y):
-        """Calculate the orientation of the coastline at a given land position"""
-        # Sample points around the landform to determine coastline direction
-        ocean_directions = []
-
-        # Check all 8 directions around the land tile
-        for direction in range(1, 9):
-            neighbor_x, neighbor_y = self.mc.neighbours[land_y * self.mc.iNumPlotsX + land_x][direction]
-
-            if self._is_valid_position(neighbor_x, neighbor_y):
-                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-
-                # If neighbor is ocean, record the direction
-                if self.em.IsBelowSeaLevel(neighbor_i):
-                    # Calculate angle from land to ocean
-                    dx = neighbor_x - land_x
-                    dy = neighbor_y - land_y
-
-                    # Handle wrapping
-                    if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-                        dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
-                    if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-                        dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
-
-                    if dx != 0 or dy != 0:
-                        angle = math.atan2(dy, dx)
-                        ocean_directions.append(angle)
-
-        if not ocean_directions:
-            return 0.0  # Default orientation
-
-        # Calculate average direction to ocean (coastline is perpendicular to this)
-        avg_sin = sum(math.sin(angle) for angle in ocean_directions) / len(ocean_directions)
-        avg_cos = sum(math.cos(angle) for angle in ocean_directions) / len(ocean_directions)
-        ocean_direction = math.atan2(avg_sin, avg_cos)
-
-        # Coastline is perpendicular to ocean direction
-        coastline_angle = ocean_direction + math.pi / 2
-        return coastline_angle
-
-    def _deflect_current_momentum(self, ocean_index, collision_info):
-        """Deflect current momentum when it hits a landform"""
-        current_direction = collision_info['current_direction']
-        coastline_angle = collision_info['coastline_angle']
-
-        # Calculate deflection angle based on coastline orientation
-        # Current should deflect to flow parallel to the coast
-        angle_to_coast = coastline_angle - current_direction
-
-        # Normalize angle to [-π, π]
-        while angle_to_coast > math.pi:
-            angle_to_coast -= 2 * math.pi
-        while angle_to_coast < -math.pi:
-            angle_to_coast += 2 * math.pi
-
-        # Choose deflection direction (left or right) based on which is smaller angle
-        if abs(angle_to_coast) < abs(angle_to_coast + math.pi):
-            deflection_angle = coastline_angle
-        else:
-            deflection_angle = coastline_angle + math.pi
-
-        # Calculate momentum conservation
-        original_magnitude = self.CurrentMomentumMagnitude[ocean_index]
-        conserved_magnitude = original_magnitude * self.mc.currentMomentumFactor
-
-        # Apply boundary current acceleration
-        accelerated_magnitude = conserved_magnitude * self.mc.boundaryCurrentAcceleration
-
-        # Calculate new momentum components
-        new_momentum_u = accelerated_magnitude * math.cos(deflection_angle)
-        new_momentum_v = accelerated_magnitude * math.sin(deflection_angle)
-
-        # Update momentum
-        self.CurrentMomentumU[ocean_index] = new_momentum_u
-        self.CurrentMomentumV[ocean_index] = new_momentum_v
-        self.CurrentMomentumMagnitude[ocean_index] = accelerated_magnitude
-
-        # Also update the actual current
-        self.OceanCurrentU[ocean_index] = new_momentum_u
-        self.OceanCurrentV[ocean_index] = new_momentum_v
-
-    def _propagate_momentum_currents(self):
-        """Propagate momentum effects downstream to create persistent boundary currents"""
-        # Create a list of high-momentum tiles to process
-        momentum_tiles = []
-        for i in range(self.mc.iNumPlots):
-            if (self.em.IsBelowSeaLevel(i) and
-                self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold):
-                momentum_tiles.append(i)
-
-        # Process momentum propagation iteratively
-        for iteration in range(self.mc.coastalChannelingDistance):
-            new_momentum_tiles = []
-
-            for source_index in momentum_tiles:
-                if self.CurrentMomentumMagnitude[source_index] < self.mc.minimumMomentumThreshold:
-                    continue
-
-                # Propagate momentum to downstream neighbors
-                self._propagate_momentum_to_neighbors(source_index, new_momentum_tiles)
-
-            # Apply momentum decay
-            for i in momentum_tiles:
-                self.CurrentMomentumMagnitude[i] *= self.mc.momentumDecayRate
-                self.CurrentMomentumU[i] *= self.mc.momentumDecayRate
-                self.CurrentMomentumV[i] *= self.mc.momentumDecayRate
-
-                # Update actual currents with decayed momentum
-                if self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold:
-                    self.OceanCurrentU[i] = self.CurrentMomentumU[i]
-                    self.OceanCurrentV[i] = self.CurrentMomentumV[i]
-
-            # Update momentum tiles for next iteration
-            momentum_tiles = [i for i in new_momentum_tiles
-                            if self.CurrentMomentumMagnitude[i] >= self.mc.minimumMomentumThreshold]
-
-            if not momentum_tiles:
-                break  # No more momentum to propagate
-
-    def _propagate_momentum_to_neighbors(self, source_index, new_momentum_tiles):
-        """Propagate momentum from source to downstream neighbors"""
-        source_x = source_index % self.mc.iNumPlotsX
-        source_y = source_index // self.mc.iNumPlotsX
-
-        momentum_u = self.CurrentMomentumU[source_index]
-        momentum_v = self.CurrentMomentumV[source_index]
-        momentum_magnitude = self.CurrentMomentumMagnitude[source_index]
-
-        if momentum_magnitude < self.mc.minimumMomentumThreshold:
-            return
-
-        # Calculate momentum direction
-        momentum_direction = math.atan2(momentum_v, momentum_u)
-
-        # Find neighbors in the direction of momentum flow
-        propagation_targets = self._find_momentum_propagation_targets(
-            source_x, source_y, momentum_direction
-        )
-
-        for target_x, target_y, alignment_factor in propagation_targets:
-            target_index = target_y * self.mc.iNumPlotsX + target_x
-
-            # Only propagate to ocean tiles
-            if not self.em.IsBelowSeaLevel(target_index):
-                continue
-
-            # Calculate propagated momentum
-            propagated_magnitude = (momentum_magnitude * self.mc.momentumPropagationFactor *
-                                  alignment_factor)
-
-            if propagated_magnitude >= self.mc.minimumMomentumThreshold:
-                # Add to existing momentum (don't replace)
-                existing_magnitude = self.CurrentMomentumMagnitude[target_index]
-
-                if propagated_magnitude > existing_magnitude:
-                    # Update with stronger momentum
-                    self.CurrentMomentumU[target_index] = momentum_u * self.mc.momentumPropagationFactor
-                    self.CurrentMomentumV[target_index] = momentum_v * self.mc.momentumPropagationFactor
-                    self.CurrentMomentumMagnitude[target_index] = propagated_magnitude
-
-                    # Update actual current
-                    self.OceanCurrentU[target_index] = self.CurrentMomentumU[target_index]
-                    self.OceanCurrentV[target_index] = self.CurrentMomentumV[target_index]
-
-                    # Add to processing list
-                    if target_index not in new_momentum_tiles:
-                        new_momentum_tiles.append(target_index)
-
-    def _find_momentum_propagation_targets(self, source_x, source_y, momentum_direction):
-        """Find neighbor tiles in the direction of momentum flow"""
-        targets = []
-
-        # Check all 8 neighbors
-        for direction in range(1, 9):
-            neighbor_x, neighbor_y = self.mc.neighbours[source_y * self.mc.iNumPlotsX + source_x][direction]
-
-            if not self._is_valid_position(neighbor_x, neighbor_y):
-                continue
-
-            # Calculate direction from source to neighbor
-            dx = neighbor_x - source_x
-            dy = neighbor_y - source_y
-
-            # Handle wrapping
-            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-                dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
-            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-                dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
-
-            if dx == 0 and dy == 0:
-                continue
-
-            neighbor_direction = math.atan2(dy, dx)
-
-            # Calculate alignment with momentum direction
-            angle_diff = abs(momentum_direction - neighbor_direction)
-            angle_diff = min(angle_diff, 2*math.pi - angle_diff)  # Take smaller angle
-
-            # Only propagate to neighbors that are roughly in the momentum direction
-            if angle_diff <= math.pi / 2:  # Within 90 degrees
-                alignment_factor = math.cos(angle_diff)  # 1.0 for perfect alignment, 0.0 for perpendicular
-                targets.append((neighbor_x, neighbor_y, alignment_factor))
-
-        return targets
