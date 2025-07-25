@@ -164,7 +164,7 @@ try:
     # Plot ocean currents with color based on magnitude
     current_magnitude = np.sqrt(U_masked**2 + V_masked**2)
     q = ax.quiver(X, Y, U_masked, V_masked, current_magnitude,
-                  scale=20, alpha=0.8, cmap='Blues', width=0.003)
+                  alpha=0.8, cmap='Blues', width=0.003)
 
     ax.set_title('Ocean Currents with Landforms')
     ax.set_xlim(0, mc.iNumPlotsX)

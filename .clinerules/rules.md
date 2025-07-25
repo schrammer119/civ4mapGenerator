@@ -28,7 +28,6 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ### Code Organization
 
--   **Single File Architecture**: All map generation logic resides in `PlanetForge.py`
 -   **Function Order**: Implement functions in the order they're called by the game engine
 -   **Mandatory Functions**: Ensure all required functions are implemented (see CvMapScriptInterface)
 -   **Optional Overrides**: Only override functions that need custom behavior
@@ -44,7 +43,7 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ### Testing and Validation
 
--   Use `tests/CvPythonExtensions.py` as a dummy library for unit testing
+-   Use `CvPythonExtensions.py` as a dummy library for unit testing
 -   Test map generation with various world sizes and settings
 -   Validate starting position balance and resource distribution
 -   Ensure maps are playable and fun
@@ -56,6 +55,7 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 -   Comment plate tectonic and climate model logic clearly
 -   Follow Python PEP 8 style guidelines where applicable
 -   avoid the use of magic numbers, create parameters instead
+-   use only ASCII characters when creating names and comments
 
 ### Version Control
 
@@ -80,3 +80,4 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 -   ALWAYS use powershell commands, we are developing on a windows 10 system
 -   Use the "py -2.7" command to run any tests in python 2.7
+-   Since the test script makes use of matplotlib plots, the script will generally pause and wait for user input (inspect plots) but proceeding to finish and print anything to terminal.

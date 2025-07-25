@@ -162,7 +162,7 @@ class ClimateMap:
         pressure = self._solve_pressure_with_face_forcing(neighbors, conduct, sumK, force_U, force_V)
 
         # Step 4: Compute velocities with Coriolis effects
-        self._compute_ocean_velocities_with_coriolis(neighbors, conduct, pressure)
+        self._compute_ocean_velocities_with_coriolis(neighbors, conduct, pressure, force_U, force_V)
 
     def _calculate_direction_vector(self, i, j):
         """Calculate unit vector (dx, dy) from tile i to tile j"""
@@ -193,6 +193,8 @@ class ClimateMap:
         force_U = [0.0] * self.mc.iNumPlots
         force_V = [0.0] * self.mc.iNumPlots
 
+        max_temp_grad_v = 0
+
         for i in range(self.mc.iNumPlots):
             if self.em.IsBelowSeaLevel(i):
                 y = i // self.mc.iNumPlotsX
@@ -200,7 +202,7 @@ class ClimateMap:
                 latitude_rad = math.radians(latitude)
 
                 # Primary latitude-based forcing (east/west only)
-                force_U[i] = -self.mc.latitudinalForcingStrength * math.sin(2 * latitude_rad)
+                force_U[i] = -self.mc.latitudinalForcingStrength * math.cos(4 * latitude_rad) * math.cos(latitude_rad)
                 force_V[i] = 0.0  # No primary north/south forcing
 
                 # Secondary temperature gradient forcing
@@ -208,6 +210,10 @@ class ClimateMap:
                 force_U[i] += self.mc.thermalGradientFactor * temp_grad_u
                 force_V[i] += self.mc.thermalGradientFactor * temp_grad_v
 
+                if abs(temp_grad_v) > max_temp_grad_v:
+                    max_temp_grad_v = abs(temp_grad_v)
+
+        print("max temp grad v = %f" % max_temp_grad_v)
         return force_U, force_V
 
     def _calculate_temperature_gradients(self, i):
@@ -296,16 +302,16 @@ class ClimateMap:
                     dx, dy = self._calculate_direction_vector(i, j)
                     F_face_ij = ((force_U[i] + force_U[j]) * 0.5 * dx +
                                 (force_V[i] + force_V[j]) * 0.5 * dy)
-                    acc += conduct[i][idx] * pressure[j] + F_face_ij
+                    acc += conduct[i][idx] * pressure[j] - F_face_ij
 
                 pressure_new[i] = acc / sumK[i]
                 residual_SS.append((pressure_new[i] - pressure[i])**2)
 
             pressure = pressure_new
+            residual = math.sqrt(sum(residual_SS) / len(residual_SS))  # RMSE
 
             # Check convergence after minimum iterations
             if iteration >= self.mc.minSolverIterations and len(residual_SS) > 0:
-                residual = math.sqrt(sum(residual_SS) / len(residual_SS))  # RMSE
 
                 if residual < self.mc.solverTolerance:
                     print("Ocean current solver converged after %d iterations (RMSE: %.2e)" %
@@ -315,7 +321,7 @@ class ClimateMap:
         return pressure
 
 
-    def _compute_ocean_velocities_with_coriolis(self, neighbors, conduct, pressure):
+    def _compute_ocean_velocities_with_coriolis(self, neighbors, conduct, pressure, force_U, force_V):
         """Compute final ocean velocities from pressure field with Coriolis effects"""
         # Step 1: Calculate pressure-based fluxes
         pressure_flux_x = [0.0] * self.mc.iNumPlots
@@ -331,7 +337,13 @@ class ClimateMap:
 
             for idx, j in enumerate(neighbors[i]):
                 dx, dy = self._calculate_direction_vector(i, j)
-                flow = conduct[i][idx] * (pressure[i] - pressure[j])
+
+                # Calculate face-based forcing for this edge
+                F_face_ij = (force_U[i] + force_U[j]) * 0.5 * dx + (force_V[i] + force_V[j]) * 0.5 * dy
+
+                # Total flux is pressure gradient + forcing
+                flow = conduct[i][idx] * (pressure[i] - pressure[j]) + F_face_ij
+
                 flux_x += flow * dx
                 flux_y += flow * dy
 
@@ -351,7 +363,7 @@ class ClimateMap:
             latitude_rad = math.radians(latitude)
             f_coriolis = 2 * self.mc.earthRotationRate * math.sin(latitude_rad) * self.mc.coriolisStrength
 
-            # Apply Coriolis rotation: k × J_p
+            # Apply Coriolis rotation: k x J_p
             # Jcx = -f * Jpy, Jcy = f * Jpx
             coriolis_flux_x = -f_coriolis * pressure_flux_y[i]
             coriolis_flux_y = f_coriolis * pressure_flux_x[i]
@@ -359,6 +371,10 @@ class ClimateMap:
             # Total velocity = pressure-driven + Coriolis-rotated
             self.OceanCurrentU[i] = pressure_flux_x[i] + coriolis_flux_x
             self.OceanCurrentV[i] = pressure_flux_y[i] + coriolis_flux_y
+
+        maxV = max(abs(x) for x in self.OceanCurrentU + self.OceanCurrentV)
+        self.OceanCurrentU = [u / maxV for u in self.OceanCurrentU]
+        self.OceanCurrentV = [u / maxV for u in self.OceanCurrentV]
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""

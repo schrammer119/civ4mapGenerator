@@ -129,14 +129,14 @@ class MapConstants:
 
         # Ocean current solver parameters
         self.oceanCurrentK0 = 1.0              # Base conductance scalar
-        self.currentSolverIterations = 1500    # Jacobi iteration count
-        self.thermalGradientFactor = 0.5       # Temperature gradient forcing strength
+        self.currentSolverIterations = 200     # Jacobi iteration count
+        self.thermalGradientFactor = 1.4       # Temperature gradient forcing strength
         self.latitudinalForcingStrength = 1.0  # Primary east/west forcing strength
-        self.coriolisStrength = 1.0            # Coriolis effect strength modifier
-        self.earthRotationRate = 7.27e-5      # Earth's rotation rate (rad/s)
+        self.coriolisStrength = 150            # Coriolis effect strength modifier
+        self.earthRotationRate = 7.27e-5       # Earth's rotation rate (rad/s)
 
         # Convergence parameters for ocean current solver
-        self.solverTolerance = 1e-6            # RMSE tolerance for pressure changes
+        self.solverTolerance = 1e-1            # RMSE tolerance for pressure changes
         self.minSolverIterations = 10          # Minimum iterations before checking convergence
 
     def _initialize_algorithm_parameters(self):
