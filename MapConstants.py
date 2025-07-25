@@ -135,6 +135,10 @@ class MapConstants:
         self.coriolisStrength = 1.0            # Coriolis effect strength modifier
         self.earthRotationRate = 7.27e-5      # Earth's rotation rate (rad/s)
 
+        # Convergence parameters for ocean current solver
+        self.solverTolerance = 1e-6            # RMSE tolerance for pressure changes
+        self.minSolverIterations = 10          # Minimum iterations before checking convergence
+
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""
         # Plate tectonics parameters

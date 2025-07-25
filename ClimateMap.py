@@ -158,14 +158,11 @@ class ClimateMap:
         # Step 2: Precompute connectivity and conductances
         neighbors, conduct, sumK = self._precompute_ocean_connectivity()
 
-        # Step 3: Compute forcing divergence
-        force_div = self._compute_forcing_divergence(force_U, force_V)
+        # Step 3: Solve pressure with face-based forcing
+        pressure = self._solve_pressure_with_face_forcing(neighbors, conduct, sumK, force_U, force_V)
 
-        # Step 4: Solve pressure with Coriolis effects
-        pressure = self._solve_pressure_with_coriolis(neighbors, conduct, sumK, force_div)
-
-        # Step 5: Compute velocities from pressure
-        self._compute_ocean_velocities(neighbors, conduct, pressure)
+        # Step 4: Compute velocities with Coriolis effects
+        self._compute_ocean_velocities_with_coriolis(neighbors, conduct, pressure)
 
     def _calculate_direction_vector(self, i, j):
         """Calculate unit vector (dx, dy) from tile i to tile j"""
@@ -278,143 +275,90 @@ class ClimateMap:
 
         return neighbors, conduct, sumK
 
-    def _compute_forcing_divergence(self, force_U, force_V):
-        """Compute forcing divergence from force fields"""
-        force_div = [0.0] * self.mc.iNumPlots
 
-        # Use the 8-neighbor offsets (equal weights, no distance correction)
-        offsets = [
-            (1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)
-        ]
-
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-            acc = 0.0
-
-            for dx, dy in offsets:
-                neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
-                neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
-
-                if not self._is_valid_position(neighbor_x, neighbor_y):
-                    continue
-
-                j = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                if not self.em.IsBelowSeaLevel(j):
-                    continue
-
-                dU = force_U[j] - force_U[i]
-                dV = force_V[j] - force_V[i]
-                acc += (dU * dx + dV * dy) / 16.0  # 8 neighbors, factor of 2 from original
-
-            force_div[i] = acc
-
-        return force_div
-
-    def _solve_pressure_with_coriolis(self, neighbors, conduct, sumK, force_div):
-        """Solve pressure with Coriolis effects using modified Jacobi iteration"""
+    def _solve_pressure_with_face_forcing(self, neighbors, conduct, sumK, force_U, force_V):
+        """Solve pressure with face-based forcing and RMSE convergence detection"""
         pressure = [0.0] * self.mc.iNumPlots
 
         for iteration in range(self.mc.currentSolverIterations):
-            # Calculate current velocities for Coriolis terms
-            ux, uy = self._estimate_velocities_from_pressure(pressure, neighbors, conduct)
-
-            # Calculate Coriolis terms
-            coriolis_terms = self._calculate_coriolis_terms(ux, uy)
-
-            # Update pressure with Coriolis
             pressure_new = pressure[:]
+            residual_SS = []
+
             for i in range(self.mc.iNumPlots):
                 if not self.em.IsBelowSeaLevel(i):
                     continue
-
                 if sumK[i] == 0:
                     continue
 
-                acc = force_div[i] + coriolis_terms[i]
+                # Calculate face-based forcing accumulator
+                acc = 0.0
                 for idx, j in enumerate(neighbors[i]):
-                    acc += conduct[i][idx] * pressure[j]
+                    dx, dy = self._calculate_direction_vector(i, j)
+                    F_face_ij = ((force_U[i] + force_U[j]) * 0.5 * dx +
+                                (force_V[i] + force_V[j]) * 0.5 * dy)
+                    acc += conduct[i][idx] * pressure[j] + F_face_ij
 
                 pressure_new[i] = acc / sumK[i]
+                residual_SS.append((pressure_new[i] - pressure[i])**2)
 
             pressure = pressure_new
 
+            # Check convergence after minimum iterations
+            if iteration >= self.mc.minSolverIterations and len(residual_SS) > 0:
+                residual = math.sqrt(sum(residual_SS) / len(residual_SS))  # RMSE
+
+                if residual < self.mc.solverTolerance:
+                    print("Ocean current solver converged after %d iterations (RMSE: %.2e)" %
+                          (iteration + 1, residual))
+                    break
+
         return pressure
 
-    def _estimate_velocities_from_pressure(self, pressure, neighbors, conduct):
-        """Estimate velocities from current pressure field"""
-        ux = [0.0] * self.mc.iNumPlots
-        uy = [0.0] * self.mc.iNumPlots
+
+    def _compute_ocean_velocities_with_coriolis(self, neighbors, conduct, pressure):
+        """Compute final ocean velocities from pressure field with Coriolis effects"""
+        # Step 1: Calculate pressure-based fluxes
+        pressure_flux_x = [0.0] * self.mc.iNumPlots
+        pressure_flux_y = [0.0] * self.mc.iNumPlots
 
         for i in range(self.mc.iNumPlots):
             if not self.em.IsBelowSeaLevel(i):
                 continue
 
             depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
-            vx = 0.0
-            vy = 0.0
+            flux_x = 0.0
+            flux_y = 0.0
 
             for idx, j in enumerate(neighbors[i]):
                 dx, dy = self._calculate_direction_vector(i, j)
                 flow = conduct[i][idx] * (pressure[i] - pressure[j])
-                vx += flow * dx
-                vy += flow * dy
+                flux_x += flow * dx
+                flux_y += flow * dy
 
-            ux[i] = vx / depth_i
-            uy[i] = vy / depth_i
+            pressure_flux_x[i] = flux_x / depth_i
+            pressure_flux_y[i] = flux_y / depth_i
 
-        return ux, uy
-
-    def _calculate_coriolis_terms(self, ux, uy):
-        """Calculate Coriolis terms for pressure equation"""
-        coriolis_terms = [0.0] * self.mc.iNumPlots
-
-        for i in range(self.mc.iNumPlots):
-            if not self.em.IsBelowSeaLevel(i):
-                continue
-
-            y = i // self.mc.iNumPlotsX
-            latitude = self.GetLatitudeForY(y)
-            latitude_rad = math.radians(latitude)
-
-            # Calculate Coriolis parameter
-            f = 2 * self.mc.earthRotationRate * math.sin(latitude_rad)
-
-            # Coriolis force is perpendicular to velocity
-            # In the northern hemisphere, deflects to the right
-            # In the southern hemisphere, deflects to the left
-            coriolis_u = -f * uy[i]  # Coriolis effect on u-component
-            coriolis_v = f * ux[i]   # Coriolis effect on v-component
-
-            # Convert to pressure term (simplified)
-            coriolis_terms[i] = self.mc.coriolisStrength * (coriolis_u + coriolis_v) * 0.5
-
-        return coriolis_terms
-
-    def _compute_ocean_velocities(self, neighbors, conduct, pressure):
-        """Compute final ocean velocities from pressure field"""
+        # Step 2: Apply Coriolis rotation to fluxes
         for i in range(self.mc.iNumPlots):
             if not self.em.IsBelowSeaLevel(i):
                 self.OceanCurrentU[i] = 0.0
                 self.OceanCurrentV[i] = 0.0
                 continue
 
-            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
-            vx = 0.0
-            vy = 0.0
+            # Calculate Coriolis parameter
+            y = i // self.mc.iNumPlotsX
+            latitude = self.GetLatitudeForY(y)
+            latitude_rad = math.radians(latitude)
+            f_coriolis = 2 * self.mc.earthRotationRate * math.sin(latitude_rad) * self.mc.coriolisStrength
 
-            for idx, j in enumerate(neighbors[i]):
-                dx, dy = self._calculate_direction_vector(i, j)
-                flow = conduct[i][idx] * (pressure[i] - pressure[j])
-                vx += flow * dx
-                vy += flow * dy
+            # Apply Coriolis rotation: k × J_p
+            # Jcx = -f * Jpy, Jcy = f * Jpx
+            coriolis_flux_x = -f_coriolis * pressure_flux_y[i]
+            coriolis_flux_y = f_coriolis * pressure_flux_x[i]
 
-            self.OceanCurrentU[i] = vx / depth_i
-            self.OceanCurrentV[i] = vy / depth_i
+            # Total velocity = pressure-driven + Coriolis-rotated
+            self.OceanCurrentU[i] = pressure_flux_x[i] + coriolis_flux_x
+            self.OceanCurrentV[i] = pressure_flux_y[i] + coriolis_flux_y
 
     def _latitude_to_y(self, latitude):
         """Convert latitude to y coordinate"""
