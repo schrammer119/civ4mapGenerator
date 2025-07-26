@@ -3,13 +3,13 @@ import CvUtil
 import random
 import math
 from collections import deque
-from MapConstants import MapConstants
+from MapConfig import MapConfig
 
 class ElevationMap:
     def __init__(self, map_constants=None):
-        # Use provided MapConstants or create new instance
+        # Use provided MapConfig or create new instance
         if map_constants is None:
-            self.mc = MapConstants()
+            self.mc = MapConfig()
         else:
             self.mc = map_constants
 
@@ -55,22 +55,27 @@ class ElevationMap:
 
     def GenerateElevationMap(self):
         """Main method to generate the complete elevation map using plate tectonics"""
+        print("----Generating Topography System----")
 
         # Generate continental plates using improved organic growth
+        print("Generating Continental Plates")
         self._generate_continental_plates()
 
         # Calculate plate properties and dynamics
+        print("Generating Plate Velocites")
         self._calculate_plate_properties()
         self._generate_hotspot_plumes()
         self._calculate_plate_velocities()
 
         # Generate elevation components
+        print("Generating Preliminary Elevation")
         self._generate_base_elevation()
         self._generate_velocity_elevation()
         self._generate_buoyancy_elevation()
         self._combine_preliminary_elevation()
 
         # Process tectonic boundaries
+        print("Generating Tectonic Boundaries, Volcanic Activity, and finalizing elevation maps")
         self._process_tectonic_boundaries()
 
         # Add volcanic activity
@@ -131,7 +136,7 @@ class ElevationMap:
 
             self.seedList.append(continent_data)
             self.continentID[main_index] = continent_id
-            growth_queue.append((main_index, continent_id, 0))
+            growth_queue.append((main_index, continent_id))
 
             # Add secondary seeds for more complex continental shapes
             self._add_secondary_seeds(continent_data, x_coords, y_coords, growth_queue)
@@ -158,14 +163,14 @@ class ElevationMap:
 
                     # Update centroid using wrap-aware calculation
                     self._update_continent_centroid(continent_data)
-                    growth_queue.append((sec_index, continent_id, 0))
+                    growth_queue.append((sec_index, continent_id))
 
     def _grow_continents_organically(self):
         """Grow continents using organic algorithm with natural, realistic shapes"""
         growth_queue = self._place_continent_seeds()
 
         while growth_queue:
-            plot_index, continent_id, generation = growth_queue.popleft()
+            plot_index, continent_id = growth_queue.popleft()
             x = plot_index % self.mc.iNumPlotsX
             y = plot_index // self.mc.iNumPlotsX
 
@@ -187,11 +192,11 @@ class ElevationMap:
                     self.continentID[neighbour_index] = continent_id
                     continent["size"] += 1
                     self._update_continent_centroid(continent)
-                    growth_queue.append((neighbour_index, continent_id, generation + 1))
+                    growth_queue.append((neighbour_index, continent_id))
 
             # Re-queue if there are still available neighbours
             if self._has_available_neighbours(plot_index):
-                growth_queue.append((plot_index, continent_id, generation))
+                growth_queue.append((plot_index, continent_id))
 
     def _calculate_growth_probability(self, continent, x, y):
         """Calculate growth probability based on geological factors"""
@@ -213,7 +218,7 @@ class ElevationMap:
         """Calculate minimum distance to any seed of the continent"""
         min_distance = float('inf')
         for seed in continent["seeds"]:
-            dx, dy = self._get_wrapped_distance(x, y, seed["x"], seed["y"])
+            dx, dy = self.mc.get_wrapped_distance(x, y, seed["x"], seed["y"])
             distance = math.sqrt(dx*dx + dy*dy)
             min_distance = min(min_distance, distance)
         return min_distance
@@ -318,8 +323,8 @@ class ElevationMap:
 
             if continent_id < self.mc.plateCount:
                 continent = self.seedList[continent_id]
-                dx, dy = self._get_wrapped_distance(x, y, continent["x_centroid"], continent["y_centroid"])
-                continent["moment"] += continent["plateDensity"] * (dx**2 + dy**2)
+                dx, dy = self.mc.get_wrapped_distance(x, y, continent["x_centroid"], continent["y_centroid"])
+                continent["moment"] += continent["plateDensity"] * (dx*dx + dy*dy)
 
     def _generate_hotspot_plumes(self):
         """Generate hotspot plume locations"""
@@ -376,7 +381,7 @@ class ElevationMap:
             y = plot_index // self.mc.iNumPlotsX
 
             for plume in self.plumeList:
-                dx, dy = self._get_wrapped_distance(x, y, plume["x"], plume["y"])
+                dx, dy = self.mc.get_wrapped_distance(x, y, plume["x"], plume["y"])
                 distance_squared = dx*dx + dy*dy
 
                 # Limit influence distance to prevent edge effects
@@ -515,7 +520,7 @@ class ElevationMap:
         plate_centroid_x = self.seedList[subducting_plate]["x_centroid"]
         plate_centroid_y = self.seedList[subducting_plate]["y_centroid"]
 
-        dx, dy = self._get_wrapped_distance(
+        dx, dy = self.mc.get_wrapped_distance(
             plate_centroid_x, plate_centroid_y,
             zone['avg_x'], zone['avg_y']
         )
@@ -540,7 +545,7 @@ class ElevationMap:
         age_factor = self.seedList[subducting_plate]["plateDensity"]
 
         # Calculate total force magnitude
-        force_magnitude = (self.mc.baseSlabtPull * density_factor *
+        force_magnitude = (self.mc.baseSlabPull * density_factor *
                           length_factor * distance_factor * age_factor)
 
         # Apply force scaled by plate mass
@@ -567,7 +572,7 @@ class ElevationMap:
         for i in range(self.mc.plateCount):
             for j in range(i + 1, self.mc.plateCount):
                 # Distance between plate centroids
-                dx, dy = self._get_wrapped_distance(
+                dx, dy = self.mc.get_wrapped_distance(
                     self.seedList[i]["x_centroid"], self.seedList[i]["y_centroid"],
                     self.seedList[j]["x_centroid"], self.seedList[j]["y_centroid"]
                 )
@@ -680,7 +685,7 @@ class ElevationMap:
             continent_id = self.continentID[plot_index]
 
             if continent_id < self.mc.plateCount:
-                dx, dy = self._get_wrapped_distance(
+                dx, dy = self.mc.get_wrapped_distance(
                     x, y,
                     self.seedList[continent_id]["x_centroid"],
                     self.seedList[continent_id]["y_centroid"]
@@ -694,17 +699,17 @@ class ElevationMap:
         self.elevationBaseMap = [1.0 - self.seedList[continent_id]["plateDensity"]
                                 if continent_id < self.mc.plateCount else 0.0
                                 for continent_id in self.continentID]
-        self.elevationBaseMap = self._normalize_map(self.elevationBaseMap)
+        self.elevationBaseMap = self.mc.normalize_map(self.elevationBaseMap)
 
     def _generate_velocity_elevation(self):
         """Generate elevation changes due to plate velocity"""
         self._calculate_velocity_gradient()
-        self.elevationVelMap = self._normalize_map(self.elevationVelMap)
+        self.elevationVelMap = self.mc.normalize_map(self.elevationVelMap)
 
     def _generate_buoyancy_elevation(self):
         """Generate elevation based on distance from continent centroids (buoyancy effect)"""
         max_distance = max(self.d_centroid) if self.d_centroid else 1.0
-        self.elevationBuoyMap = self._normalize_map([max_distance - distance for distance in self.d_centroid])
+        self.elevationBuoyMap = self.mc.normalize_map([max_distance - distance for distance in self.d_centroid])
 
     def _combine_preliminary_elevation(self):
         """Combine base, velocity, and buoyancy elevation components"""
@@ -715,7 +720,7 @@ class ElevationMap:
                         self.mc.plateBuoyancyFactor * self.elevationBuoyMap[i])
             combined_elevation.append(elevation)
 
-        self.elevationPrelMap = self._gaussian_blur_2d(combined_elevation, radius=self.mc.boundarySmoothing)
+        self.elevationPrelMap = self.mc.gaussian_blur(combined_elevation, radius=self.mc.boundarySmoothing)
 
     def _process_tectonic_boundaries(self):
         """Process all tectonic boundaries to create realistic mountain ranges and rifts"""
@@ -726,7 +731,7 @@ class ElevationMap:
             self._process_single_boundary(boundary)
 
         self._apply_erosion_effects()
-        self.elevationBoundaryMap = self._normalize_map(self.elevationBoundaryMap)
+        self.elevationBoundaryMap = self.mc.normalize_map(self.elevationBoundaryMap)
 
     def _collect_boundary_interactions(self):
         """Collect all boundary interactions for processing"""
@@ -897,7 +902,7 @@ class ElevationMap:
                 if i == 0 and j == 0:
                     continue
 
-                target_x, target_y = self._wrap_coordinates(x + i, y + j)
+                target_x, target_y = self.mc.wrap_coordinates(x + i, y + j)
                 target_index = target_y * self.mc.iNumPlotsX + target_x
 
                 if target_index < 0 or target_index >= self.mc.iNumPlots:
@@ -926,7 +931,7 @@ class ElevationMap:
         roughness = 0
         for octave in [1, 2, 4]:
             noise_scale = octave * 0.1
-            noise_value = self._get_perlin_noise(x * noise_scale, y * noise_scale)
+            noise_value = self.mc.get_perlin_noise(x * noise_scale, y * noise_scale)
             roughness += noise_value / octave
         return roughness
 
@@ -942,7 +947,7 @@ class ElevationMap:
         end_y = end_index // self.mc.iNumPlotsX
 
         # Calculate fault direction and length
-        dx, dy = self._get_wrapped_distance(start_x, start_y, end_x, end_y)
+        dx, dy = self.mc.get_wrapped_distance(start_x, start_y, end_x, end_y)
         length = max(1, int(math.sqrt(dx**2 + dy**2)))
 
         if length == 0:
@@ -964,7 +969,7 @@ class ElevationMap:
             fault_y += meander * math.sin(direction + math.pi/2)
 
             # Wrap coordinates and create valley
-            fault_x, fault_y = self._wrap_coordinates(int(fault_x), int(fault_y))
+            fault_x, fault_y = self.mc.wrap_coordinates(int(fault_x), int(fault_y))
             fault_index = fault_y * self.mc.iNumPlotsX + fault_x
 
             if fault_index >= 0 and fault_index < self.mc.iNumPlots:
@@ -981,7 +986,7 @@ class ElevationMap:
                 side_x = fault_x + side * ridge_distance * math.cos(direction + math.pi/2)
                 side_y = fault_y + side * ridge_distance * math.sin(direction + math.pi/2)
 
-                side_x, side_y = self._wrap_coordinates(int(side_x), int(side_y))
+                side_x, side_y = self.mc.wrap_coordinates(int(side_x), int(side_y))
                 side_index = side_y * self.mc.iNumPlotsX + side_x
 
                 if side_index >= 0 and side_index < self.mc.iNumPlots:
@@ -1032,8 +1037,8 @@ class ElevationMap:
                 y += int(step_distance * math.sin(movement_angle))
 
                 # Handle wrapping and bounds checking
-                x, y = self._wrap_coordinates(x, y)
-                if not self._coordinates_in_bounds(x, y):
+                x, y = self.mc.wrap_coordinates(x, y)
+                if not self.mc.coordinates_in_bounds(x, y):
                     break
 
                 plot_index = y * self.mc.iNumPlotsX + x
@@ -1078,7 +1083,7 @@ class ElevationMap:
                     base_height = height * (math.cos(math.pi * distance / effective_radius) + 1.0) / 2.0
                     final_height = base_height * directional_factor * roughness
 
-                    target_x, target_y = self._wrap_coordinates(center_x + dx, center_y + dy)
+                    target_x, target_y = self.mc.wrap_coordinates(center_x + dx, center_y + dy)
                     target_index = target_y * self.mc.iNumPlotsX + target_x
 
                     if 0 <= target_index < self.mc.iNumPlots:
@@ -1089,7 +1094,7 @@ class ElevationMap:
         for i in range(self.mc.iNumPlots):
             self.elevationMap[i] = (self.elevationPrelMap[i] +
                                    self.mc.boundaryFactor * self.elevationBoundaryMap[i])
-        self.elevationMap = self._normalize_map(self.elevationMap)
+        self.elevationMap = self.mc.normalize_map(self.elevationMap)
 
     def _add_perlin_noise_variation(self):
         """Add natural variation using multi-octave Perlin noise"""
@@ -1097,7 +1102,7 @@ class ElevationMap:
         perlin_noise = []
         for i in range(3):  # Three octaves
             scale = 4.0 * (2 ** i)  # 4.0, 8.0, 16.0
-            octave_noise = self._generate_perlin_grid(scale=scale)
+            octave_noise = self.mc.generate_perlin_grid(scale=scale)
             perlin_noise.append(octave_noise)
 
         # Combine octaves
@@ -1106,19 +1111,19 @@ class ElevationMap:
             noise_value = sum(perlin_noise[octave][i] for octave in range(3))
             combined_noise.append(noise_value)
 
-        combined_noise = self._normalize_map(combined_noise)
+        combined_noise = self.mc.normalize_map(combined_noise)
 
         # Add to elevation map
         for i in range(self.mc.iNumPlots):
             self.elevationMap[i] += self.mc.perlinNoiseFactor * combined_noise[i]
 
-        self.elevationMap = self._normalize_map(self.elevationMap)
+        self.elevationMap = self.mc.normalize_map(self.elevationMap)
 
     def _calculate_sea_levels(self):
         """Calculate sea level and coast level thresholds"""
         # Adjust land percentage based on sea level setting
         adjusted_land_percent = self.mc.landPercent - (self.mc.seaLevelChange / 100.0)
-        self.seaLevelThreshold = self._find_value_from_percent(
+        self.seaLevelThreshold = self.mc.find_value_from_percent(
             self.elevationMap, adjusted_land_percent, descending=True
         )
 
@@ -1127,7 +1132,7 @@ class ElevationMap:
                       if elevation < self.seaLevelThreshold]
 
         if water_tiles:
-            self.coastLevelThreshold = self._find_value_from_percent(
+            self.coastLevelThreshold = self.mc.find_value_from_percent(
                 water_tiles, self.mc.coastPercent, descending=True
             )
         else:
@@ -1150,7 +1155,7 @@ class ElevationMap:
 
             self.prominenceMap[i] = max_elevation_diff
 
-        self.prominenceMap = self._normalize_map(self.prominenceMap)
+        self.prominenceMap = self.mc.normalize_map(self.prominenceMap)
 
     def _calculate_terrain_thresholds(self):
         """Calculate height thresholds for peaks and hills"""
@@ -1163,8 +1168,8 @@ class ElevationMap:
                           if self.elevationMap[i] > self.seaLevelThreshold]
 
         if land_prominence:
-            self.peakHeight = self._find_value_from_percent(land_prominence, peak_percent, True)
-            self.hillHeight = self._find_value_from_percent(land_prominence, hill_percent, True)
+            self.peakHeight = self.mc.find_value_from_percent(land_prominence, peak_percent, True)
+            self.hillHeight = self.mc.find_value_from_percent(land_prominence, hill_percent, True)
         else:
             self.peakHeight = 0.0
             self.hillHeight = 0.0
@@ -1231,19 +1236,6 @@ class ElevationMap:
                 self.continentID[neighbour_index] == continent_id):
                 queue.append(neighbour_index)
 
-    # Utility methods
-    def _get_wrapped_distance(self, x1, y1, x2, y2):
-        """Calculate distance considering map wrapping"""
-        dx = x1 - x2
-        dy = y1 - y2
-
-        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-            dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
-        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-            dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
-
-        return dx, dy
-
     def _calculate_wrap_aware_centroid(self, coordinates):
         """Calculate centroid considering map wrapping using circular mean"""
         if not coordinates:
@@ -1277,28 +1269,6 @@ class ElevationMap:
             y_centroid = sum(y_coords) / len(y_coords)
 
         return x_centroid, y_centroid
-
-    def _wrap_coordinates(self, x, y):
-        """Wrap coordinates according to map settings"""
-        if self.mc.wrapX:
-            x = x % self.mc.iNumPlotsX
-        else:
-            x = max(0, min(self.mc.iNumPlotsX - 1, x))
-
-        if self.mc.wrapY:
-            y = y % self.mc.iNumPlotsY
-        else:
-            y = max(0, min(self.mc.iNumPlotsY - 1, y))
-
-        return x, y
-
-    def _coordinates_in_bounds(self, x, y):
-        """Check if coordinates are within map bounds"""
-        if not self.mc.wrapX and (x < 0 or x >= self.mc.iNumPlotsX):
-            return False
-        if not self.mc.wrapY and (y < 0 or y >= self.mc.iNumPlotsY):
-            return False
-        return True
 
     def _get_offset_coords(self, x, y, direction, distance):
         """Get coordinates offset by distance in given direction"""
@@ -1342,176 +1312,3 @@ class ElevationMap:
             return new_x, new_y
         else:
             return x, y
-
-    def _normalize_map(self, map_data):
-        """Normalize a map to 0-1 range"""
-        if not map_data:
-            return map_data
-
-        min_val = min(map_data)
-        max_val = max(map_data)
-
-        if max_val - min_val == 0:
-            return [val / max_val if max_val != 0 else 0 for val in map_data]
-        else:
-            return [(val - min_val) / (max_val - min_val) for val in map_data]
-
-    def _gaussian_blur_2d(self, grid, radius=2):
-        """Apply 2D Gaussian blur to a grid"""
-        if radius <= 0 or radius >= len(self._get_sigma_list()):
-            return grid
-
-        sigma_list = self._get_sigma_list()
-        sigma = sigma_list[radius]
-
-        # Create Gaussian kernel
-        kernel = []
-        kernel_sum = 0.0
-        for i in range(-radius, radius + 1):
-            val = math.exp(-(i ** 2) / (2 * sigma ** 2))
-            kernel.append(val)
-            kernel_sum += val
-
-        # Normalize kernel
-        kernel = [v / kernel_sum for v in kernel]
-
-        # Horizontal pass
-        temp_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-            weighted_sum = 0.0
-            weight_total = 0.0
-
-            for k in range(-radius, radius + 1):
-                neighbour_x = x + k
-                if self.mc.wrapX:
-                    neighbour_x = neighbour_x % self.mc.iNumPlotsX
-                elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
-                    continue
-
-                neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
-                weighted_sum += grid[neighbour_index] * kernel[k + radius]
-                weight_total += kernel[k + radius]
-
-            temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-
-        # Vertical pass
-        result_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-            weighted_sum = 0.0
-            weight_total = 0.0
-
-            for k in range(-radius, radius + 1):
-                neighbour_y = y + k
-                if self.mc.wrapY:
-                    neighbour_y = neighbour_y % self.mc.iNumPlotsY
-                elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
-                    continue
-
-                neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
-                weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
-                weight_total += kernel[k + radius]
-
-            result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-
-        return result_grid
-
-    def _get_sigma_list(self):
-        """Get pre-calculated sigma values for Gaussian blur"""
-        return [0.0, 0.32, 0.7, 1.12, 1.57, 2.05, 2.56, 3.09, 3.66, 4.25, 4.87, 5.53,
-                6.22, 6.95, 7.72, 8.54, 9.41, 10.34, 11.35, 12.44, 13.66, 15.02, 16.63, 18.65]
-
-    def _find_value_from_percent(self, data_list, percent, descending=True):
-        """Find value from list such that 'percent' of elements are above/below it"""
-        if not data_list:
-            return 0.0
-
-        sorted_list = sorted(data_list, reverse=descending)
-        index = int(percent * len(data_list))
-        if index >= len(sorted_list):
-            index = len(sorted_list) - 1
-        return sorted_list[index]
-
-    # Perlin noise implementation
-    class Perlin2D:
-        """2D Perlin noise generator"""
-        def __init__(self, seed=None):
-            self.p = list(range(256))
-            if seed is not None:
-                random.seed(seed)
-            random.shuffle(self.p)
-            self.p += self.p  # Repeat for wrapping
-
-        def noise(self, x, y):
-            """Generate Perlin noise at coordinates (x, y)"""
-            # Find unit grid cell containing point
-            grid_x = int(math.floor(x)) & 255
-            grid_y = int(math.floor(y)) & 255
-
-            # Relative coordinates within cell
-            rel_x = x - math.floor(x)
-            rel_y = y - math.floor(y)
-
-            # Fade curves for smooth interpolation
-            fade_x = self._fade(rel_x)
-            fade_y = self._fade(rel_y)
-
-            # Hash coordinates of the 4 square corners
-            aa = self.p[self.p[grid_x] + grid_y]
-            ab = self.p[self.p[grid_x] + grid_y + 1]
-            ba = self.p[self.p[grid_x + 1] + grid_y]
-            bb = self.p[self.p[grid_x + 1] + grid_y + 1]
-
-            # Blend results from 4 corners
-            x1 = self._lerp(self._grad(aa, rel_x, rel_y),
-                           self._grad(ba, rel_x - 1, rel_y), fade_x)
-            x2 = self._lerp(self._grad(ab, rel_x, rel_y - 1),
-                           self._grad(bb, rel_x - 1, rel_y - 1), fade_x)
-
-            return (self._lerp(x1, x2, fade_y) + 1) / 2  # Normalize to [0,1]
-
-        def _fade(self, t):
-            """Perlin's fade function for smooth interpolation"""
-            return t * t * t * (t * (t * 6 - 15) + 10)
-
-        def _lerp(self, a, b, t):
-            """Linear interpolation"""
-            return a + t * (b - a)
-
-        def _grad(self, hash_val, x, y):
-            """Convert hash code into gradient direction"""
-            h = hash_val & 7
-            u = x if h < 4 else y
-            v = y if h < 4 else x
-            return (u if (h & 1) == 0 else -u) + (v if (h & 2) == 0 else -v)
-
-    def _generate_perlin_grid(self, scale=10.0, seed=None):
-        """Generate a grid of Perlin noise values"""
-        perlin = self.Perlin2D(seed)
-        grid = []
-        for y in range(self.mc.iNumPlotsY):
-            for x in range(self.mc.iNumPlotsX):
-                normalized_x = x / scale
-                normalized_y = y / scale
-                grid.append(perlin.noise(normalized_x, normalized_y))
-        return grid
-
-    def _get_perlin_noise(self, x, y, seed=None):
-        """Get Perlin noise value at specific coordinates"""
-        if not hasattr(self, '_perlin_instance'):
-            self._perlin_instance = self.Perlin2D(seed)
-
-        # Scale to match original frequency characteristics
-        return self._perlin_instance.noise(x, y)
-
-    # Legacy method compatibility
-    def Normalize(self, data_list):
-        """Normalize list to 0-1 range (legacy compatibility)"""
-        return self._normalize_map(data_list)
-
-    def FindValueFromPercent(self, data_list, percent, descending=True):
-        """Find value from percent (legacy compatibility)"""
-        return self._find_value_from_percent(data_list, percent, descending)

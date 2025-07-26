@@ -11,7 +11,7 @@ from collections import deque
 # when finish, re-incorporate into this file
 from ElevationMap import *
 from ClimateMap import *
-from MapConstants import MapConstants
+from MapConfig import MapConfig
 
 """
 PlanetForge Map Script
@@ -71,8 +71,8 @@ def generatePlotTypes():
     """Generate the basic plot types using plate tectonic simulation"""
     global mapConstants, elevationMap
 
-    # Initialize shared MapConstants instance
-    mapConstants = MapConstants()
+    # Initialize shared MapConfig instance
+    mapConstants = MapConfig()
 
     # Initialize and generate elevation map with shared constants
     elevationMap = ElevationMap(mapConstants)

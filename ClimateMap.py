@@ -2,8 +2,8 @@ from CvPythonExtensions import *
 import CvUtil
 import random
 import math
-from array import array
-from MapConstants import MapConstants
+from collections import deque
+from MapConfig import MapConfig
 from ElevationMap import ElevationMap
 
 class ClimateMap:
@@ -18,9 +18,9 @@ class ClimateMap:
         """Initialize climate map with required dependencies"""
         self.em = elevation_map
 
-        # Use provided MapConstants or create new instance
+        # Use provided MapConfig or create new instance
         if map_constants is None:
-            self.mc = MapConstants()
+            self.mc = MapConfig()
         else:
             self.mc = map_constants
 
@@ -60,23 +60,29 @@ class ClimateMap:
 
     def GenerateClimateMap(self):
         """Main method to generate complete climate system"""
-        print("Generating Climate System")
+        print("----Generating Climate System----")
         self.GenerateTemperatureMap()
         self.GenerateRainfallMap()
         self.GenerateRiverMap()
 
     def GenerateTemperatureMap(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
-        print("Generating Temperature Map")
 
         # Create above sea level map for elevation effects
         aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
 
+        print("Generating Base Temperature Map")
         self._calculate_elevation_effects(aboveSeaLevelMap)
         self._generate_base_temperature(aboveSeaLevelMap)
+
+        print("Generating Ocean Currents")
         self._generate_ocean_currents()
         self._apply_ocean_current_and_maritime_effects()
+
+        print("Generating Wind Patterns")
         self._generate_wind_patterns()
+
+        print("Finishing Temperature Map")
         self._apply_temperature_smoothing()
         self._apply_polar_cooling()
 
@@ -87,12 +93,12 @@ class ClimateMap:
                 aboveSeaLevelMap[i] = 0.0
             else:
                 aboveSeaLevelMap[i] = self.em.elevationMap[i] - self.em.seaLevelThreshold
-        aboveSeaLevelMap = self._normalize_map(aboveSeaLevelMap)
+        aboveSeaLevelMap = self.mc.normalize_map(aboveSeaLevelMap)
 
     def _generate_base_temperature(self, aboveSeaLevelMap):
         """Generate base temperature based on latitude and elevation using accurate solar radiation model"""
         for y in range(self.mc.iNumPlotsY):
-            lat = self.GetLatitudeForY(y)
+            lat = self.mc.get_latitude_for_y(y)
 
             # Calculate solar radiation using cosine of latitude (physically accurate)
             solar_factor = self._calculate_solar_radiation(lat)
@@ -133,7 +139,7 @@ class ClimateMap:
         original_temp = self.TemperatureMap[:]
 
         # Apply thermal inertia by blending with smoothed version
-        smoothed_temp = self._gaussian_blur_2d(self.TemperatureMap, 2)
+        smoothed_temp = self.mc.gaussian_blur(self.TemperatureMap, 2)
 
         for i in range(self.mc.iNumPlots):
             # Apply thermal inertia - land has less inertia than ocean
@@ -150,7 +156,6 @@ class ClimateMap:
 
     def _generate_ocean_currents(self):
         """Generate realistic ocean current patterns using steady-state surface flow model"""
-        print("Generating Ocean Currents")
 
         # Step 1: Generate forcing fields
         force_U, force_V = self._generate_forcing_fields()
@@ -196,7 +201,7 @@ class ClimateMap:
         for i in range(self.mc.iNumPlots):
             if self.em.IsBelowSeaLevel(i):
                 y = i // self.mc.iNumPlotsX
-                latitude = self.GetLatitudeForY(y)
+                latitude = self.mc.get_latitude_for_y(y)
                 latitude_rad = math.radians(latitude)
 
                 # Primary latitude-based forcing (east/west only)
@@ -358,7 +363,7 @@ class ClimateMap:
 
             # Calculate Coriolis parameter
             y = i // self.mc.iNumPlotsX
-            latitude = self.GetLatitudeForY(y)
+            latitude = self.mc.get_latitude_for_y(y)
             latitude_rad = math.radians(latitude)
             f_coriolis = 2 * self.mc.earthRotationRate * math.sin(latitude_rad) * self.mc.coriolisStrength
 
@@ -374,13 +379,6 @@ class ClimateMap:
         maxV = max(abs(x) for x in self.OceanCurrentU + self.OceanCurrentV)
         self.OceanCurrentU = [u / maxV for u in self.OceanCurrentU]
         self.OceanCurrentV = [u / maxV for u in self.OceanCurrentV]
-
-    def _latitude_to_y(self, latitude):
-        """Convert latitude to y coordinate"""
-        lat_range = self.mc.topLatitude - self.mc.bottomLatitude
-        normalized_lat = (latitude - self.mc.bottomLatitude) / lat_range
-        y = int(normalized_lat * self.mc.iNumPlotsY)
-        return min(y, self.mc.iNumPlotsY - 1)  # Clamp to valid range
 
     def _apply_ocean_current_and_maritime_effects(self):
         """
@@ -398,8 +396,19 @@ class ClimateMap:
         # Apply thermal transport via ocean currents
         self._transportOceanHeat()
 
+        # Diffuse ocean heat for more realistic temperature spread
+        self._diffuse_ocean_heat()
+
         # Apply maritime effects to adjacent land areas
         self._applyMaritimeEffects()
+
+    def _diffuse_ocean_heat(self):
+        """Apply diffusion to ocean temperatures to simulate heat spread"""
+        self.TemperatureMap = self.mc.gaussian_blur(
+            self.TemperatureMap,
+            radius=self.mc.oceanDiffusionRadius,
+            filter_func=lambda i: self.em.IsBelowSeaLevel(i)
+        )
 
     def _calculateOceanDistances(self):
         """
@@ -417,7 +426,7 @@ class ClimateMap:
         basin_counter = 0
 
         # Flood fill to identify connected ocean basins
-        ocean_tiles = []
+        initial_ocean_tiles = []
         for i in range(self.mc.iNumPlots):
             if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
                 if self.oceanBasinMap[i] == -1:
@@ -425,12 +434,12 @@ class ClimateMap:
                     self.basinSizes[basin_counter] = basin_size
                     basin_counter += 1
                 if self.basinSizes[self.oceanBasinMap[i]] >= self.mc.min_basin_size:
-                    ocean_tiles.append((i, 0))
+                    initial_ocean_tiles.append((i, 0))
 
-        # BFS to calculate distances from ocean
-        # Use simple list as queue (FIFO with pop(0)) - deque may not be available in Civ IV
-        while ocean_tiles:
-            current_tile, current_distance = ocean_tiles.pop(0)  # FIFO - process closest tiles first
+        # BFS to calculate distances from ocean using an efficient deque
+        ocean_queue = deque(initial_ocean_tiles)
+        while ocean_queue:
+            current_tile, current_distance = ocean_queue.popleft()
 
             # Check all neighbours
             for neighbour in self.mc.neighbours[current_tile]:
@@ -438,7 +447,7 @@ class ClimateMap:
                 if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
                     self.oceanDistanceMap[neighbour] = current_distance + 1
                     if current_distance + 1 < self.mc.maritime_influence_distance:
-                        ocean_tiles.append((neighbour, current_distance + 1))
+                        ocean_queue.append((neighbour, current_distance + 1))
 
         # Create distance queue for maritime processing (sorted by distance)
         self.distanceQueue = []
@@ -619,8 +628,8 @@ class ClimateMap:
         ]
 
         for ymin_lat, ymax_lat, u_pattern, v_pattern in wind_cells:
-            ymin = self._latitude_to_y(ymin_lat)
-            ymax = self._latitude_to_y(ymax_lat)
+            ymin = self.mc.get_y_for_latitude(ymin_lat)
+            ymax = self.mc.get_y_for_latitude(ymax_lat)
             self._apply_wind_cell(ymin, ymax, u_pattern, v_pattern)
 
         self._apply_temperature_gradient_winds()
@@ -676,8 +685,8 @@ class ClimateMap:
                               self.TemperatureMap[y_prev * self.mc.iNumPlotsX + x]) * 0.5
 
                 # Add gradient effects to wind
-                self.WindU[i] += self.mc.tempGradientFactor * temp_grad_x
-                self.WindV[i] += self.mc.tempGradientFactor * temp_grad_y
+                self.WindU[i] += self.mc.tempGradientFactorWind * temp_grad_x
+                self.WindV[i] += self.mc.tempGradientFactorWind * temp_grad_y
 
     def _apply_mountain_wind_blocking(self):
         """Enhanced wind-topography interactions including blocking, deflection, and channeling"""
@@ -706,16 +715,15 @@ class ClimateMap:
                 deflect_x = x - sign(self.WindU[i])
                 deflect_y = y - sign(self.WindV[i])
 
-                deflect_x = self._wrap_coordinate(deflect_x, self.mc.iNumPlotsX, self.mc.wrapX)
-                deflect_y = self._wrap_coordinate(deflect_y, self.mc.iNumPlotsY, self.mc.wrapY)
+                deflect_x, deflect_y = self.mc.wrap_coordinates(deflect_x, deflect_y)
 
                 # Deflect wind around mountain
-                if self._is_valid_position(deflect_x, y):
+                if deflect_x >= 0:
                     deflect_i = y * self.mc.iNumPlotsX + deflect_x
                     self.WindV[deflect_i] += self.WindU[deflect_i] * sign(self.WindV[deflect_i])
                     self.WindU[deflect_i] = 0
 
-                if self._is_valid_position(x, deflect_y):
+                if deflect_y >= 0:
                     deflect_j = deflect_y * self.mc.iNumPlotsX + x
                     self.WindU[deflect_j] += self.WindV[deflect_j] * sign(self.WindU[deflect_j])
                     self.WindV[deflect_j] = 0
@@ -744,10 +752,9 @@ class ClimateMap:
                 upwind_x = x - sign(wind_u)
                 upwind_y = y - sign(wind_v)
 
-                upwind_x = self._wrap_coordinate(upwind_x, self.mc.iNumPlotsX, self.mc.wrapX)
-                upwind_y = self._wrap_coordinate(upwind_y, self.mc.iNumPlotsY, self.mc.wrapY)
+                upwind_x, upwind_y = self.mc.wrap_coordinates(upwind_x, upwind_y)
 
-                if self._is_valid_position(upwind_x, upwind_y):
+                if upwind_x >= 0 and upwind_y >= 0:
                     upwind_i = upwind_y * self.mc.iNumPlotsX + upwind_x
                     elevation_diff = self.em.elevationMap[i] - self.em.elevationMap[upwind_i]
 
@@ -831,10 +838,9 @@ class ClimateMap:
         ]
 
         for dx, dy, angle in directions:
-            neighbour_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
-            neighbour_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+            neighbour_x, neighbour_y = self.mc.wrap_coordinates(x + dx, y + dy)
 
-            if self._is_valid_position(neighbour_x, neighbour_y):
+            if neighbour_x >= 0 and neighbour_y >= 0:
                 neighbour_i = neighbour_y * self.mc.iNumPlotsX + neighbour_x
                 gradient = current_elevation - self.em.elevationMap[neighbour_i]
 
@@ -854,10 +860,9 @@ class ClimateMap:
             offset_x = int(distance * math.cos(angle))
             offset_y = int(distance * math.sin(angle))
 
-            target_x = self._wrap_coordinate(peak_x + offset_x, self.mc.iNumPlotsX, self.mc.wrapX)
-            target_y = self._wrap_coordinate(peak_y + offset_y, self.mc.iNumPlotsY, self.mc.wrapY)
+            target_x, target_y = self.mc.wrap_coordinates(peak_x + offset_x, peak_y + offset_y)
 
-            if self._is_valid_position(target_x, target_y):
+            if target_x >= 0 and target_y >= 0:
                 target_i = target_y * self.mc.iNumPlotsX + target_x
 
                 # Don't deflect wind at other peaks
@@ -914,8 +919,8 @@ class ClimateMap:
     def _apply_temperature_smoothing(self):
         """Apply smoothing to temperature map"""
         return
-        self.TemperatureMap = self.gaussian_blur_2d_land_only(self.TemperatureMap, self.mc.climateSmoothing)
-        self.TemperatureMap = self._gaussian_blur_2d(self.TemperatureMap, self.mc.climateSmoothing)
+        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: not self.em.IsBelowSeaLevel(i))
+        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing)
 
     def _apply_polar_cooling(self):
         """Apply additional cooling to polar regions"""
@@ -933,7 +938,7 @@ class ClimateMap:
                 i = y * self.mc.iNumPlotsX + x
                 self.TemperatureMap[i] *= cooling_factor
 
-        self.TemperatureMap = self._normalize_map(self.TemperatureMap)
+        self.TemperatureMap = self.mc.normalize_map(self.TemperatureMap)
 
     def GenerateRainfallMap(self):
         """Generate rainfall map using moisture transport and precipitation models"""
@@ -961,7 +966,7 @@ class ClimateMap:
                     moistureMap[i] = 0.5 * (1 - self.TemperatureMap[i])
 
         # Diffuse moisture to coastal areas
-        moistureMap = self._gaussian_blur_2d(moistureMap, self.mc.climateSmoothing)
+        moistureMap = self.mc.gaussian_blur(moistureMap, self.mc.climateSmoothing)
         self._add_coastal_moisture(moistureMap)
 
     def _add_coastal_moisture(self, moistureMap):
@@ -1029,10 +1034,9 @@ class ClimateMap:
         target_y = y + sign(wind_v)
 
         # Wrap coordinates
-        target_x = self._wrap_coordinate(target_x, self.mc.iNumPlotsX, self.mc.wrapX)
-        target_y = self._wrap_coordinate(target_y, self.mc.iNumPlotsY, self.mc.wrapY)
+        target_x, target_y = self.mc.wrap_coordinates(target_x, target_y)
 
-        if not self._is_valid_position(target_x, target_y):
+        if target_x < 0 or target_y < 0:
             return
 
         # Calculate moisture transport amounts
@@ -1087,7 +1091,7 @@ class ClimateMap:
         current_temp = self.TemperatureMap[i]
 
         # Calculate average temperature for this latitude
-        lat = self.GetLatitudeForY(y)
+        lat = self.mc.get_latitude_for_y(y)
         expected_temp = self._calculate_solar_radiation(lat)
 
         # Calculate temperature difference from expected
@@ -1136,10 +1140,9 @@ class ClimateMap:
         upwind_x = x - sign(wind_u)
         upwind_y = y - sign(wind_v)
 
-        upwind_x = self._wrap_coordinate(upwind_x, self.mc.iNumPlotsX, self.mc.wrapX)
-        upwind_y = self._wrap_coordinate(upwind_y, self.mc.iNumPlotsY, self.mc.wrapY)
+        upwind_x, upwind_y = self.mc.wrap_coordinates(upwind_x, upwind_y)
 
-        if not self._is_valid_position(upwind_x, upwind_y):
+        if upwind_x < 0 or upwind_y < 0:
             self.OrographicRainfallMap[i] = 0.0
             return
 
@@ -1169,10 +1172,9 @@ class ClimateMap:
         downwind_x = x + sign(wind_u)
         downwind_y = y + sign(wind_v)
 
-        downwind_x = self._wrap_coordinate(downwind_x, self.mc.iNumPlotsX, self.mc.wrapX)
-        downwind_y = self._wrap_coordinate(downwind_y, self.mc.iNumPlotsY, self.mc.wrapY)
+        downwind_x, downwind_y = self.mc.wrap_coordinates(downwind_x, downwind_y)
 
-        if not self._is_valid_position(downwind_x, downwind_y):
+        if downwind_x < 0 or downwind_y < 0:
             self.WeatherFrontRainfallMap[i] = 0.0
             return
 
@@ -1190,9 +1192,9 @@ class ClimateMap:
     def _distribute_precipitation(self, moistureMap):
         """Distribute precipitation based on moisture and precipitation factors"""
         # Normalize precipitation factor maps
-        self.ConvectionRainfallMap = self._normalize_map(self.ConvectionRainfallMap)
-        self.OrographicRainfallMap = self._normalize_map(self.OrographicRainfallMap)
-        self.WeatherFrontRainfallMap = self._normalize_map(self.WeatherFrontRainfallMap)
+        self.ConvectionRainfallMap = self.mc.normalize_map(self.ConvectionRainfallMap)
+        self.OrographicRainfallMap = self.mc.normalize_map(self.OrographicRainfallMap)
+        self.WeatherFrontRainfallMap = self.mc.normalize_map(self.WeatherFrontRainfallMap)
 
         # Create list of land tiles with moisture
         land_moisture_tiles = []
@@ -1249,10 +1251,9 @@ class ClimateMap:
         target_x = x + sign(wind_u)
         target_y = y + sign(wind_v)
 
-        target_x = self._wrap_coordinate(target_x, self.mc.iNumPlotsX, self.mc.wrapX)
-        target_y = self._wrap_coordinate(target_y, self.mc.iNumPlotsY, self.mc.wrapY)
+        target_x, target_y = self.mc.wrap_coordinates(target_x, target_y)
 
-        if not self._is_valid_position(target_x, target_y):
+        if target_x < 0 or target_y < 0:
             return
 
         # Transport moisture
@@ -1276,8 +1277,8 @@ class ClimateMap:
     def _add_rainfall_variation(self):
         """Add Perlin noise variation to rainfall"""
         # Generate Perlin noise for rainfall variation
-        perlin_map = self._generate_perlin_grid(self.mc.rainPerlinFactor)
-        perlin_map = self._normalize_map(perlin_map)
+        perlin_map = self.mc.generate_perlin_grid(self.mc.rainPerlinFactor)
+        perlin_map = self.mc.normalize_map(perlin_map)
 
         # Add noise to rainfall
         for i in range(self.mc.iNumPlots):
@@ -1285,8 +1286,8 @@ class ClimateMap:
 
     def _finalize_rainfall_map(self):
         """Finalize rainfall map with smoothing and normalization"""
-        self.RainfallMap = self.gaussian_blur_2d_land_without_peaks(self.RainfallMap, self.mc.climateSmoothing // 2)
-        self.RainfallMap = self._normalize_map(self.RainfallMap)
+        self.RainfallMap = self.mc.gaussian_blur(self.RainfallMap, self.mc.climateSmoothing // 2, filter_func=lambda i: (not self.em.IsBelowSeaLevel(i) and self.em.plotTypes[i] != self.mc.PLOT_PEAK))
+        self.RainfallMap = self.mc.normalize_map(self.RainfallMap)
 
     def GenerateRiverMap(self):
         """Generate river system (placeholder - would need full implementation)"""
@@ -1294,310 +1295,3 @@ class ClimateMap:
         # This would contain the full river generation logic from the original
         # For now, just initialize the river maps
         pass
-
-    def _is_valid_position(self, x, y):
-        """Check if position is valid considering wrapping"""
-        if x < 0:
-            return False
-        elif self.mc.wrapX:
-            pass
-        elif x >= self.mc.iNumPlotsX:
-            return False
-
-        if y < 0:
-            return False
-        elif self.mc.wrapY:
-            pass
-        elif y >= self.mc.iNumPlotsY:
-            return False
-
-        return True
-
-    def _wrap_coordinate(self, coord, max_coord, wrap_enabled):
-        """Wrap coordinate if wrapping is enabled"""
-        if wrap_enabled:
-            return coord % max_coord
-        else:
-            return max(0, min(max_coord - 1, coord))
-
-    def GetLatitudeForY(self, y):
-        return self.mc.bottomLatitude + ((float(self.mc.topLatitude - self.mc.bottomLatitude) * float(y)) / float(self.mc.iNumPlotsY))
-
-    def _get_sigma_list(self):
-        """Get pre-calculated sigma values for Gaussian blur"""
-        return [0.0, 0.32, 0.7, 1.12, 1.57, 2.05, 2.56, 3.09, 3.66, 4.25, 4.87, 5.53,
-                6.22, 6.95, 7.72, 8.54, 9.41, 10.34, 11.35, 12.44, 13.66, 15.02, 16.63, 18.65]
-
-    def _gaussian_blur_2d(self, grid, radius=2):
-        """Apply 2D Gaussian blur to a grid"""
-        if radius <= 0 or radius >= len(self._get_sigma_list()):
-            return grid
-
-        sigma_list = self._get_sigma_list()
-        sigma = sigma_list[radius]
-
-        # Create Gaussian kernel
-        kernel = []
-        kernel_sum = 0.0
-        for i in range(-radius, radius + 1):
-            val = math.exp(-(i ** 2) / (2 * sigma ** 2))
-            kernel.append(val)
-            kernel_sum += val
-
-        # Normalize kernel
-        kernel = [v / kernel_sum for v in kernel]
-
-        # Horizontal pass
-        temp_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-            weighted_sum = 0.0
-            weight_total = 0.0
-
-            for k in range(-radius, radius + 1):
-                neighbour_x = x + k
-                if self.mc.wrapX:
-                    neighbour_x = neighbour_x % self.mc.iNumPlotsX
-                elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
-                    continue
-
-                neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
-                weighted_sum += grid[neighbour_index] * kernel[k + radius]
-                weight_total += kernel[k + radius]
-
-            temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-
-        # Vertical pass
-        result_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-            weighted_sum = 0.0
-            weight_total = 0.0
-
-            for k in range(-radius, radius + 1):
-                neighbour_y = y + k
-                if self.mc.wrapY:
-                    neighbour_y = neighbour_y % self.mc.iNumPlotsY
-                elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
-                    continue
-
-                neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
-                weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
-                weight_total += kernel[k + radius]
-
-            result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-
-        return result_grid
-
-    def gaussian_blur_2d_land_only(self, grid, radius=2):
-        """Apply 2D Gaussian blur to a grid, only to tiles not below sea level"""
-        if radius <= 0 or radius >= len(self._get_sigma_list()):
-            return grid
-
-        sigma_list = self._get_sigma_list()
-        sigma = sigma_list[radius]
-
-        # Create Gaussian kernel
-        kernel = []
-        kernel_sum = 0.0
-        for i in range(-radius, radius + 1):
-            val = math.exp(-(i ** 2) / (2 * sigma ** 2))
-            kernel.append(val)
-            kernel_sum += val
-
-        # Normalize kernel
-        kernel = [v / kernel_sum for v in kernel]
-
-        # Horizontal pass
-        temp_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            # Only apply blur if tile is not below sea level
-            if not self.em.IsBelowSeaLevel(i):
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-                weighted_sum = 0.0
-                weight_total = 0.0
-                for k in range(-radius, radius + 1):
-                    neighbour_x = x + k
-                    if self.mc.wrapX:
-                        neighbour_x = neighbour_x % self.mc.iNumPlotsX
-                    elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
-                        continue
-                    neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
-                    weighted_sum += grid[neighbour_index] * kernel[k + radius]
-                    weight_total += kernel[k + radius]
-                temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-            else:
-                # Keep original value for tiles below sea level
-                temp_grid[i] = grid[i]
-
-        # Vertical pass
-        result_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            # Only apply blur if tile is not below sea level
-            if not self.em.IsBelowSeaLevel(i):
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-                weighted_sum = 0.0
-                weight_total = 0.0
-                for k in range(-radius, radius + 1):
-                    neighbour_y = y + k
-                    if self.mc.wrapY:
-                        neighbour_y = neighbour_y % self.mc.iNumPlotsY
-                    elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
-                        continue
-                    neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
-                    weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
-                    weight_total += kernel[k + radius]
-                result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-            else:
-                # Keep original value for tiles below sea level
-                result_grid[i] = temp_grid[i]
-
-        return result_grid
-
-    def gaussian_blur_2d_land_without_peaks(self, grid, radius=2):
-        """Apply 2D Gaussian blur to a grid, only to tiles not below sea level"""
-        if radius <= 0 or radius >= len(self._get_sigma_list()):
-            return grid
-
-        sigma_list = self._get_sigma_list()
-        sigma = sigma_list[radius]
-
-        # Create Gaussian kernel
-        kernel = []
-        kernel_sum = 0.0
-        for i in range(-radius, radius + 1):
-            val = math.exp(-(i ** 2) / (2 * sigma ** 2))
-            kernel.append(val)
-            kernel_sum += val
-
-        # Normalize kernel
-        kernel = [v / kernel_sum for v in kernel]
-
-        # Horizontal pass
-        temp_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            # Only apply blur if tile is not below sea level
-            if (not self.em.IsBelowSeaLevel(i) and self.em.plotTypes[i] != self.mc.PLOT_PEAK):
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-                weighted_sum = 0.0
-                weight_total = 0.0
-                for k in range(-radius, radius + 1):
-                    neighbour_x = x + k
-                    if self.mc.wrapX:
-                        neighbour_x = neighbour_x % self.mc.iNumPlotsX
-                    elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
-                        continue
-                    neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
-                    weighted_sum += grid[neighbour_index] * kernel[k + radius]
-                    weight_total += kernel[k + radius]
-                temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-            else:
-                # Keep original value for tiles below sea level
-                temp_grid[i] = grid[i]
-
-        # Vertical pass
-        result_grid = [0.0] * self.mc.iNumPlots
-        for i in range(self.mc.iNumPlots):
-            # Only apply blur if tile is not below sea level
-            if (not self.em.IsBelowSeaLevel(i) and self.em.plotTypes[i] != self.mc.PLOT_PEAK):
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-                weighted_sum = 0.0
-                weight_total = 0.0
-                for k in range(-radius, radius + 1):
-                    neighbour_y = y + k
-                    if self.mc.wrapY:
-                        neighbour_y = neighbour_y % self.mc.iNumPlotsY
-                    elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
-                        continue
-                    neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
-                    weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
-                    weight_total += kernel[k + radius]
-                result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
-            else:
-                # Keep original value for tiles below sea level
-                result_grid[i] = temp_grid[i]
-
-        return result_grid
-
-    def _normalize_map(self, map_data):
-        """Normalize a map to 0-1 range"""
-        if not map_data:
-            return map_data
-
-        min_val = min(map_data)
-        max_val = max(map_data)
-
-        if max_val - min_val == 0:
-            return [val / max_val if max_val != 0 else 0 for val in map_data]
-        else:
-            return [(val - min_val) / (max_val - min_val) for val in map_data]
-
-    # Perlin noise implementation
-    class Perlin2D:
-        """2D Perlin noise generator"""
-        def __init__(self, seed=None):
-            self.p = list(range(256))
-            if seed is not None:
-                random.seed(seed)
-            random.shuffle(self.p)
-            self.p += self.p  # Repeat for wrapping
-
-        def noise(self, x, y):
-            """Generate Perlin noise at coordinates (x, y)"""
-            # Find unit grid cell containing point
-            grid_x = int(math.floor(x)) & 255
-            grid_y = int(math.floor(y)) & 255
-
-            # Relative coordinates within cell
-            rel_x = x - math.floor(x)
-            rel_y = y - math.floor(y)
-
-            # Fade curves for smooth interpolation
-            fade_x = self._fade(rel_x)
-            fade_y = self._fade(rel_y)
-
-            # Hash coordinates of the 4 square corners
-            aa = self.p[self.p[grid_x] + grid_y]
-            ab = self.p[self.p[grid_x] + grid_y + 1]
-            ba = self.p[self.p[grid_x + 1] + grid_y]
-            bb = self.p[self.p[grid_x + 1] + grid_y + 1]
-
-            # Blend results from 4 corners
-            x1 = self._lerp(self._grad(aa, rel_x, rel_y),
-                           self._grad(ba, rel_x - 1, rel_y), fade_x)
-            x2 = self._lerp(self._grad(ab, rel_x, rel_y - 1),
-                           self._grad(bb, rel_x - 1, rel_y - 1), fade_x)
-
-            return (self._lerp(x1, x2, fade_y) + 1) / 2  # Normalize to [0,1]
-
-        def _fade(self, t):
-            """Perlin's fade function for smooth interpolation"""
-            return t * t * t * (t * (t * 6 - 15) + 10)
-
-        def _lerp(self, a, b, t):
-            """Linear interpolation"""
-            return a + t * (b - a)
-
-        def _grad(self, hash_val, x, y):
-            """Convert hash code into gradient direction"""
-            h = hash_val & 7
-            u = x if h < 4 else y
-            v = y if h < 4 else x
-            return (u if (h & 1) == 0 else -u) + (v if (h & 2) == 0 else -v)
-
-    def _generate_perlin_grid(self, scale=10.0, seed=None):
-        """Generate a grid of Perlin noise values"""
-        perlin = self.Perlin2D(seed)
-        grid = []
-        for y in range(self.mc.iNumPlotsY):
-            for x in range(self.mc.iNumPlotsX):
-                normalized_x = x / scale
-                normalized_y = y / scale
-                grid.append(perlin.noise(normalized_x, normalized_y))
-        return grid

@@ -1,28 +1,29 @@
 # Climate System Enhancement Phases
 
-## Current Focus: Ocean Current Model Enhancement
+## Current Focus: General Refactoring and Cleanup
 
-### Ocean Current Enhancement (In Progress)
+### Code Health and Maintainability (Completed)
 
-**Status**: ACTIVE - Implementing enhanced ocean current models for better temperature and climate effects
+**Status**: DONE - A major refactoring has been completed to improve code quality, reduce duplication, and enhance maintainability.
 
-**Phase 1: Temperature-Gradient Driven Currents**
+**Phase 1: Consolidate Configuration and Utilities**
 
--   ✅ **Corrected Temperature Gradient Calculation**: Fixed a critical bug in `_calculate_temperature_gradients` that caused anomalies at map edges by implementing proper wrap-around logic. This ensures the temperature-driven forcing for ocean currents is physically accurate.
--   Enhance `_apply_ocean_current_effects()` to use both U and V components for proper heat transport
--   Create realistic warm/cold current temperature effects
+-   ✅ **Rename and Reorganize `MapConstants`**: Renamed `MapConstants.py` to `MapConfig.py` and the class to `MapConfig`.
+-   ✅ **Centralize Utilities**: Moved shared utility functions (`normalize_map`, `gaussian_blur`, `Perlin2D`, etc.) from `ElevationMap` and `ClimateMap` into `MapConfig`.
+-   ✅ **Audit Parameters**: Reviewed, documented, and reorganized all configuration parameters in `MapConfig` for clarity and logical grouping.
+-   ✅ **Refactor Imports**: Updated all scripts to use the new `MapConfig` class.
 
-**Phase 2: Coastal Interactions and Basic Depth Effects**
+**Phase 2: Code Cleanup and Optimization**
 
--   Implement coastal current deflection using existing elevation data
--   Add upwelling/downwelling temperature effects based on wind-current interaction
--   Apply depth-based current strength modifications using elevation data as depth proxy
+-   ✅ **Optimize Queues**: Replaced inefficient list-based queues with `collections.deque` in `ClimateMap`.
+-   ✅ **Improve Readability**: Cleaned up formatting and added comments to complex sections of the climate generation code.
+-   ✅ **Validate Changes**: Ensured all refactoring was validated by the test suite.
 
-**Phase 3: Integration and Optimization**
+**Phase 3: Bug Fixes**
 
--   Integrate all current drivers smoothly without conflicts
--   Optimize performance for acceptable generation times
--   Fine-tune parameters for realistic climate results
+-   ✅ Addressed multiple critical bugs introduced during the refactoring process that affected continent generation and plate tectonics simulation.
+-   ✅ Corrected flawed logic in distance and vector calculations that led to `NameError` and `IndexError` exceptions.
+-   ✅ Resolved performance regressions caused by the faulty refactoring.
 
 ## Saved Climate System Phases (For Future Implementation)
 
@@ -61,56 +62,3 @@
 -   Add orographic enhancement for coastal mountain ranges
 -   Validate rainfall patterns against corrected wind fields
 -   Ensure realistic precipitation gradients from coast to interior
-
-### Phase 5: Implement Medium-Priority Climate Enhancements
-
-**Status**: SAVED - Long-term enhancements for advanced climate modeling
-**Objective**: Add sophisticated climate physics for maximum realism
-**Key Tasks**:
-
--   Thermohaline circulation components for deep ocean effects
--   Enhanced climate feedback mechanisms (ice-albedo, vegetation-climate)
--   More sophisticated cloud physics and atmospheric moisture
--   Seasonal variation effects using position-based pseudo-randomness
--   Advanced climate stability and oscillation patterns
-
-## Implementation Notes
-
-### Testing Strategy
-
--   Each phase includes testing checkpoints to validate improvements
--   Progressive enhancement ensures each step improves climate modeling
--   Performance monitoring to maintain acceptable generation times
--   Visual validation using test_planetforge.py climate visualization
-
-### Parameter Management
-
--   All new parameters added to MapConstants.py for centralized management
--   Focus on high-impact parameters that directly affect temperature and precipitation
--   Avoid low-impact complexity that doesn't improve gameplay-relevant climate
-
-### Integration Approach
-
--   Build on existing climate system without breaking current functionality
--   Maintain Python 2.4 compatibility for Civilization IV
--   Preserve mathematical accuracy and physical realism
--   Ensure all enhancements work together without conflicts
-
-## Priority Rationale
-
-The ocean current enhancement is prioritized because:
-
-1. Ocean currents directly affect coastal and regional temperatures
-2. Temperature gradients drive precipitation patterns and moisture transport
-3. Realistic temperature patterns lead to better biome placement
-4. Ocean heat transport is a major driver of Earth's climate system
-5. Current implementation is too simplistic for realistic climate modeling
-
-The saved phases build logically on the ocean current improvements:
-
--   Phase 2 optimizes the temperature effects from enhanced currents
--   Phase 3 ensures wind-current interactions are physically accurate
--   Phase 4 uses improved temperature and wind patterns for better precipitation
--   Phase 5 adds advanced features for maximum climate realism
-
-This approach ensures steady progress toward a sophisticated, physically accurate climate system while maintaining focus on gameplay-relevant improvements.

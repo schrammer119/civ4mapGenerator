@@ -56,6 +56,7 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 -   Follow Python PEP 8 style guidelines where applicable
 -   avoid the use of magic numbers, create parameters instead
 -   use only ASCII characters when creating names and comments
+-   avoid code duplication
 
 ### Version Control
 

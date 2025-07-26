@@ -1,196 +1,80 @@
 # Technical Context and Architecture
 
+## Core Architecture (Updated 2025-07-26)
+
+The PlanetForge architecture is designed for modularity and maintainability, centered around a shared configuration and utility class.
+
+-   **`MapConfig.py`**: This class is the cornerstone of the architecture. It centralizes all tunable parameters, game settings, and shared utility functions (e.g., `normalize_map`, `gaussian_blur`, `get_wrapped_distance`). This promotes a DRY (Don't Repeat Yourself) principle and makes the system easier to manage and tune.
+-   **`ElevationMap.py`**: This class encapsulates the entire geological simulation, using the `MapConfig` instance for parameters and utilities to generate a realistic elevation map based on plate tectonics.
+-   **`ClimateMap.py`**: This class handles the climatic simulation, taking the generated `ElevationMap` and the shared `MapConfig` instance to produce temperature, wind, and rainfall data.
+-   **`PlanetForge.py`**: This is the main entry point required by Civilization IV. It orchestrates the entire map generation process by initializing the `MapConfig` and then calling the `ElevationMap` and `ClimateMap` in sequence.
+
+### Dependency Injection and Data Flow
+
+The system uses a dependency injection pattern to ensure loose coupling and high cohesion:
+
+1.  `PlanetForge.py` instantiates `MapConfig`.
+2.  The `MapConfig` instance (`mc`) is passed to the `ElevationMap` constructor.
+3.  The `ElevationMap` instance (`em`) and the `MapConfig` instance (`mc`) are passed to the `ClimateMap` constructor.
+
+This creates a clear, one-way data flow:
+**`MapConfig` -> `ElevationMap` -> `ClimateMap` -> `PlanetForge` (for final terrain generation)**
+
 ## Climate System Architecture
 
-### ClimateMap Class Structure (Updated 2025-01-24)
+### ClimateMap Class Structure
 
-The ClimateMap class has been completely refactored to provide a clean, maintainable architecture for realistic climate modeling in Civilization IV map generation.
-
-#### Core Architecture
-
-```python
-class ClimateMap:
-    def __init__(self, elevation_map, terrain_map, map_constants):
-        # Dependency injection pattern for clean integration
-        self.em = elevation_map      # ElevationMap instance
-        self.tm = terrain_map        # TerrainMap instance
-        self.mc = map_constants      # MapConstants instance
-```
+The `ClimateMap` class is responsible for all climate-related calculations.
 
 #### Key Components
 
-1. **Parameter Management**
-
-    - `_initialize_climate_parameters()`: Centralized parameter setup with robust defaults
-    - Uses `getattr(self.mc, 'parameter', default)` pattern for safe parameter access
-    - Categories: Temperature, Ocean Currents, Wind, Rainfall, Rivers, Smoothing
-
-2. **Data Structure Initialization**
-
-    - `_initialize_data_structures()`: Sets up all FloatMap instances
-    - Temperature maps, Ocean current maps (U/V components)
-    - Wind maps (U/V components), Rainfall component maps
-    - River system arrays using Python 2.4 compatible array module
-
-3. **Climate Generation Pipeline**
+1.  **Parameter Management**: All climate parameters are accessed from the shared `self.mc` (MapConfig) instance.
+2.  **Data Structure Initialization**: `_initialize_data_structures()` sets up all necessary data maps (Temperature, Ocean Currents, Wind, Rainfall).
+3.  **Climate Generation Pipeline**:
     ```
     GenerateClimateMap()
     ├── GenerateTemperatureMap()
-    │   ├── Calculate elevation effects
-    │   ├── Generate base temperature (latitude + elevation)
-    │   ├── Generate ocean currents (6 atmospheric cells)
-    │   ├── Apply current temperature effects
-    │   ├── Generate wind patterns
-    │   ├── Apply temperature smoothing
-    │   └── Apply polar cooling
-    ├── GenerateRainfallMap()
-    │   ├── Initialize moisture sources
-    │   ├── Transport moisture by wind
-    │   ├── Calculate precipitation factors
-    │   ├── Distribute precipitation
-    │   ├── Add rainfall variation
-    │   └── Finalize rainfall map
-    └── GenerateRiverMap() [placeholder]
+    │   ├── _calculate_elevation_effects
+    │   ├── _generate_base_temperature
+    │   ├── _generate_ocean_currents
+    │   ├── _apply_ocean_current_and_maritime_effects
+    │   │   ├── _transportOceanHeat
+    │   │   ├── _diffuse_ocean_heat (NEW)
+    │   │   └── _applyMaritimeEffects
+    │   └── ...
+    └── GenerateRainfallMap()
+        └── ...
     ```
 
-#### Temperature System
+#### Key Algorithms and Techniques
 
-**Ocean Current Generation**:
+-   **Ocean Currents**: A steady-state surface flow model is used, driven by latitudinal forcing and temperature gradients. It uses a Jacobi iteration solver and incorporates the Coriolis effect.
+-   **Temperature**: Calculated based on a solar radiation model (latitude-dependent), elevation lapse rates, thermal inertia, and heat transport from ocean currents.
+-   **Wind**: Generated from 6 atmospheric circulation cells (Hadley, Ferrel, Polar) with Coriolis effects and modifications from temperature gradients and topography.
+-   **Precipitation**: A multi-factor model considering convective, orographic, and frontal rainfall, driven by a wind-based moisture transport simulation.
 
--   Models 6 atmospheric circulation cells (Hadley, Ferrel, Polar for each hemisphere)
--   Clockwise/counterclockwise circulation based on real atmospheric physics
--   Current strength calculation includes Coriolis effect
--   Smooth current maps with iterative neighbour averaging
+## Shared Utilities in `MapConfig`
 
-**Temperature Effects**:
+To maximize code reuse and ensure consistency, the following utility functions have been centralized in `MapConfig.py`:
 
--   Base temperature from latitude (sine wave solar heating)
--   Elevation cooling using temperature lapse rate
--   Ocean current temperature transport effects
--   Polar region additional cooling
+-   **`normalize_map()`**: Normalizes a data list to a 0-1 range.
+-   **`gaussian_blur()`**: A flexible 2D Gaussian blur function with an optional filter.
+-   **`find_value_from_percent()`**: Finds a value at a specific percentile in a list.
+-   **`get_wrapped_distance()`**: Calculates the shortest distance between two points on a wrapping map in x and y.
+-   **`calculate_wrap_aware_centroid()`**: Calculates the geometric center of a set of points on a wrapping map.
+-   **`get_perlin_noise()`**: Provides access to a seeded Perlin noise generator instance.
+-   **Coordinate and Neighbor Helpers**: `_precalculate_neighbours`, `_get_neighbour_tile`.
 
-#### Wind System
+## Python 2.4 Compatibility
 
-**Atmospheric Circulation**:
+The entire codebase adheres to the constraints of Python 2.4, as required by the Civilization IV engine.
 
--   Wind patterns for each circulation cell with realistic flow directions
--   Coriolis effect integration for realistic wind deflection
--   Temperature gradient winds for local pressure effects
--   Mountain wind blocking and deflection around peaks
+-   No modern syntax (e.g., decorators, context managers).
+-   Use of the `array` module for performance-critical lists.
+-   Use of `collections.deque` for efficient queue implementations.
 
-#### Precipitation System
+## Testing Strategy
 
-**Multi-Factor Rainfall Model**:
-
--   **Convective**: Temperature-based precipitation
--   **Orographic**: Elevation-induced rainfall (mountain effect)
--   **Frontal**: Temperature gradient-induced precipitation
-
-**Moisture Transport**:
-
--   Ocean moisture sources based on temperature
--   Wind-driven moisture transport with iterative simulation
--   Coastal moisture diffusion for realistic patterns
--   Land moisture transport and precipitation distribution
-
-#### Utility Methods
-
-**Coordinate Handling**:
-
--   `_get_neighbour_in_direction()`: 8-directional neighbour calculation
--   `_is_valid_position()`: Bounds checking with wrap support
--   `_wrap_coordinate()`: Coordinate wrapping for cylindrical maps
--   `_latitude_to_y()`: Latitude to map coordinate conversion
-
-### Integration Points
-
-#### Dependencies
-
--   **ElevationMap**: Provides terrain elevation data and sea level information
--   **TerrainMap**: Provides terrain type data (peaks, water, etc.)
--   **MapConstants**: Provides all configurable parameters
-
-#### Data Flow
-
-```
-ElevationMap → ClimateMap → TerrainMap → BiomeMap
-     ↓              ↓            ↓           ↓
-  Elevation    Temperature   Terrain    Final Map
-  Sea Level    Rainfall      Types      Generation
-  Topography   Wind/Current  Features
-```
-
-### Performance Considerations
-
-#### Iterative Algorithms
-
--   Moisture transport uses bounded iteration (3 _ width _ height max)
--   Ocean current smoothing with configurable iteration count
--   Wind pattern smoothing with peak preservation
-
-#### Memory Management
-
--   Uses FloatMap instances for efficient 2D data storage
--   Array module for river data (Python 2.4 compatible)
--   Coordinate caching and reuse where possible
-
-#### Optimization Opportunities
-
--   Current transport could use more efficient pathfinding
--   Precipitation calculation could be vectorized
--   Smoothing operations could use separable filters
-
-### Python 2.4 Compatibility
-
-#### Language Restrictions
-
--   No decorators, context managers, or modern syntax
--   Uses `print` statements, not function calls
--   Array module instead of modern numpy equivalents
--   Manual iteration instead of comprehensions where needed
-
-#### Civilization IV Integration
-
--   Compatible with CvPythonExtensions API
--   Uses FloatMap class from game engine
--   Follows game's coordinate system conventions
--   Integrates with existing map generation pipeline
-
-### Testing Strategy
-
-#### Unit Testing Approach
-
--   Test individual climate components in isolation
--   Mock dependencies (elevation_map, terrain_map, map_constants)
--   Validate mathematical correctness of climate algorithms
--   Test edge cases (polar regions, map boundaries, wrapping)
-
-#### Integration Testing
-
--   Test full climate generation pipeline
--   Validate realistic climate patterns
--   Performance testing with various map sizes
--   Cross-validation with known climate data
-
-### Future Enhancements
-
-#### River System Completion
-
--   Full river basin analysis and generation
--   Lake placement and sizing algorithms
--   River network connectivity validation
--   Integration with existing terrain generation
-
-#### Advanced Climate Features
-
--   Seasonal variation modeling
--   Climate change simulation over time
--   More sophisticated ocean current modeling
--   Advanced precipitation types (snow, monsoons)
-
-#### Performance Optimization
-
--   Parallel processing for independent calculations
--   More efficient data structures for large maps
--   Caching of expensive calculations
--   Progressive detail levels for different map sizes
+-   **`test_planetforge.py`**: Acts as an integration test, running the full map generation pipeline and creating visualizations of the output at each major stage.
+-   **`CvPythonExtensions.py`**: A mock of the Civ IV API allows for testing outside the game environment.
+-   Validation is performed by checking for successful completion and visually inspecting the generated matplotlib plots for expected patterns and the absence of anomalies.

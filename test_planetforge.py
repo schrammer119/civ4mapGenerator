@@ -4,10 +4,10 @@ import numpy as np
 import traceback
 
 from PlanetForge import *
-from MapConstants import MapConstants
+from MapConfig import MapConfig
 
-# Initialize shared MapConstants instance
-mc = MapConstants()
+# Initialize shared MapConfig instance
+mc = MapConfig()
 
 # Initialize the elevation map with shared constants
 em = ElevationMap(mc)

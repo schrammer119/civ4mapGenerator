@@ -2,38 +2,26 @@
 
 ## Overall Architecture
 
-### Single File Design
+### Modular Design
 
-PlanetForge follows Civilization IV's map script architecture requirement:
+PlanetForge is designed with a modular architecture to separate concerns and improve maintainability, even though it is deployed as a single file for Civ IV compatibility.
 
-- **Single Python File**: All functionality contained in `PlanetForge.py`
-- **Function-Based Interface**: Implements CvMapScriptInterface functions
-- **No External Dependencies**: Uses only Civ IV's built-in Python libraries
-- **Modular Internal Structure**: Organized into logical function groups despite single file constraint
+-   **`PlanetForge.py`**: The main map script entry point, orchestrating the generation process.
+-   **`MapConfig.py`**: A centralized class for all configuration parameters and shared utility functions. This promotes a DRY (Don't Repeat Yourself) architecture.
+-   **`ElevationMap.py`**: Handles the entire plate tectonics simulation and generation of the base elevation map.
+-   **`ClimateMap.py`**: Manages the simulation of climate systems, including temperature, wind, and rainfall.
 
 ### Core System Components
 
 ```
-PlanetForge.py
-├── Interface Functions (Required by Civ IV)
-│   ├── getDescription()
-│   ├── generatePlotTypes()
-│   ├── generateTerrain()
-│   ├── addRivers()
-│   ├── addFeatures()
-│   └── addBonuses()
-├── Plate Tectonic System
-│   ├── initializePlates()
-│   ├── simulatePlateTectonics()
-│   └── generateContinents()
-├── Climate System
-│   ├── calculateClimateZones()
-│   ├── generateWeatherPatterns()
-│   └── placeBiomes()
-└── Utility Functions
-    ├── Mathematical helpers
-    ├── Coordinate transformations
-    └── Random number generation
+PlanetForge.py (Orchestrator)
+    |
+    v
+MapConfig.py (Shared Config & Utilities)
+    |
+    +---> ElevationMap.py (Geological Model)
+    |
+    +---> ClimateMap.py (Climatic Model)
 ```
 
 ## Key Design Patterns
@@ -42,26 +30,32 @@ PlanetForge.py
 
 Civ IV calls map script functions in a specific order:
 
-1. **Initialization**: `beforeInit()` → `beforeGeneration()`
-2. **Plot Generation**: `generatePlotTypes()` (our main entry point)
-3. **Terrain Assignment**: `generateTerrain()`
-4. **Feature Placement**: `addRivers()` → `addFeatures()` → `addBonuses()`
-5. **Finalization**: `afterGeneration()`
+1.  **Initialization**: `beforeInit()` → `beforeGeneration()`
+2.  **Plot Generation**: `generatePlotTypes()` (our main entry point)
+3.  **Terrain Assignment**: `generateTerrain()`
+4.  **Feature Placement**: `addRivers()` → `addFeatures()` → `addBonuses()`
+5.  **Finalization**: `afterGeneration()`
 
 ### Data Flow Pattern
 
 ```
-Map Dimensions → Plate Initialization → Tectonic Simulation →
-Continental Formation → Elevation Mapping → Climate Calculation →
-Terrain Assignment → Feature Placement → Resource Distribution
+MapConfig (Init)
+    |
+    v
+ElevationMap.GenerateElevationMap()
+    |
+    v
+ClimateMap.GenerateClimateMap()
+    |
+    v
+PlanetForge (Terrain, Features, Bonuses)
 ```
 
 ### State Management
 
-- **Global Variables**: Used sparingly for map-wide data (gc, map)
-- **Function Parameters**: Data passed between functions via return values
-- **Local Computation**: Most processing done within function scope
-- **No Persistent State**: Each generation starts fresh
+-   **`MapConfig` Instance**: A single instance of `MapConfig` is created in `PlanetForge.py` and passed to the `ElevationMap` and `ClimateMap` constructors. This dependency injection pattern ensures all components share the same configuration and utilities.
+-   **Class-based State**: Each major component (`ElevationMap`, `ClimateMap`) manages its own internal state (e.g., `self.elevationMap`, `self.TemperatureMap`).
+-   **No Global State**: The design avoids global variables (except for the required Civ IV `gc` and `map` objects), relying on class instances and method calls.
 
 ## Plate Tectonic System Design
 
@@ -81,17 +75,11 @@ plate = {
 
 ### Simulation Algorithm
 
-1. **Initialization**: Create plates with random centers and velocities
-2. **Movement**: Move plates according to velocity vectors
-3. **Collision Detection**: Identify plate boundaries and interactions
-4. **Elevation Calculation**: Generate elevation based on plate interactions
-5. **Continental Formation**: Convert elevation data to plot types
-
-### Boundary Types
-
-- **Divergent**: Plates moving apart (mid-ocean ridges, rift valleys)
-- **Convergent**: Plates colliding (mountain ranges, trenches)
-- **Transform**: Plates sliding past each other (fault lines)
+1.  **Initialization**: Create plates with random centers and velocities.
+2.  **Movement**: Simulate plate tectonics to form continental shapes.
+3.  **Collision Detection**: Identify plate boundaries and interactions.
+4.  **Elevation Calculation**: Generate elevation based on plate interactions.
+5.  **Continental Formation**: Convert elevation data to plot types.
 
 ## Climate System Design
 
@@ -106,31 +94,24 @@ elevation_factor = elevation[x][y] / max_elevation
 
 ### Terrain Assignment Logic
 
-- **Temperature**: Based on latitude and elevation
-- **Precipitation**: Based on ocean proximity and wind patterns
-- **Terrain Type**: Combination of temperature and precipitation
-- **Special Features**: Rivers, oases, flood plains based on local conditions
+-   **Temperature**: Based on latitude and elevation.
+-   **Precipitation**: Based on ocean proximity and wind patterns.
+-   **Terrain Type**: Combination of temperature and precipitation.
+-   **Special Features**: Rivers, oases, flood plains based on local conditions.
 
 ## Performance Optimization Patterns
 
 ### Computational Efficiency
 
-- **Grid-Based Processing**: Process map in chunks where possible
-- **Early Termination**: Stop calculations when sufficient accuracy reached
-- **Lookup Tables**: Pre-calculate expensive operations
-- **Minimal Object Creation**: Reuse data structures
-
-### Memory Management
-
-- **Array Reuse**: Reuse arrays for different calculation phases
-- **Garbage Collection**: Explicitly delete large temporary data
-- **Streaming Processing**: Process data in passes rather than storing everything
+-   **Grid-Based Processing**: Process map in chunks where possible.
+-   **Early Termination**: Stop calculations when sufficient accuracy is reached.
+-   **Lookup Tables**: Pre-calculate expensive operations (e.g., `_precalculate_neighbours` in `MapConfig`).
+-   **Efficient Data Structures**: Use `collections.deque` for queue operations.
 
 ### Algorithmic Choices
 
-- **Approximation Over Precision**: Use fast approximations for complex calculations
-- **Iterative Refinement**: Start with rough approximation, refine as needed
-- **Spatial Locality**: Process nearby cells together for cache efficiency
+-   **Approximation Over Precision**: Use fast approximations for complex calculations where appropriate.
+-   **Iterative Refinement**: Start with a rough approximation and refine it over several passes.
 
 ## Integration Patterns
 
@@ -152,74 +133,29 @@ plot.setPlotType(PlotTypes.PLOT_LAND)
 
 ### Error Handling
 
-- **Graceful Degradation**: Fall back to simpler algorithms if complex ones fail
-- **Boundary Checking**: Always validate coordinates before map access
-- **Default Implementations**: Use `CyPythonMgr().allowDefaultImpl()` as fallback
-
-### Random Number Generation
-
-- **Seeded Generation**: Use consistent seeds for reproducible results
-- **Multiple Streams**: Separate random streams for different systems
-- **Distribution Control**: Ensure proper statistical distributions
+-   **Graceful Degradation**: Fall back to simpler algorithms if complex ones fail.
+-   **Boundary Checking**: Always validate coordinates before map access.
+-   **Default Implementations**: Use `CyPythonMgr().allowDefaultImpl()` as a fallback for unimplemented features.
 
 ## Code Organization Patterns
 
 ### Function Naming Convention
 
-- **Interface Functions**: Match CvMapScriptInterface exactly
-- **Internal Functions**: Use descriptive names with system prefixes
-- **Helper Functions**: Start with underscore for internal use
-- **Constants**: ALL_CAPS for configuration values
+-   **Interface Functions**: Match CvMapScriptInterface exactly.
+-   **Internal Functions**: Use descriptive names with a leading underscore (e.g., `_calculate_plate_properties`).
+-   **Constants**: ALL_CAPS for configuration values within `MapConfig`.
 
 ### Documentation Pattern
 
 ```python
-def functionName():
+def functionName(self):
     """
-    Brief description of what the function does
+    Brief description of what the function does.
 
     Returns:
-        type: Description of return value
+        type: Description of return value.
 
     Notes:
-        Any important implementation details
+        Any important implementation details.
     """
 ```
-
-### Configuration Management
-
-```python
-# Configuration constants at top of file
-PLATE_COUNT_BASE = 8
-CLIMATE_ZONES = 5
-MOUNTAIN_THRESHOLD = 0.7
-RIVER_DENSITY = 0.3
-```
-
-## Testing and Validation Patterns
-
-### Development Testing
-
-- **Dummy API**: Use `tests/CvPythonExtensions.py` for unit testing
-- **Incremental Testing**: Test each system component independently
-- **Visual Validation**: Generate test maps to visually inspect results
-
-### Runtime Validation
-
-- **Sanity Checks**: Validate generated data meets basic requirements
-- **Performance Monitoring**: Track generation time and memory usage
-- **Error Recovery**: Handle edge cases gracefully
-
-## Extension Patterns
-
-### Future Enhancement Structure
-
-- **Plugin Architecture**: Design functions to be easily replaceable
-- **Configuration Hooks**: Allow easy parameter tuning
-- **Modular Systems**: Keep systems loosely coupled for easy modification
-
-### Backward Compatibility
-
-- **Interface Stability**: Maintain CvMapScriptInterface compatibility
-- **Save Game Compatibility**: Ensure generated maps work with existing saves
-- **Version Management**: Handle different Civ IV versions gracefully
