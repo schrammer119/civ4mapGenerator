@@ -63,8 +63,7 @@ class ClimateMap:
         print("Generating Climate System")
         self.GenerateTemperatureMap()
         self.GenerateRainfallMap()
-        if getattr(self.mc, 'RiverGenerator', 1) == 2:
-            self.GenerateRiverMap()
+        self.GenerateRiverMap()
 
     def GenerateTemperatureMap(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
@@ -76,9 +75,233 @@ class ClimateMap:
         self._calculate_elevation_effects(aboveSeaLevelMap)
         self._generate_base_temperature(aboveSeaLevelMap)
         self._generate_ocean_currents()
+        self._apply_ocean_current_and_maritime_effects()
         self._generate_wind_patterns()
         self._apply_temperature_smoothing()
         self._apply_polar_cooling()
+
+    def _apply_ocean_current_and_maritime_effects(self):
+        """
+        Main method to apply ocean current heat transport effects.
+        Modifies self.TemperatureMap with thermal anomalies from ocean currents.
+        """
+        print("Applying ocean current heat transport...")
+
+        # Store original temperatures as baseline
+        self.baseTemperatureMap = list(self.TemperatureMap)
+
+        # Pre-calculate ocean distances and basin information
+        self._calculateOceanDistances()
+
+        # Apply thermal transport via ocean currents
+        self._transportOceanHeat()
+
+        # Apply maritime effects to adjacent land areas
+        self._applyMaritimeEffects()
+
+    def _calculateOceanDistances(self):
+        """
+        Pre-calculate distance from each land tile to nearest ocean using BFS.
+        Also identifies ocean basins and filters out small water bodies.
+        """
+
+        # Initialize distance map: 0 for ocean, infinity for land
+        self.oceanDistanceMap = [0 if self.em.plotTypes[i] == self.mc.PLOT_OCEAN
+                                else self.mc.iNumPlots for i in range(self.mc.iNumPlots)]
+
+        # Identify ocean basins and calculate sizes
+        self.oceanBasinMap = [-1] * self.mc.iNumPlots
+        self.basinSizes = {}
+        basin_counter = 0
+
+        # Flood fill to identify connected ocean basins
+        ocean_tiles = []
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+                if self.oceanBasinMap[i] == -1:
+                    basin_size = self._floodFillBasin(i, basin_counter)
+                    self.basinSizes[basin_counter] = basin_size
+                    basin_counter += 1
+                if self.basinSizes[self.oceanBasinMap[i]] >= self.mc.min_basin_size:
+                    ocean_tiles.append((i, 0))
+
+        # BFS to calculate distances from ocean
+        # Use simple list as queue (FIFO with pop(0)) - deque may not be available in Civ IV
+        while ocean_tiles:
+            current_tile, current_distance = ocean_tiles.pop(0)  # FIFO - process closest tiles first
+
+            # Check all neighbours
+            for neighbour in self.mc.neighbours[current_tile]:
+                # If neighbour distance is greater than current + 1, update it
+                if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
+                    self.oceanDistanceMap[neighbour] = current_distance + 1
+                    if current_distance + 1 < self.mc.maritime_influence_distance:
+                        ocean_tiles.append((neighbour, current_distance + 1))
+
+        # Create distance queue for maritime processing (sorted by distance)
+        self.distanceQueue = []
+        for i in range(self.mc.iNumPlots):
+            if 0 < self.oceanDistanceMap[i] <= self.mc.maritime_influence_distance:  # Land tiles within range
+                self.distanceQueue.append((self.oceanDistanceMap[i], i))
+
+        self.distanceQueue.sort()  # Sort by distance for processing order
+
+    def _floodFillBasin(self, start_tile, basin_id):
+        """
+        Flood fill to identify connected ocean basin and return its size.
+        """
+        if self.oceanBasinMap[start_tile] != -1:  # Already processed
+            return 0
+
+        basin_size = 0
+        stack = [start_tile]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.oceanBasinMap[current] != -1 or
+                self.em.plotTypes[current] != self.mc.PLOT_OCEAN):
+                continue
+
+            # Mark as part of this basin
+            self.oceanBasinMap[current] = basin_id
+            basin_size += 1
+
+            # Add neighbours to stack
+            for neighbour in self.mc.neighbours[current]:
+                if (neighbour >= 0 and
+                    self.oceanBasinMap[neighbour] == -1 and
+                    self.em.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
+                    stack.append(neighbour)
+
+        return basin_size
+
+    def _transportOceanHeat(self):
+        """
+        Calculate thermal anomalies from ocean current heat transport.
+        Uses thermal plume model with diffusive mixing.
+        """
+        direction_map = {
+            0: 3,   # East -> E = 3
+            1: 5,   # NE -> NE = 5
+            2: 1,   # North -> N = 1
+            3: 6,   # NW -> NW = 6
+            4: 4,   # West -> W = 4
+            5: 8,   # SW -> SW = 8
+            6: 2,   # South -> S = 2
+            7: 7    # SE -> SE = 7
+        }
+
+        # Initialize accumulation arrays
+        heat_sum = [0.0] * self.mc.iNumPlots
+        strength_sum = [0.0] * self.mc.iNumPlots
+
+        # Process each ocean tile as a thermal source
+        for source_tile in range(self.mc.iNumPlots):
+            # Skip non-ocean tiles
+            if self.em.plotTypes[source_tile] != self.mc.PLOT_OCEAN:
+                continue
+
+            # Skip small basins
+            basin_id = self.oceanBasinMap[source_tile]
+            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+                continue
+
+            # Initialize thermal plume
+            plume_index = source_tile
+            temp_enforced = self.baseTemperatureMap[source_tile]
+
+            # Trace thermal plume downstream
+            for step in range(self.mc.max_plume_distance):
+                # Get current flow at this position
+                current_u = self.OceanCurrentU[plume_index]
+                current_v = self.OceanCurrentV[plume_index]
+                local_strength = (current_u**2 + current_v**2)**0.5 * self.mc.current_amplification
+
+                # Terminate if flow is too weak
+                if local_strength < self.mc.min_strength_threshold:
+                    break
+
+                flow_angle = math.atan2(current_v, current_u)
+                direction_index = int((flow_angle + math.pi/8) / (math.pi/4)) % 8
+                mc_dir = direction_map[direction_index]
+                next_neighbour = self.mc.neighbours[plume_index][mc_dir]
+
+                # Terminate if invalid neighbour or hit land
+                if (next_neighbour < 0 or
+                    self.em.plotTypes[next_neighbour] != self.mc.PLOT_OCEAN):
+                    break
+
+                # Move to next position
+                plume_index = next_neighbour
+
+                # Apply thermal mixing (water mass adopts local characteristics)
+                local_base_temp = self.baseTemperatureMap[plume_index]
+
+                # Calculate thermal anomaly contribution
+                thermal_anomaly = temp_enforced - local_base_temp
+
+                # Accumulate heat effects
+                heat_sum[plume_index] += thermal_anomaly * local_strength
+                strength_sum[plume_index] += local_strength
+
+                # update values for next loop
+                temp_enforced = (temp_enforced * self.mc.mixing_factor +
+                            local_base_temp * (1.0 - self.mc.mixing_factor))
+
+        # Apply accumulated thermal anomalies
+        for i in range(self.mc.iNumPlots):
+            if strength_sum[i] > 0:
+                anomaly = heat_sum[i] / strength_sum[i]
+                self.TemperatureMap[i] = self.baseTemperatureMap[i] + anomaly
+
+    def _applyMaritimeEffects(self):
+        """
+        Apply maritime climate effects to coastal land areas using pre-calculated distances.
+        Uses "baked in" temperature propagation through recursive spreading.
+        """
+
+        # Store original land temperatures before maritime modification
+        original_temps = list(self.TemperatureMap)
+
+        # Process land tiles in distance order (closest to ocean first)
+        for distance, land_tile in self.distanceQueue:
+            # Skip tiles beyond maritime influence
+            if distance > self.mc.maritime_influence_distance:
+                break
+
+            # Accumulate maritime influences from closer neighbours
+            total_influence = 0.0
+            total_weight = 0.0
+
+            for neighbour in self.mc.neighbours[land_tile]:
+                if neighbour >= 0:
+                    neighbour_distance = self.oceanDistanceMap[neighbour]
+
+                    # Only consider neighbors closer to ocean AND not blocked by peaks
+                    if (neighbour_distance < distance and
+                        self.em.plotTypes[neighbour] != self.mc.PLOT_PEAK):
+                        neighbour_temp = self.TemperatureMap[neighbour]  # Already has maritime effects
+
+                        # For direct ocean neighbours, check basin size
+                        if neighbour_distance == 0:
+                            basin_id = self.oceanBasinMap[neighbour]
+                            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+                                continue  # Skip small water bodies
+
+                        # Calculate influence with distance decay
+                        effective_distance = distance
+                        weight = self.mc.distance_decay ** effective_distance
+                        temp_diff = neighbour_temp - original_temps[land_tile]
+
+                        total_influence += temp_diff * weight
+                        total_weight += weight
+
+            # Apply maritime effect
+            if total_weight > 0:
+                maritime_effect = (total_influence / total_weight) * self.mc.maritime_strength
+                self.TemperatureMap[land_tile] = original_temps[land_tile] + maritime_effect
 
     def _calculate_elevation_effects(self, aboveSeaLevelMap):
         """Calculate elevation effects on temperature"""
@@ -156,13 +379,13 @@ class ClimateMap:
         force_U, force_V = self._generate_forcing_fields()
 
         # Step 2: Precompute connectivity and conductances
-        neighbors, conduct, sumK = self._precompute_ocean_connectivity()
+        neighbours, conduct, sumK = self._precompute_ocean_connectivity()
 
         # Step 3: Solve pressure with face-based forcing
-        pressure = self._solve_pressure_with_face_forcing(neighbors, conduct, sumK, force_U, force_V)
+        pressure = self._solve_pressure_with_face_forcing(neighbours, conduct, sumK, force_U, force_V)
 
         # Step 4: Compute velocities with Coriolis effects
-        self._compute_ocean_velocities_with_coriolis(neighbors, conduct, pressure, force_U, force_V)
+        self._compute_ocean_velocities_with_coriolis(neighbours, conduct, pressure, force_U, force_V)
 
     def _calculate_direction_vector(self, i, j):
         """Calculate unit vector (dx, dy) from tile i to tile j"""
@@ -193,8 +416,6 @@ class ClimateMap:
         force_U = [0.0] * self.mc.iNumPlots
         force_V = [0.0] * self.mc.iNumPlots
 
-        max_temp_grad_v = 0
-
         for i in range(self.mc.iNumPlots):
             if self.em.IsBelowSeaLevel(i):
                 y = i // self.mc.iNumPlotsX
@@ -210,45 +431,47 @@ class ClimateMap:
                 force_U[i] += self.mc.thermalGradientFactor * temp_grad_u
                 force_V[i] += self.mc.thermalGradientFactor * temp_grad_v
 
-                if abs(temp_grad_v) > max_temp_grad_v:
-                    max_temp_grad_v = abs(temp_grad_v)
-
-        print("max temp grad v = %f" % max_temp_grad_v)
         return force_U, force_V
 
     def _calculate_temperature_gradients(self, i):
         """Calculate temperature gradients at a given tile"""
-        x = i % self.mc.iNumPlotsX
-        y = i // self.mc.iNumPlotsX
-
-        # Calculate gradients using 8-neighbor stencil
+        # Calculate gradients using 8-neighbour stencil
         grad_u = 0.0
         grad_v = 0.0
         count = 0
+        x_i = i % self.mc.iNumPlotsX
+        y_i = i // self.mc.iNumPlotsX
 
-        # Use the 8-neighbor offsets from the original specification
-        offsets = [
-            (1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)
-        ]
+        for neighbour_i in self.mc.neighbours[i]:
+            if neighbour_i >= 0:
+                if self.em.IsBelowSeaLevel(neighbour_i):
+                    x_j = neighbour_i % self.mc.iNumPlotsX
+                    y_j = neighbour_i // self.mc.iNumPlotsX
 
-        for dx, dy in offsets:
-            neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
-            neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+                    # Calculate raw differences
+                    dx = x_j - x_i
+                    dy = y_j - y_i
 
-            if self._is_valid_position(neighbor_x, neighbor_y):
-                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                if self.em.IsBelowSeaLevel(neighbor_i):
-                    temp_diff = self.TemperatureMap[neighbor_i] - self.TemperatureMap[i]
-                    grad_u += temp_diff * dx / 8.0
-                    grad_v += temp_diff * dy / 8.0
+                    # Handle wrapping
+                    if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
+                        dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
+                    if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
+                        dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
+
+                    temp_diff = self.TemperatureMap[neighbour_i] - self.TemperatureMap[i]
+                    grad_u += temp_diff * dx
+                    grad_v += temp_diff * dy
                     count += 1
+
+        if count > 0:
+            grad_u /= count
+            grad_v /= count
 
         return grad_u, grad_v
 
     def _precompute_ocean_connectivity(self):
         """Precompute connectivity and conductances for ocean tiles"""
-        neighbors = [[] for _ in range(self.mc.iNumPlots)]
+        neighbours = [[] for _ in range(self.mc.iNumPlots)]
         conduct = [[] for _ in range(self.mc.iNumPlots)]
         sumK = [0.0] * self.mc.iNumPlots
 
@@ -259,30 +482,28 @@ class ClimateMap:
             # Calculate depth for this tile
             depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
 
-            # Check all 8 neighbors (directions 1-8, skip 0 which is self)
+            # Check all 8 neighbours (directions 1-8, skip 0 which is self)
             for direction in range(1, 9):
-                neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-                if neighbor_x == -1 or neighbor_y == -1:
+                j = self.mc.neighbours[i][direction]
+                if j < 0:
                     continue
-
-                j = neighbor_y * self.mc.iNumPlotsX + neighbor_x
                 if not self.em.IsBelowSeaLevel(j):
                     continue
 
-                # Calculate depth for neighbor
+                # Calculate depth for neighbour
                 depth_j = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[j])
 
                 # Calculate conductance (no distance correction for simplicity)
                 k = self.mc.oceanCurrentK0 * (depth_i + depth_j) * 0.5
 
-                neighbors[i].append(j)
+                neighbours[i].append(j)
                 conduct[i].append(k)
                 sumK[i] += k
 
-        return neighbors, conduct, sumK
+        return neighbours, conduct, sumK
 
 
-    def _solve_pressure_with_face_forcing(self, neighbors, conduct, sumK, force_U, force_V):
+    def _solve_pressure_with_face_forcing(self, neighbours, conduct, sumK, force_U, force_V):
         """Solve pressure with face-based forcing and RMSE convergence detection"""
         pressure = [0.0] * self.mc.iNumPlots
 
@@ -298,7 +519,7 @@ class ClimateMap:
 
                 # Calculate face-based forcing accumulator
                 acc = 0.0
-                for idx, j in enumerate(neighbors[i]):
+                for idx, j in enumerate(neighbours[i]):
                     dx, dy = self._calculate_direction_vector(i, j)
                     F_face_ij = ((force_U[i] + force_U[j]) * 0.5 * dx +
                                 (force_V[i] + force_V[j]) * 0.5 * dy)
@@ -311,17 +532,18 @@ class ClimateMap:
             residual = math.sqrt(sum(residual_SS) / len(residual_SS))  # RMSE
 
             # Check convergence after minimum iterations
-            if iteration >= self.mc.minSolverIterations and len(residual_SS) > 0:
+            if (iteration >= self.mc.minSolverIterations and
+                len(residual_SS) > 0 and
+                residual < self.mc.solverTolerance):
+                break
 
-                if residual < self.mc.solverTolerance:
-                    print("Ocean current solver converged after %d iterations (RMSE: %.2e)" %
-                          (iteration + 1, residual))
-                    break
+        print("Ocean current solver finished after %d iterations (RMSE: %.2e)" %
+                (iteration + 1, residual))
 
         return pressure
 
 
-    def _compute_ocean_velocities_with_coriolis(self, neighbors, conduct, pressure, force_U, force_V):
+    def _compute_ocean_velocities_with_coriolis(self, neighbours, conduct, pressure, force_U, force_V):
         """Compute final ocean velocities from pressure field with Coriolis effects"""
         # Step 1: Calculate pressure-based fluxes
         pressure_flux_x = [0.0] * self.mc.iNumPlots
@@ -335,7 +557,7 @@ class ClimateMap:
             flux_x = 0.0
             flux_y = 0.0
 
-            for idx, j in enumerate(neighbors[i]):
+            for idx, j in enumerate(neighbours[i]):
                 dx, dy = self._calculate_direction_vector(i, j)
 
                 # Calculate face-based forcing for this edge
@@ -572,21 +794,19 @@ class ClimateMap:
         y = i // self.mc.iNumPlotsX
         current_elevation = self.em.elevationMap[i]
 
-        higher_neighbors = 0
-        total_neighbors = 0
+        higher_neighbours = 0
+        total_neighbours = 0
 
-        # Check all 8 neighbors
+        # Check all 8 neighbours
         for direction in range(1, 9):
-            neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-            if self._is_valid_position(neighbor_x, neighbor_y):
-                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                total_neighbors += 1
+            neighbour_i = self.mc.neighbours[i][direction]
+            if neighbour_i >= 0:
+                total_neighbours += 1
+                if self.em.elevationMap[neighbour_i] > current_elevation:
+                    higher_neighbours += 1
 
-                if self.em.elevationMap[neighbor_i] > current_elevation:
-                    higher_neighbors += 1
-
-        # Consider it a valley if more than half the neighbors are higher
-        return total_neighbors > 0 and (higher_neighbors / float(total_neighbors)) > 0.6
+        # Consider it a valley if more than half the neighbours are higher
+        return total_neighbours > 0 and (higher_neighbours / float(total_neighbours)) > 0.6
 
     def _calculate_valley_direction(self, i):
         """Calculate the primary direction of a valley"""
@@ -611,12 +831,12 @@ class ClimateMap:
         ]
 
         for dx, dy, angle in directions:
-            neighbor_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
-            neighbor_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
+            neighbour_x = self._wrap_coordinate(x + dx, self.mc.iNumPlotsX, self.mc.wrapX)
+            neighbour_y = self._wrap_coordinate(y + dy, self.mc.iNumPlotsY, self.mc.wrapY)
 
-            if self._is_valid_position(neighbor_x, neighbor_y):
-                neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                gradient = current_elevation - self.em.elevationMap[neighbor_i]
+            if self._is_valid_position(neighbour_x, neighbour_y):
+                neighbour_i = neighbour_y * self.mc.iNumPlotsX + neighbour_x
+                gradient = current_elevation - self.em.elevationMap[neighbour_i]
 
                 if gradient > max_gradient:
                     max_gradient = gradient
@@ -679,14 +899,13 @@ class ClimateMap:
                 sumV = self.WindV[i]
                 count = 1.0
 
-                # Average with non-peak neighbors
+                # Average with non-peak neighbours
                 for direction in range(1, 9):
-                    neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-                    if self._is_valid_position(neighbor_x, neighbor_y):
-                        neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
+                    neighbour_i = self.mc.neighbours[i][direction]
+                    if neighbour_i >= 0:
                         if self.em.plotTypes[i] != self.mc.PLOT_PEAK:
-                            sumU += self.WindU[neighbor_i]
-                            sumV += self.WindV[neighbor_i]
+                            sumU += self.WindU[neighbour_i]
+                            sumV += self.WindV[neighbour_i]
                             count += 1.0
 
                 self.WindU[i] = sumU / count
@@ -694,6 +913,7 @@ class ClimateMap:
 
     def _apply_temperature_smoothing(self):
         """Apply smoothing to temperature map"""
+        return
         self.TemperatureMap = self.gaussian_blur_2d_land_only(self.TemperatureMap, self.mc.climateSmoothing)
         self.TemperatureMap = self._gaussian_blur_2d(self.TemperatureMap, self.mc.climateSmoothing)
 
@@ -751,20 +971,19 @@ class ClimateMap:
             y = i // self.mc.iNumPlotsX
             if not self.em.IsBelowSeaLevel(i):
                 moisture = 0.0
-                ocean_neighbors = 0
+                ocean_neighbours = 0
 
-                # Check neighbors for ocean tiles
+                # Check neighbours for ocean tiles
                 for direction in range(1, 9):
-                    neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-                    if self._is_valid_position(neighbor_x, neighbor_y):
-                        neighbor_i = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                        if self.em.IsBelowSeaLevel(neighbor_i):
-                            moisture += moistureMap[neighbor_i]
-                            ocean_neighbors += 1
+                    neighbour_i = self.mc.neighbours[i][direction]
+                    if neighbour_i >= 0:
+                        if self.em.IsBelowSeaLevel(neighbour_i):
+                            moisture += moistureMap[neighbour_i]
+                            ocean_neighbours += 1
 
-                if ocean_neighbors > 0:
+                if ocean_neighbours > 0:
                     i = y * self.mc.iNumPlotsX + x
-                    moistureMap[i] += 0.5 * moisture / ocean_neighbors
+                    moistureMap[i] += 0.5 * moisture / ocean_neighbours
 
     def _transport_moisture_by_wind(self, moistureMap):
         """Transport moisture using wind patterns"""
@@ -1137,14 +1356,14 @@ class ClimateMap:
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
-                neighbor_x = x + k
+                neighbour_x = x + k
                 if self.mc.wrapX:
-                    neighbor_x = neighbor_x % self.mc.iNumPlotsX
-                elif neighbor_x < 0 or neighbor_x >= self.mc.iNumPlotsX:
+                    neighbour_x = neighbour_x % self.mc.iNumPlotsX
+                elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
                     continue
 
-                neighbor_index = y * self.mc.iNumPlotsX + neighbor_x
-                weighted_sum += grid[neighbor_index] * kernel[k + radius]
+                neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
+                weighted_sum += grid[neighbour_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
             temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
@@ -1158,14 +1377,14 @@ class ClimateMap:
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
-                neighbor_y = y + k
+                neighbour_y = y + k
                 if self.mc.wrapY:
-                    neighbor_y = neighbor_y % self.mc.iNumPlotsY
-                elif neighbor_y < 0 or neighbor_y >= self.mc.iNumPlotsY:
+                    neighbour_y = neighbour_y % self.mc.iNumPlotsY
+                elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
                     continue
 
-                neighbor_index = neighbor_y * self.mc.iNumPlotsX + x
-                weighted_sum += temp_grid[neighbor_index] * kernel[k + radius]
+                neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
+                weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
             result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
@@ -1201,13 +1420,13 @@ class ClimateMap:
                 weighted_sum = 0.0
                 weight_total = 0.0
                 for k in range(-radius, radius + 1):
-                    neighbor_x = x + k
+                    neighbour_x = x + k
                     if self.mc.wrapX:
-                        neighbor_x = neighbor_x % self.mc.iNumPlotsX
-                    elif neighbor_x < 0 or neighbor_x >= self.mc.iNumPlotsX:
+                        neighbour_x = neighbour_x % self.mc.iNumPlotsX
+                    elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
                         continue
-                    neighbor_index = y * self.mc.iNumPlotsX + neighbor_x
-                    weighted_sum += grid[neighbor_index] * kernel[k + radius]
+                    neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
+                    weighted_sum += grid[neighbour_index] * kernel[k + radius]
                     weight_total += kernel[k + radius]
                 temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
             else:
@@ -1224,13 +1443,13 @@ class ClimateMap:
                 weighted_sum = 0.0
                 weight_total = 0.0
                 for k in range(-radius, radius + 1):
-                    neighbor_y = y + k
+                    neighbour_y = y + k
                     if self.mc.wrapY:
-                        neighbor_y = neighbor_y % self.mc.iNumPlotsY
-                    elif neighbor_y < 0 or neighbor_y >= self.mc.iNumPlotsY:
+                        neighbour_y = neighbour_y % self.mc.iNumPlotsY
+                    elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
                         continue
-                    neighbor_index = neighbor_y * self.mc.iNumPlotsX + x
-                    weighted_sum += temp_grid[neighbor_index] * kernel[k + radius]
+                    neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
+                    weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
                     weight_total += kernel[k + radius]
                 result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
             else:
@@ -1268,13 +1487,13 @@ class ClimateMap:
                 weighted_sum = 0.0
                 weight_total = 0.0
                 for k in range(-radius, radius + 1):
-                    neighbor_x = x + k
+                    neighbour_x = x + k
                     if self.mc.wrapX:
-                        neighbor_x = neighbor_x % self.mc.iNumPlotsX
-                    elif neighbor_x < 0 or neighbor_x >= self.mc.iNumPlotsX:
+                        neighbour_x = neighbour_x % self.mc.iNumPlotsX
+                    elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
                         continue
-                    neighbor_index = y * self.mc.iNumPlotsX + neighbor_x
-                    weighted_sum += grid[neighbor_index] * kernel[k + radius]
+                    neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
+                    weighted_sum += grid[neighbour_index] * kernel[k + radius]
                     weight_total += kernel[k + radius]
                 temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
             else:
@@ -1291,13 +1510,13 @@ class ClimateMap:
                 weighted_sum = 0.0
                 weight_total = 0.0
                 for k in range(-radius, radius + 1):
-                    neighbor_y = y + k
+                    neighbour_y = y + k
                     if self.mc.wrapY:
-                        neighbor_y = neighbor_y % self.mc.iNumPlotsY
-                    elif neighbor_y < 0 or neighbor_y >= self.mc.iNumPlotsY:
+                        neighbour_y = neighbour_y % self.mc.iNumPlotsY
+                    elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
                         continue
-                    neighbor_index = neighbor_y * self.mc.iNumPlotsX + x
-                    weighted_sum += temp_grid[neighbor_index] * kernel[k + radius]
+                    neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
+                    weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
                     weight_total += kernel[k + radius]
                 result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
             else:
