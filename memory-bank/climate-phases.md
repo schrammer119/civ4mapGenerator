@@ -8,7 +8,7 @@
 
 **Phase 1: Temperature-Gradient Driven Currents**
 
--   Add temperature gradient calculations to drive north-south current components
+-   ✅ **Corrected Temperature Gradient Calculation**: Fixed a critical bug in `_calculate_temperature_gradients` that caused anomalies at map edges by implementing proper wrap-around logic. This ensures the temperature-driven forcing for ocean currents is physically accurate.
 -   Enhance `_apply_ocean_current_effects()` to use both U and V components for proper heat transport
 -   Create realistic warm/cold current temperature effects
 

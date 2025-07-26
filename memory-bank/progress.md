@@ -40,7 +40,15 @@
 
 ## Current Status: Ocean Current Model Corrected and Validated
 
-### Recently Completed (Latest Session)
+### Recently Completed (2025-07-26)
+
+-   ✅ **Fixed Ocean Current Anomaly at Map Edges**
+    -   Identified and corrected a bug in `_calculate_temperature_gradients()` where the distance vector calculation did not account for map wrapping.
+    -   This caused large, artificial temperature gradients at the x-axis edges, leading to unrealistic ocean current spikes.
+    -   The fix implements correct wrapping logic for `dx` and `dy`, resolving the anomalies and ensuring proper normalization of ocean currents.
+    -   Validated the fix by running the test suite (`test_planetforge.py`) and visually confirming the resolution of the issue.
+
+### Previously Completed
 
 -   ✅ **Ocean Current System Debugging and Correction**
     -   Identified fundamental flaws in the initial pressure-based solver through user feedback.
@@ -88,7 +96,7 @@
 -   Steady-state solver chosen over time-stepping for performance.
 -   **Face-based forcing** used to correctly model uniform driving forces (e.g., wind stress).
 -   **Coriolis effect applied as a post-processing, divergence-free flux rotation**, which is computationally efficient and physically sound.
--   Equal-weight neighbor connectivity for simplicity.
+-   Equal-weight neighbour connectivity for simplicity.
 -   Temperature-driven thermal circulation as a secondary forcing mechanism.
 
 ## Quality Metrics

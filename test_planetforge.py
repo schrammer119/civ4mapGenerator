@@ -40,47 +40,68 @@ ax.plot([x["x"] for x in em.plumeList], [x["y"]
 ax.set_title('Continent ID with Plate Velocities')
 fig.colorbar(p)
 
-Z = np.array(em.elevationBaseMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Create a 2x2 subplot for elevation components
+fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle('Elevation Components', fontsize=16)
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Base Elevation (Plate Density)')
-fig.colorbar(p)
+# Base Elevation (Plate Density)
+Z1 = np.array(em.elevationBaseMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p1 = axs[0, 0].imshow(Z1, origin='lower', cmap=mpl.cm.terrain)
+axs[0, 0].set_title('Base Elevation (Plate Density)')
+fig.colorbar(p1, ax=axs[0, 0])
 
-Z = np.array(em.elevationVelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Velocity Elevation
+Z2 = np.array(em.elevationVelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p2 = axs[0, 1].imshow(Z2, origin='lower', cmap=mpl.cm.terrain)
+axs[0, 1].set_title('Velocity Elevation')
+fig.colorbar(p2, ax=axs[0, 1])
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Velocity Elevation')
-fig.colorbar(p)
+# Buoyancy Elevation
+Z3 = np.array(em.elevationBuoyMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p3 = axs[1, 0].imshow(Z3, origin='lower', cmap=mpl.cm.terrain)
+axs[1, 0].set_title('Buoyancy Elevation')
+fig.colorbar(p3, ax=axs[1, 0])
 
-Z = np.array(em.elevationBuoyMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Preliminary Elevation
+Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p4 = axs[1, 1].imshow(Z4, origin='lower', cmap=mpl.cm.terrain)
+axs[1, 1].set_title('Preliminary Elevation')
+fig.colorbar(p4, ax=axs[1, 1])
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Buoyancy Elevation')
-fig.colorbar(p)
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-Z = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Create a 2x2 subplot for the next set of elevation maps
+fig2, axs2 = plt.subplots(2, 2, figsize=(12, 10))
+fig2.suptitle('Final Elevation Stages', fontsize=16)
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Preliminary Elevation')
-fig.colorbar(p)
+# Preliminary Elevation
+Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p4 = axs2[0, 0].imshow(Z4, origin='lower', cmap=mpl.cm.terrain)
+axs2[0, 0].set_title('Preliminary Elevation')
+fig.colorbar(p4, ax=axs2[0, 0])
 
-Z = np.array(em.elevationBoundaryMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Boundary Elevation
+Z5 = np.array(em.elevationBoundaryMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p5 = axs2[0, 1].imshow(Z5, origin='lower', cmap=mpl.cm.terrain)
+axs2[0, 1].set_title('Boundary Elevation')
+fig2.colorbar(p5, ax=axs2[0, 1])
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Boundary Elevation')
-fig.colorbar(p)
+# Prominence Map
+Z6 = np.array(em.prominenceMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p6 = axs2[1, 0].imshow(Z6, origin='lower', cmap=mpl.cm.terrain)
+axs2[1, 0].set_title('Prominence Map')
+fig2.colorbar(p6, ax=axs2[1, 0])
 
-Z = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+# Final Elevation
+Z7 = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+p7 = axs2[1, 1].imshow(Z7, origin='lower', cmap=mpl.cm.terrain)
+axs2[1, 1].set_title('Final Elevation')
+fig2.colorbar(p7, ax=axs2[1, 1])
 
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Final Elevation')
-fig.colorbar(p)
+# Clear the fourth subplot as it's not used
+axs2[1, 1].axis('off')
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 
 # Create land-only elevation map with sea level applied
 elev = [0 if x < em.seaLevelThreshold else x for x in em.elevationMap]
@@ -96,13 +117,6 @@ ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
 ax.plot([i % mc.iNumPlotsX for i in iHills], [
         i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='tab:brown', ms=8)
 ax.set_title('Final Map with Plot Types')
-fig.colorbar(p)
-
-Z = np.array(em.prominenceMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-fig, ax = plt.subplots()
-p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-ax.set_title('Prominence Map')
 fig.colorbar(p)
 
 print("Map generation completed successfully!")

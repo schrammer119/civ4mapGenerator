@@ -7,7 +7,7 @@ class MapConstants:
     Handles Civilization IV integration and provides shared constants
     for ElevationMap, ClimateMap, and other map generation classes.
     """
-    
+
     # Direction constants (shared across all map classes)
     L = 0
     N = 1
@@ -22,19 +22,19 @@ class MapConstants:
     O = 9   # Ocean (for ClimateMap compatibility)
 
     # Plot Types
-    NO_PLOT = -1
-    PLOT_PEAK = 0
-    PLOT_HILLS = 1
-    PLOT_LAND = 2
-    PLOT_OCEAN = 3
-    NUM_PLOT_TYPES = 4
+    NO_PLOT = PlotTypes.NO_PLOT
+    PLOT_PEAK = PlotTypes.PLOT_PEAK
+    PLOT_HILLS = PlotTypes.PLOT_HILLS
+    PLOT_LAND = PlotTypes.PLOT_LAND
+    PLOT_OCEAN = PlotTypes.PLOT_OCEAN
+    NUM_PLOT_TYPES = PlotTypes.NUM_PLOT_TYPES
 
     def __init__(self):
         """Initialize map constants and Civilization IV integration"""
         # Initialize Civilization IV context
         self.gc = CyGlobalContext()
         self.map = self.gc.getMap()
-        
+
         # Get map dimensions
         self.iNumPlotsX = self.map.getGridWidth()
         self.iNumPlotsY = self.map.getGridHeight()
@@ -88,8 +88,6 @@ class MapConstants:
         self.maxElev = 5.1  # Maximum elevation in km
 
         # Ocean and atmospheric parameters
-        self.currentAttenuation = 1.0
-        self.currentAmplFactor = 10.0
         self.tempGradientFactor = 0.2
 
         # Precipitation parameters
@@ -107,7 +105,6 @@ class MapConstants:
 
         # Enhanced climate modeling parameters
         # Solar radiation parameters
-        self.solarConstant = 1361.0         # Solar constant (W/m2)
         self.earthAlbedo = 0.3              # Earth's average albedo
         self.minSolarFactor = 0.1           # Minimum solar heating (polar regions)
         self.solarHadleyCellEffects = -0.12 # Hadley cell cooling at equator/warming at subtropics
@@ -122,22 +119,31 @@ class MapConstants:
 
         # Enhanced orographic parameters
         self.orographicLiftFactor = 2.0    # Strength of orographic lifting
-        self.windShadowFactor = 0.4        # Strength of rain shadow effect
         self.valleyChannelingFactor = 1.5  # Wind acceleration in valleys
         self.ridgeDeflectionDistance = 3   # Distance for wind deflection around ridges
-        self.foehWindFactor = 1.2          # Warming factor for descending air
 
         # Ocean current solver parameters
         self.oceanCurrentK0 = 1.0              # Base conductance scalar
-        self.currentSolverIterations = 200     # Jacobi iteration count
         self.thermalGradientFactor = 1.4       # Temperature gradient forcing strength
         self.latitudinalForcingStrength = 1.0  # Primary east/west forcing strength
         self.coriolisStrength = 150            # Coriolis effect strength modifier
         self.earthRotationRate = 7.27e-5       # Earth's rotation rate (rad/s)
 
         # Convergence parameters for ocean current solver
+        self.currentSolverIterations = 100     # Jacobi iteration count
         self.solverTolerance = 1e-1            # RMSE tolerance for pressure changes
         self.minSolverIterations = 10          # Minimum iterations before checking convergence
+
+        # Ocean current temperature transport parameters
+        self.max_plume_distance = 30          # Maximum steps a thermal plume can travel
+        self.mixing_factor = 0.95             # How much original temperature is retained each step (0.5-0.95)
+        self.min_strength_threshold = 0.01    # Minimum strength to continue plume
+        self.current_amplification = 4.0      # Artificial strengthening factor for gameplay
+        self.minimumBasinSize = 20            # minimum ocean basin size to affect land tile temperatures
+        self.maritime_influence_distance = 5  # How far inland maritime effects reach
+        self.maritime_strength = 0.7          # Strength of maritime influence (0-1)
+        self.distance_decay = 0.5             # How quickly effect decays with distance
+        self.min_basin_size = 20              # Minimum basin size for maritime effects
 
     def _initialize_algorithm_parameters(self):
         """Initialize parameters that control algorithm behavior"""
@@ -174,16 +180,9 @@ class MapConstants:
         self.minBarePeaks = 0.2                # Minimum percentage of peaks without forests
         self.mountainForestChance = 0.08       # Chance of forest spreading to peaks
 
-        # River generation setting (for ClimateMap compatibility)
-        self.RiverGenerator = 1
-
-        # Terrain constants (for ClimateMap compatibility)
-        self.PEAK = 4
-
     def _initialize_performance_parameters(self):
         """Initialize parameters that affect performance and quality trade-offs"""
         self.climateSmoothing = 4              # General smoothing radius for climate
-        self.perlinNoiseSize = 256             # Size of Perlin noise permutation array
 
         # Growth algorithm parameters
         self.continentGrowthSeeds = 1          # Seeds per continent for complex shapes
@@ -192,7 +191,6 @@ class MapConstants:
         self.roughnessMin = 0.1                # Minimum edge roughness
         self.roughnessRange = 0.3              # Range of edge roughness
         self.anisotropyMin = 0.5               # Minimum directional growth preference
-        self.anisotropyRange = 1.0             # Range of anisotropy variation
 
         # Boundary detection thresholds
         self.minDensityDifference = 0.05       # Minimum density difference for subduction
@@ -208,53 +206,50 @@ class MapConstants:
 
         # Erosion and time effects
         self.boundaryAgeFactor = 0.5           # How much boundaries are affected by age
-        self.erosionVariation = 0.4            # Random variation in erosion (+/-40%)
         self.minErosionFactor = 0.3            # Minimum erosion factor to prevent negative values
 
     def _precalculate_neighbours(self):
-        """Pre-calculate neighbor relationships for all tiles for performance"""
+        """Pre-calculate neighbour relationships for all tiles for performance"""
         self.neighbours = {}
         for i in range(self.iNumPlots):
-            x = i % self.iNumPlotsX
-            y = i // self.iNumPlotsX
-            neighbor_list = [self.GetNeighbor(x, y, direction) for direction in range(9)]
-            self.neighbours[i] = neighbor_list
+            self.neighbours[i] = [self.GetNeighbour(i, direction) for direction in range(9)]
 
     # Legacy method compatibility
-    def GetNeighbor(self, x, y, direction):
-        """Get neighbor coordinates in specified direction (legacy compatibility)"""
-        neighbor_x, neighbor_y = x, y
+    def GetNeighbour(self, i, direction):
+        """Get neighbour coordinates in specified direction (legacy compatibility)"""
+        x = i % self.iNumPlotsX
+        y = i // self.iNumPlotsX
 
         if direction == self.N:
-            neighbor_y += 1
+            y += 1
         elif direction == self.S:
-            neighbor_y -= 1
+            y -= 1
         elif direction == self.E:
-            neighbor_x += 1
+            x += 1
         elif direction == self.W:
-            neighbor_x -= 1
+            x -= 1
         elif direction == self.NE:
-            neighbor_x += 1
-            neighbor_y += 1
+            x += 1
+            y += 1
         elif direction == self.NW:
-            neighbor_x -= 1
-            neighbor_y += 1
+            x -= 1
+            y += 1
         elif direction == self.SE:
-            neighbor_x += 1
-            neighbor_y -= 1
+            x += 1
+            y -= 1
         elif direction == self.SW:
-            neighbor_x -= 1
-            neighbor_y -= 1
+            x -= 1
+            y -= 1
 
         # Handle wrapping and bounds
         if self.wrapY:
-            neighbor_y = neighbor_y % self.iNumPlotsY
-        elif neighbor_y < 0 or neighbor_y >= self.iNumPlotsY:
-            return -1, -1
+            y = y % self.iNumPlotsY
+        elif y < 0 or y >= self.iNumPlotsY:
+            return -1
 
         if self.wrapX:
-            neighbor_x = neighbor_x % self.iNumPlotsX
-        elif neighbor_x < 0 or neighbor_x >= self.iNumPlotsX:
-            return -1, -1
+            x = x % self.iNumPlotsX
+        elif x < 0 or x >= self.iNumPlotsX:
+            return -1
 
-        return neighbor_x, neighbor_y
+        return y * self.iNumPlotsX + x

@@ -174,27 +174,23 @@ class ElevationMap:
             # Calculate growth probability based on multiple geological factors
             growth_probability = self._calculate_growth_probability(continent, x, y)
 
-            # Attempt to grow to neighboring plots
+            # Attempt to grow to neighbouring plots
             neighbours = list(self.mc.neighbours[plot_index])
             random.shuffle(neighbours)
 
-            for neighbour_x, neighbour_y in neighbours:
-                if neighbour_x < 0 or neighbour_y < 0:
-                    continue
-
-                neighbor_index = neighbour_y * self.mc.iNumPlotsX + neighbour_x
-                if (neighbor_index >= 0 and
-                    self.continentID[neighbor_index] > self.mc.plateCount and
+            for neighbour_index in neighbours:
+                if (neighbour_index >= 0 and
+                    self.continentID[neighbour_index] > self.mc.plateCount and
                     random.random() < growth_probability):
 
-                    # Claim the neighboring plot
-                    self.continentID[neighbor_index] = continent_id
+                    # Claim the neighbouring plot
+                    self.continentID[neighbour_index] = continent_id
                     continent["size"] += 1
                     self._update_continent_centroid(continent)
-                    growth_queue.append((neighbor_index, continent_id, generation + 1))
+                    growth_queue.append((neighbour_index, continent_id, generation + 1))
 
-            # Re-queue if there are still available neighbors
-            if self._has_available_neighbors(plot_index):
+            # Re-queue if there are still available neighbours
+            if self._has_available_neighbours(plot_index):
                 growth_queue.append((plot_index, continent_id, generation))
 
     def _calculate_growth_probability(self, continent, x, y):
@@ -250,14 +246,11 @@ class ElevationMap:
 
         continent["x_centroid"], continent["y_centroid"] = self._calculate_wrap_aware_centroid(continent_coordinates)
 
-    def _has_available_neighbors(self, plot_index):
-        """Check if a plot has any unclaimed neighbors"""
-        for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
-            if neighbor_x < 0 or neighbor_y < 0:
-                continue
-            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-            if (neighbor_index >= 0 and
-                self.continentID[neighbor_index] > self.mc.plateCount):
+    def _has_available_neighbours(self, plot_index):
+        """Check if a plot has any unclaimed neighbours"""
+        for neighbour_index in self.mc.neighbours[plot_index]:
+            if (neighbour_index >= 0 and
+                self.continentID[neighbour_index] > self.mc.plateCount):
                 return True
         return False
 
@@ -269,40 +262,38 @@ class ElevationMap:
 
         for plot_index in range(self.mc.iNumPlots):
             current_continent = self.continentID[plot_index]
-            same_neighbors = 0
-            total_neighbors = 0
+            same_neighbours = 0
+            total_neighbours = 0
 
-            # Count neighbors of same continent
-            for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
-                if neighbor_x >= 0 and neighbor_y >= 0:
-                    neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                    total_neighbors += 1
-                    if self.continentID[neighbor_index] == current_continent:
-                        same_neighbors += 1
+            # Count neighbours of same continent
+            for neighbour_index in self.mc.neighbours[plot_index]:
+                if neighbour_index >= 0:
+                    total_neighbours += 1
+                    if self.continentID[neighbour_index] == current_continent:
+                        same_neighbours += 1
 
             # Process isolated or mostly isolated cells
-            if total_neighbors > 0:
-                isolation = 1.0 - (same_neighbors / total_neighbors)
+            if total_neighbours > 0:
+                isolation = 1.0 - (same_neighbours / total_neighbours)
 
                 if isolation > isolation_threshold and random.random() < flip_probability:
-                    new_continent = self._find_most_common_neighbor_continent(plot_index)
+                    new_continent = self._find_most_common_neighbour_continent(plot_index)
                     if new_continent != current_continent:
                         changes.append((plot_index, new_continent))
 
         # Apply all changes
         self._apply_continent_changes(changes)
 
-    def _find_most_common_neighbor_continent(self, plot_index):
-        """Find the most common continent among neighbors"""
-        neighbor_counts = {}
-        for neighbor_x, neighbor_y in self.mc.neighbours[plot_index]:
-            if neighbor_x >= 0 and neighbor_y >= 0:
-                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                neighbor_continent = self.continentID[neighbor_index]
-                neighbor_counts[neighbor_continent] = neighbor_counts.get(neighbor_continent, 0) + 1
+    def _find_most_common_neighbour_continent(self, plot_index):
+        """Find the most common continent among neighbours"""
+        neighbour_counts = {}
+        for neighbour_index in self.mc.neighbours[plot_index]:
+            if neighbour_index >= 0:
+                neighbour_continent = self.continentID[neighbour_index]
+                neighbour_counts[neighbour_continent] = neighbour_counts.get(neighbour_continent, 0) + 1
 
-        if neighbor_counts:
-            return max(neighbor_counts.items(), key=lambda x: x[1])[0]
+        if neighbour_counts:
+            return max(neighbour_counts.items(), key=lambda x: x[1])[0]
         return self.continentID[plot_index]
 
     def _apply_continent_changes(self, changes):
@@ -433,19 +424,13 @@ class ElevationMap:
 
             # Check cardinal directions for boundaries
             for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                neighbor_x, neighbor_y = self.mc.neighbours[plot_index][direction]
-                if neighbor_x < 0 or neighbor_y < 0:
-                    continue
+                neighbour_index = self.mc.neighbours[plot_index][direction]
+                if neighbour_index >= 0:
+                    neighbour_plate = self.continentID[neighbour_index]
 
-                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                if neighbor_index < 0 or neighbor_index >= self.mc.iNumPlots:
-                    continue
-
-                neighbor_plate = self.continentID[neighbor_index]
-
-                # Process plate boundary
-                if neighbor_plate != current_plate and neighbor_plate < self.mc.plateCount:
-                    self._process_boundary_segment(boundary_segments, current_plate, neighbor_plate, x, y, direction)
+                    # Process plate boundary
+                    if neighbour_plate != current_plate and neighbour_plate < self.mc.plateCount:
+                        self._process_boundary_segment(boundary_segments, current_plate, neighbour_plate, x, y, direction)
 
         # Analyze boundaries to determine subduction zones
         return self._analyze_boundaries_for_subduction(boundary_segments)
@@ -755,23 +740,18 @@ class ElevationMap:
             if current_plate >= self.mc.plateCount:
                 continue
 
-            # Check neighbors for plate boundaries
+            # Check neighbours for plate boundaries
             for direction_idx, direction_name in [(self.mc.N, "NS"), (self.mc.E, "EW"),
                                                  (self.mc.NE, "NE"), (self.mc.NW, "NW")]:
-                neighbor_x, neighbor_y = self.mc.neighbours[plot_index][direction_idx]
-                neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-
-                if (neighbor_index < 0 or neighbor_index >= self.mc.iNumPlots or
-                    neighbor_x < 0 or neighbor_y < 0):
-                    continue
-
-                neighbor_plate = self.continentID[neighbor_index]
-                if neighbor_plate != current_plate and neighbor_plate < self.mc.plateCount:
-                    boundary_data = self._analyze_boundary_interaction(
-                        plot_index, neighbor_index, direction_name
-                    )
-                    if boundary_data['intensity'] > 0.01:  # Only process significant boundaries
-                        boundary_queue.append(boundary_data)
+                neighbour_index = self.mc.neighbours[plot_index][direction_idx]
+                if neighbour_index >= 0:
+                    neighbour_plate = self.continentID[neighbour_index]
+                    if neighbour_plate != current_plate and neighbour_plate < self.mc.plateCount:
+                        boundary_data = self._analyze_boundary_interaction(
+                            plot_index, neighbour_index, direction_name
+                        )
+                        if boundary_data['intensity'] > 0.01:  # Only process significant boundaries
+                            boundary_queue.append(boundary_data)
 
         return boundary_queue
 
@@ -808,7 +788,7 @@ class ElevationMap:
 
         return {
             'tile': plot1,
-            'neighbor_tile': plot2,
+            'neighbour_tile': plot2,
             'direction': direction,
             'type': boundary_type,
             'intensity': intensity,
@@ -953,7 +933,7 @@ class ElevationMap:
     def _create_transform_fault(self, boundary):
         """Create a linear transform fault with characteristic features"""
         start_index = boundary['tile']
-        end_index = boundary['neighbor_tile']
+        end_index = boundary['neighbour_tile']
         intensity = boundary['intensity']
 
         start_x = start_index % self.mc.iNumPlotsX
@@ -1161,12 +1141,11 @@ class ElevationMap:
             if self.elevationMap[i] > self.seaLevelThreshold:
                 # Check cardinal directions for maximum elevation difference
                 for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                    neighbor_x, neighbor_y = self.mc.neighbours[i][direction]
-                    if neighbor_x >= 0 and neighbor_y >= 0:
-                        neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-                        if neighbor_index >= 0 and neighbor_index < self.mc.iNumPlots:
-                            neighbor_elevation = max(self.seaLevelThreshold, self.elevationMap[neighbor_index])
-                            elevation_diff = self.elevationMap[i] - neighbor_elevation
+                    neighbour_index = self.mc.neighbours[i][direction]
+                    if neighbour_index >= 0:
+                        if neighbour_index >= 0 and neighbour_index < self.mc.iNumPlots:
+                            neighbour_elevation = max(self.seaLevelThreshold, self.elevationMap[neighbour_index])
+                            elevation_diff = self.elevationMap[i] - neighbour_elevation
                             max_elevation_diff = max(max_elevation_diff, elevation_diff)
 
             self.prominenceMap[i] = max_elevation_diff
@@ -1224,37 +1203,33 @@ class ElevationMap:
                 # Apply elevation based on velocity magnitude
                 self.elevationVelMap[current_index] += velocity_magnitude
 
-                # Add neighbors in velocity direction
-                self._add_velocity_neighbors(current_index, i, queue, visited, continent_id)
+                # Add neighbours in velocity direction
+                self._add_velocity_neighbours(current_index, i, queue, visited, continent_id)
 
-    def _add_velocity_neighbors(self, current_index, original_index, queue, visited, continent_id):
-        """Add neighbors in the direction of plate velocity"""
+    def _add_velocity_neighbours(self, current_index, original_index, queue, visited, continent_id):
+        """Add neighbours in the direction of plate velocity"""
         # Determine primary velocity directions
         if self.continentU[original_index] > 0:
-            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.E]
-            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-            if (neighbor_index > 0 and neighbor_index not in visited and
-                self.continentID[neighbor_index] == continent_id):
-                queue.append(neighbor_index)
+            neighbour_index = self.mc.neighbours[current_index][self.mc.E]
+            if (neighbour_index > 0 and neighbour_index not in visited and
+                self.continentID[neighbour_index] == continent_id):
+                queue.append(neighbour_index)
         elif self.continentU[original_index] < 0:
-            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.W]
-            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-            if (neighbor_index > 0 and neighbor_index not in visited and
-                self.continentID[neighbor_index] == continent_id):
-                queue.append(neighbor_index)
+            neighbour_index = self.mc.neighbours[current_index][self.mc.W]
+            if (neighbour_index > 0 and neighbour_index not in visited and
+                self.continentID[neighbour_index] == continent_id):
+                queue.append(neighbour_index)
 
         if self.continentV[original_index] > 0:
-            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.N]
-            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-            if (neighbor_index > 0 and neighbor_index not in visited and
-                self.continentID[neighbor_index] == continent_id):
-                queue.append(neighbor_index)
+            neighbour_index = self.mc.neighbours[current_index][self.mc.N]
+            if (neighbour_index > 0 and neighbour_index not in visited and
+                self.continentID[neighbour_index] == continent_id):
+                queue.append(neighbour_index)
         elif self.continentV[original_index] < 0:
-            neighbor_x, neighbor_y = self.mc.neighbours[current_index][self.mc.S]
-            neighbor_index = neighbor_y * self.mc.iNumPlotsX + neighbor_x
-            if (neighbor_index > 0 and neighbor_index not in visited and
-                self.continentID[neighbor_index] == continent_id):
-                queue.append(neighbor_index)
+            neighbour_index = self.mc.neighbours[current_index][self.mc.S]
+            if (neighbour_index > 0 and neighbour_index not in visited and
+                self.continentID[neighbour_index] == continent_id):
+                queue.append(neighbour_index)
 
     # Utility methods
     def _get_wrapped_distance(self, x1, y1, x2, y2):
@@ -1409,14 +1384,14 @@ class ElevationMap:
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
-                neighbor_x = x + k
+                neighbour_x = x + k
                 if self.mc.wrapX:
-                    neighbor_x = neighbor_x % self.mc.iNumPlotsX
-                elif neighbor_x < 0 or neighbor_x >= self.mc.iNumPlotsX:
+                    neighbour_x = neighbour_x % self.mc.iNumPlotsX
+                elif neighbour_x < 0 or neighbour_x >= self.mc.iNumPlotsX:
                     continue
 
-                neighbor_index = y * self.mc.iNumPlotsX + neighbor_x
-                weighted_sum += grid[neighbor_index] * kernel[k + radius]
+                neighbour_index = y * self.mc.iNumPlotsX + neighbour_x
+                weighted_sum += grid[neighbour_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
             temp_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0
@@ -1430,14 +1405,14 @@ class ElevationMap:
             weight_total = 0.0
 
             for k in range(-radius, radius + 1):
-                neighbor_y = y + k
+                neighbour_y = y + k
                 if self.mc.wrapY:
-                    neighbor_y = neighbor_y % self.mc.iNumPlotsY
-                elif neighbor_y < 0 or neighbor_y >= self.mc.iNumPlotsY:
+                    neighbour_y = neighbour_y % self.mc.iNumPlotsY
+                elif neighbour_y < 0 or neighbour_y >= self.mc.iNumPlotsY:
                     continue
 
-                neighbor_index = neighbor_y * self.mc.iNumPlotsX + x
-                weighted_sum += temp_grid[neighbor_index] * kernel[k + radius]
+                neighbour_index = neighbour_y * self.mc.iNumPlotsX + x
+                weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
                 weight_total += kernel[k + radius]
 
             result_grid[i] = weighted_sum / weight_total if weight_total > 0 else 0

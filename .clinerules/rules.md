@@ -79,5 +79,6 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 ### Tool Notes
 
 -   ALWAYS use powershell commands, we are developing on a windows 10 system
+-   for multiple powershell commands, use ; not &&
 -   Use the "py -2.7" command to run any tests in python 2.7
 -   Since the test script makes use of matplotlib plots, the script will generally pause and wait for user input (inspect plots) but proceeding to finish and print anything to terminal.

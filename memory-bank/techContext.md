@@ -60,7 +60,7 @@ class ClimateMap:
 -   Models 6 atmospheric circulation cells (Hadley, Ferrel, Polar for each hemisphere)
 -   Clockwise/counterclockwise circulation based on real atmospheric physics
 -   Current strength calculation includes Coriolis effect
--   Smooth current maps with iterative neighbor averaging
+-   Smooth current maps with iterative neighbour averaging
 
 **Temperature Effects**:
 
@@ -97,7 +97,7 @@ class ClimateMap:
 
 **Coordinate Handling**:
 
--   `_get_neighbor_in_direction()`: 8-directional neighbor calculation
+-   `_get_neighbour_in_direction()`: 8-directional neighbour calculation
 -   `_is_valid_position()`: Bounds checking with wrap support
 -   `_wrap_coordinate()`: Coordinate wrapping for cylindrical maps
 -   `_latitude_to_y()`: Latitude to map coordinate conversion

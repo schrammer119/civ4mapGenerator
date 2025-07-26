@@ -80,229 +80,6 @@ class ClimateMap:
         self._apply_temperature_smoothing()
         self._apply_polar_cooling()
 
-    def _apply_ocean_current_and_maritime_effects(self):
-        """
-        Main method to apply ocean current heat transport effects.
-        Modifies self.TemperatureMap with thermal anomalies from ocean currents.
-        """
-        print("Applying ocean current heat transport...")
-
-        # Store original temperatures as baseline
-        self.baseTemperatureMap = list(self.TemperatureMap)
-
-        # Pre-calculate ocean distances and basin information
-        self._calculateOceanDistances()
-
-        # Apply thermal transport via ocean currents
-        self._transportOceanHeat()
-
-        # Apply maritime effects to adjacent land areas
-        self._applyMaritimeEffects()
-
-    def _calculateOceanDistances(self):
-        """
-        Pre-calculate distance from each land tile to nearest ocean using BFS.
-        Also identifies ocean basins and filters out small water bodies.
-        """
-
-        # Initialize distance map: 0 for ocean, infinity for land
-        self.oceanDistanceMap = [0 if self.em.plotTypes[i] == self.mc.PLOT_OCEAN
-                                else self.mc.iNumPlots for i in range(self.mc.iNumPlots)]
-
-        # Identify ocean basins and calculate sizes
-        self.oceanBasinMap = [-1] * self.mc.iNumPlots
-        self.basinSizes = {}
-        basin_counter = 0
-
-        # Flood fill to identify connected ocean basins
-        ocean_tiles = []
-        for i in range(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
-                if self.oceanBasinMap[i] == -1:
-                    basin_size = self._floodFillBasin(i, basin_counter)
-                    self.basinSizes[basin_counter] = basin_size
-                    basin_counter += 1
-                if self.basinSizes[self.oceanBasinMap[i]] >= self.mc.min_basin_size:
-                    ocean_tiles.append((i, 0))
-
-        # BFS to calculate distances from ocean
-        # Use simple list as queue (FIFO with pop(0)) - deque may not be available in Civ IV
-        while ocean_tiles:
-            current_tile, current_distance = ocean_tiles.pop(0)  # FIFO - process closest tiles first
-
-            # Check all neighbours
-            for neighbour in self.mc.neighbours[current_tile]:
-                # If neighbour distance is greater than current + 1, update it
-                if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
-                    self.oceanDistanceMap[neighbour] = current_distance + 1
-                    if current_distance + 1 < self.mc.maritime_influence_distance:
-                        ocean_tiles.append((neighbour, current_distance + 1))
-
-        # Create distance queue for maritime processing (sorted by distance)
-        self.distanceQueue = []
-        for i in range(self.mc.iNumPlots):
-            if 0 < self.oceanDistanceMap[i] <= self.mc.maritime_influence_distance:  # Land tiles within range
-                self.distanceQueue.append((self.oceanDistanceMap[i], i))
-
-        self.distanceQueue.sort()  # Sort by distance for processing order
-
-    def _floodFillBasin(self, start_tile, basin_id):
-        """
-        Flood fill to identify connected ocean basin and return its size.
-        """
-        if self.oceanBasinMap[start_tile] != -1:  # Already processed
-            return 0
-
-        basin_size = 0
-        stack = [start_tile]
-
-        while stack:
-            current = stack.pop()
-
-            if (current < 0 or
-                self.oceanBasinMap[current] != -1 or
-                self.em.plotTypes[current] != self.mc.PLOT_OCEAN):
-                continue
-
-            # Mark as part of this basin
-            self.oceanBasinMap[current] = basin_id
-            basin_size += 1
-
-            # Add neighbours to stack
-            for neighbour in self.mc.neighbours[current]:
-                if (neighbour >= 0 and
-                    self.oceanBasinMap[neighbour] == -1 and
-                    self.em.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
-                    stack.append(neighbour)
-
-        return basin_size
-
-    def _transportOceanHeat(self):
-        """
-        Calculate thermal anomalies from ocean current heat transport.
-        Uses thermal plume model with diffusive mixing.
-        """
-        direction_map = {
-            0: 3,   # East -> E = 3
-            1: 5,   # NE -> NE = 5
-            2: 1,   # North -> N = 1
-            3: 6,   # NW -> NW = 6
-            4: 4,   # West -> W = 4
-            5: 8,   # SW -> SW = 8
-            6: 2,   # South -> S = 2
-            7: 7    # SE -> SE = 7
-        }
-
-        # Initialize accumulation arrays
-        heat_sum = [0.0] * self.mc.iNumPlots
-        strength_sum = [0.0] * self.mc.iNumPlots
-
-        # Process each ocean tile as a thermal source
-        for source_tile in range(self.mc.iNumPlots):
-            # Skip non-ocean tiles
-            if self.em.plotTypes[source_tile] != self.mc.PLOT_OCEAN:
-                continue
-
-            # Skip small basins
-            basin_id = self.oceanBasinMap[source_tile]
-            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
-                continue
-
-            # Initialize thermal plume
-            plume_index = source_tile
-            temp_enforced = self.baseTemperatureMap[source_tile]
-
-            # Trace thermal plume downstream
-            for step in range(self.mc.max_plume_distance):
-                # Get current flow at this position
-                current_u = self.OceanCurrentU[plume_index]
-                current_v = self.OceanCurrentV[plume_index]
-                local_strength = (current_u**2 + current_v**2)**0.5 * self.mc.current_amplification
-
-                # Terminate if flow is too weak
-                if local_strength < self.mc.min_strength_threshold:
-                    break
-
-                flow_angle = math.atan2(current_v, current_u)
-                direction_index = int((flow_angle + math.pi/8) / (math.pi/4)) % 8
-                mc_dir = direction_map[direction_index]
-                next_neighbour = self.mc.neighbours[plume_index][mc_dir]
-
-                # Terminate if invalid neighbour or hit land
-                if (next_neighbour < 0 or
-                    self.em.plotTypes[next_neighbour] != self.mc.PLOT_OCEAN):
-                    break
-
-                # Move to next position
-                plume_index = next_neighbour
-
-                # Apply thermal mixing (water mass adopts local characteristics)
-                local_base_temp = self.baseTemperatureMap[plume_index]
-
-                # Calculate thermal anomaly contribution
-                thermal_anomaly = temp_enforced - local_base_temp
-
-                # Accumulate heat effects
-                heat_sum[plume_index] += thermal_anomaly * local_strength
-                strength_sum[plume_index] += local_strength
-
-                # update values for next loop
-                temp_enforced = (temp_enforced * self.mc.mixing_factor +
-                            local_base_temp * (1.0 - self.mc.mixing_factor))
-
-        # Apply accumulated thermal anomalies
-        for i in range(self.mc.iNumPlots):
-            if strength_sum[i] > 0:
-                anomaly = heat_sum[i] / strength_sum[i]
-                self.TemperatureMap[i] = self.baseTemperatureMap[i] + anomaly
-
-    def _applyMaritimeEffects(self):
-        """
-        Apply maritime climate effects to coastal land areas using pre-calculated distances.
-        Uses "baked in" temperature propagation through recursive spreading.
-        """
-
-        # Store original land temperatures before maritime modification
-        original_temps = list(self.TemperatureMap)
-
-        # Process land tiles in distance order (closest to ocean first)
-        for distance, land_tile in self.distanceQueue:
-            # Skip tiles beyond maritime influence
-            if distance > self.mc.maritime_influence_distance:
-                break
-
-            # Accumulate maritime influences from closer neighbours
-            total_influence = 0.0
-            total_weight = 0.0
-
-            for neighbour in self.mc.neighbours[land_tile]:
-                if neighbour >= 0:
-                    neighbour_distance = self.oceanDistanceMap[neighbour]
-
-                    # Only consider neighbors closer to ocean AND not blocked by peaks
-                    if (neighbour_distance < distance and
-                        self.em.plotTypes[neighbour] != self.mc.PLOT_PEAK):
-                        neighbour_temp = self.TemperatureMap[neighbour]  # Already has maritime effects
-
-                        # For direct ocean neighbours, check basin size
-                        if neighbour_distance == 0:
-                            basin_id = self.oceanBasinMap[neighbour]
-                            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
-                                continue  # Skip small water bodies
-
-                        # Calculate influence with distance decay
-                        effective_distance = distance
-                        weight = self.mc.distance_decay ** effective_distance
-                        temp_diff = neighbour_temp - original_temps[land_tile]
-
-                        total_influence += temp_diff * weight
-                        total_weight += weight
-
-            # Apply maritime effect
-            if total_weight > 0:
-                maritime_effect = (total_influence / total_weight) * self.mc.maritime_strength
-                self.TemperatureMap[land_tile] = original_temps[land_tile] + maritime_effect
-
     def _calculate_elevation_effects(self, aboveSeaLevelMap):
         """Calculate elevation effects on temperature"""
         for i in range(self.mc.iNumPlots):
@@ -604,6 +381,229 @@ class ClimateMap:
         normalized_lat = (latitude - self.mc.bottomLatitude) / lat_range
         y = int(normalized_lat * self.mc.iNumPlotsY)
         return min(y, self.mc.iNumPlotsY - 1)  # Clamp to valid range
+
+    def _apply_ocean_current_and_maritime_effects(self):
+        """
+        Main method to apply ocean current heat transport effects.
+        Modifies self.TemperatureMap with thermal anomalies from ocean currents.
+        """
+        print("Applying ocean current heat transport...")
+
+        # Store original temperatures as baseline
+        self.baseTemperatureMap = list(self.TemperatureMap)
+
+        # Pre-calculate ocean distances and basin information
+        self._calculateOceanDistances()
+
+        # Apply thermal transport via ocean currents
+        self._transportOceanHeat()
+
+        # Apply maritime effects to adjacent land areas
+        self._applyMaritimeEffects()
+
+    def _calculateOceanDistances(self):
+        """
+        Pre-calculate distance from each land tile to nearest ocean using BFS.
+        Also identifies ocean basins and filters out small water bodies.
+        """
+
+        # Initialize distance map: 0 for ocean, infinity for land
+        self.oceanDistanceMap = [0 if self.em.plotTypes[i] == self.mc.PLOT_OCEAN
+                                else self.mc.iNumPlots for i in range(self.mc.iNumPlots)]
+
+        # Identify ocean basins and calculate sizes
+        self.oceanBasinMap = [-1] * self.mc.iNumPlots
+        self.basinSizes = {}
+        basin_counter = 0
+
+        # Flood fill to identify connected ocean basins
+        ocean_tiles = []
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+                if self.oceanBasinMap[i] == -1:
+                    basin_size = self._floodFillBasin(i, basin_counter)
+                    self.basinSizes[basin_counter] = basin_size
+                    basin_counter += 1
+                if self.basinSizes[self.oceanBasinMap[i]] >= self.mc.min_basin_size:
+                    ocean_tiles.append((i, 0))
+
+        # BFS to calculate distances from ocean
+        # Use simple list as queue (FIFO with pop(0)) - deque may not be available in Civ IV
+        while ocean_tiles:
+            current_tile, current_distance = ocean_tiles.pop(0)  # FIFO - process closest tiles first
+
+            # Check all neighbours
+            for neighbour in self.mc.neighbours[current_tile]:
+                # If neighbour distance is greater than current + 1, update it
+                if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
+                    self.oceanDistanceMap[neighbour] = current_distance + 1
+                    if current_distance + 1 < self.mc.maritime_influence_distance:
+                        ocean_tiles.append((neighbour, current_distance + 1))
+
+        # Create distance queue for maritime processing (sorted by distance)
+        self.distanceQueue = []
+        for i in range(self.mc.iNumPlots):
+            if 0 < self.oceanDistanceMap[i] <= self.mc.maritime_influence_distance:  # Land tiles within range
+                self.distanceQueue.append((self.oceanDistanceMap[i], i))
+
+        self.distanceQueue.sort()  # Sort by distance for processing order
+
+    def _floodFillBasin(self, start_tile, basin_id):
+        """
+        Flood fill to identify connected ocean basin and return its size.
+        """
+        if self.oceanBasinMap[start_tile] != -1:  # Already processed
+            return 0
+
+        basin_size = 0
+        stack = [start_tile]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.oceanBasinMap[current] != -1 or
+                self.em.plotTypes[current] != self.mc.PLOT_OCEAN):
+                continue
+
+            # Mark as part of this basin
+            self.oceanBasinMap[current] = basin_id
+            basin_size += 1
+
+            # Add neighbours to stack
+            for neighbour in self.mc.neighbours[current]:
+                if (neighbour >= 0 and
+                    self.oceanBasinMap[neighbour] == -1 and
+                    self.em.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
+                    stack.append(neighbour)
+
+        return basin_size
+
+    def _transportOceanHeat(self):
+        """
+        Calculate thermal anomalies from ocean current heat transport.
+        Uses thermal plume model with diffusive mixing.
+        """
+        direction_map = {
+            0: 3,   # East -> E = 3
+            1: 5,   # NE -> NE = 5
+            2: 1,   # North -> N = 1
+            3: 6,   # NW -> NW = 6
+            4: 4,   # West -> W = 4
+            5: 8,   # SW -> SW = 8
+            6: 2,   # South -> S = 2
+            7: 7    # SE -> SE = 7
+        }
+
+        # Initialize accumulation arrays
+        heat_sum = [0.0] * self.mc.iNumPlots
+        strength_sum = [0.0] * self.mc.iNumPlots
+
+        # Process each ocean tile as a thermal source
+        for source_tile in range(self.mc.iNumPlots):
+            # Skip non-ocean tiles
+            if self.em.plotTypes[source_tile] != self.mc.PLOT_OCEAN:
+                continue
+
+            # Skip small basins
+            basin_id = self.oceanBasinMap[source_tile]
+            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+                continue
+
+            # Initialize thermal plume
+            plume_index = source_tile
+            temp_enforced = self.baseTemperatureMap[source_tile]
+
+            # Trace thermal plume downstream
+            for step in range(self.mc.max_plume_distance):
+                # Get current flow at this position
+                current_u = self.OceanCurrentU[plume_index]
+                current_v = self.OceanCurrentV[plume_index]
+                local_strength = (current_u**2 + current_v**2)**0.5 * self.mc.current_amplification
+
+                # Terminate if flow is too weak
+                if local_strength < self.mc.min_strength_threshold:
+                    break
+
+                flow_angle = math.atan2(current_v, current_u)
+                direction_index = int(math.floor((flow_angle + math.pi/8) / (math.pi/4))) % 8
+                mc_dir = direction_map[direction_index]
+                next_neighbour = self.mc.neighbours[plume_index][mc_dir]
+
+                # Terminate if invalid neighbour or hit land
+                if (next_neighbour < 0 or
+                    self.em.plotTypes[next_neighbour] != self.mc.PLOT_OCEAN):
+                    break
+
+                # Move to next position
+                plume_index = next_neighbour
+
+                # Apply thermal mixing (water mass adopts local characteristics)
+                local_base_temp = self.baseTemperatureMap[plume_index]
+
+                # Calculate thermal anomaly contribution
+                thermal_anomaly = temp_enforced - local_base_temp
+
+                # Accumulate heat effects
+                heat_sum[plume_index] += thermal_anomaly * local_strength
+                strength_sum[plume_index] += local_strength
+
+                # update values for next loop
+                temp_enforced = (temp_enforced * self.mc.mixing_factor +
+                            local_base_temp * (1.0 - self.mc.mixing_factor))
+
+        # Apply accumulated thermal anomalies
+        for i in range(self.mc.iNumPlots):
+            if strength_sum[i] > 0:
+                anomaly = heat_sum[i] / strength_sum[i]
+                self.TemperatureMap[i] = self.baseTemperatureMap[i] + anomaly
+
+    def _applyMaritimeEffects(self):
+        """
+        Apply maritime climate effects to coastal land areas using pre-calculated distances.
+        Uses "baked in" temperature propagation through recursive spreading.
+        """
+
+        # Store original land temperatures before maritime modification
+        original_temps = list(self.TemperatureMap)
+
+        # Process land tiles in distance order (closest to ocean first)
+        for distance, land_tile in self.distanceQueue:
+            # Skip tiles beyond maritime influence
+            if distance > self.mc.maritime_influence_distance:
+                break
+
+            # Accumulate maritime influences from closer neighbours
+            total_influence = 0.0
+            total_weight = 0.0
+
+            for neighbour in self.mc.neighbours[land_tile]:
+                if neighbour >= 0:
+                    neighbour_distance = self.oceanDistanceMap[neighbour]
+
+                    # Only consider neighbors closer to ocean AND not blocked by peaks
+                    if (neighbour_distance < distance and
+                        self.em.plotTypes[neighbour] != self.mc.PLOT_PEAK):
+                        neighbour_temp = self.TemperatureMap[neighbour]  # Already has maritime effects
+
+                        # For direct ocean neighbours, check basin size
+                        if neighbour_distance == 0:
+                            basin_id = self.oceanBasinMap[neighbour]
+                            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+                                continue  # Skip small water bodies
+
+                        # Calculate influence with distance decay
+                        effective_distance = distance
+                        weight = self.mc.distance_decay ** effective_distance
+                        temp_diff = neighbour_temp - original_temps[land_tile]
+
+                        total_influence += temp_diff * weight
+                        total_weight += weight
+
+            # Apply maritime effect
+            if total_weight > 0:
+                maritime_effect = (total_influence / total_weight) * self.mc.maritime_strength
+                self.TemperatureMap[land_tile] = original_temps[land_tile] + maritime_effect
 
     def _generate_wind_patterns(self):
         """Generate wind patterns based on atmospheric circulation"""
