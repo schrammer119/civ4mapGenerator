@@ -253,7 +253,8 @@ class ElevationMap:
 
     def _has_available_neighbours(self, plot_index):
         """Check if a plot has any unclaimed neighbours"""
-        for neighbour_index in self.mc.neighbours[plot_index]:
+        for dir in range(1,9):
+            neighbour_index = self.mc.neighbours[plot_index][dir]
             if (neighbour_index >= 0 and
                 self.continentID[neighbour_index] > self.mc.plateCount):
                 return True
@@ -271,7 +272,8 @@ class ElevationMap:
             total_neighbours = 0
 
             # Count neighbours of same continent
-            for neighbour_index in self.mc.neighbours[plot_index]:
+            for dir in range(1,9):
+                neighbour_index = self.mc.neighbours[plot_index][dir]
                 if neighbour_index >= 0:
                     total_neighbours += 1
                     if self.continentID[neighbour_index] == current_continent:
@@ -292,7 +294,8 @@ class ElevationMap:
     def _find_most_common_neighbour_continent(self, plot_index):
         """Find the most common continent among neighbours"""
         neighbour_counts = {}
-        for neighbour_index in self.mc.neighbours[plot_index]:
+        for dir in range(1,9):
+            neighbour_index = self.mc.neighbours[plot_index][dir]
             if neighbour_index >= 0:
                 neighbour_continent = self.continentID[neighbour_index]
                 neighbour_counts[neighbour_continent] = neighbour_counts.get(neighbour_continent, 0) + 1

@@ -78,7 +78,7 @@ fig2.suptitle('Final Elevation Stages', fontsize=16)
 Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 p4 = axs2[0, 0].imshow(Z4, origin='lower', cmap=mpl.cm.terrain)
 axs2[0, 0].set_title('Preliminary Elevation')
-fig.colorbar(p4, ax=axs2[0, 0])
+fig2.colorbar(p4, ax=axs2[0, 0])
 
 # Boundary Elevation
 Z5 = np.array(em.elevationBoundaryMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
@@ -202,6 +202,32 @@ try:
     ax.set_title('Temperature Map with Landforms')
     fig.colorbar(p, ax=ax, label='Temperature')
 
+    U_wind = np.array(cm.WindU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
+
+    # Create topographic background for wind patterns (shows elevation)
+    topo_background = ax.imshow(elevation_background, origin='lower',
+                               cmap='terrain', alpha=0.5, vmin=0, vmax=1)
+
+    # Add contour lines to show major elevation features
+    ax.contour(elevation_background, levels=[em.seaLevelThreshold],
+               colors=['blue'], linewidths=[1], alpha=0.7)
+    ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
+            i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+
+    # Plot wind patterns with color based on magnitude
+    wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
+    q = ax.quiver(X, Y, U_wind, V_wind, wind_magnitude,
+                  alpha=0.8, cmap='plasma', width=0.003)
+
+    ax.set_title('Wind Patterns with Topography')
+    ax.set_xlim(0, mc.iNumPlotsX)
+    ax.set_ylim(0, mc.iNumPlotsY)
+    fig.colorbar(q, ax=ax, label='Wind Magnitude')
+
     Z_rain = np.array(cm.RainfallMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -220,32 +246,6 @@ try:
 
     ax.set_title('Rainfall Map with Landforms')
     fig.colorbar(p, ax=ax, label='Rainfall')
-
-    U_wind = np.array(cm.WindU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
-
-    # Create topographic background for wind patterns (shows elevation)
-    topo_background = ax.imshow(elevation_background, origin='lower',
-                               cmap='terrain', alpha=0.5, vmin=0, vmax=1)
-
-    # Plot wind patterns with color based on magnitude
-    wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
-    q = ax.quiver(X, Y, U_wind, V_wind, wind_magnitude,
-                  scale=20, alpha=0.8, cmap='plasma', width=0.003)
-
-    # Add contour lines to show major elevation features
-    ax.contour(elevation_background, levels=[em.seaLevelThreshold],
-               colors=['blue', 'brown', 'red'], linewidths=[1, 0.8, 0.6], alpha=0.7)
-    ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
-            i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
-
-    ax.set_title('Wind Patterns with Topography')
-    ax.set_xlim(0, mc.iNumPlotsX)
-    ax.set_ylim(0, mc.iNumPlotsY)
-    fig.colorbar(q, ax=ax, label='Wind Magnitude')
 
 except Exception as e:
     print("Climate system test failed: %s" % str(e))

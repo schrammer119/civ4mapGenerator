@@ -31,6 +31,7 @@ class ClimateMap:
     def _initialize_data_structures(self):
         """Initialize all climate data structures"""
         # Temperature maps
+        self.aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
         self.TemperatureMap = [0.0] * self.mc.iNumPlots
 
         # Ocean current maps
@@ -68,34 +69,29 @@ class ClimateMap:
     def GenerateTemperatureMap(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
 
-        # Create above sea level map for elevation effects
-        aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
-
         print("Generating Base Temperature Map")
-        self._calculate_elevation_effects(aboveSeaLevelMap)
-        self._generate_base_temperature(aboveSeaLevelMap)
+        self._calculate_elevation_effects()
+        self._generate_base_temperature()
 
         print("Generating Ocean Currents")
         self._generate_ocean_currents()
         self._apply_ocean_current_and_maritime_effects()
 
-        print("Generating Wind Patterns")
-        self._generate_wind_patterns()
-
         print("Finishing Temperature Map")
+        # self._apply_polar_cooling()
         self._apply_temperature_smoothing()
-        self._apply_polar_cooling()
 
-    def _calculate_elevation_effects(self, aboveSeaLevelMap):
+    def _calculate_elevation_effects(self):
         """Calculate elevation effects on temperature"""
         for i in range(self.mc.iNumPlots):
             if self.em.IsBelowSeaLevel(i):
-                aboveSeaLevelMap[i] = 0.0
+                self.aboveSeaLevelMap[i] = 0.0
             else:
-                aboveSeaLevelMap[i] = self.em.elevationMap[i] - self.em.seaLevelThreshold
-        aboveSeaLevelMap = self.mc.normalize_map(aboveSeaLevelMap)
+                self.aboveSeaLevelMap[i] = self.em.elevationMap[i] - self.em.seaLevelThreshold
+        self.aboveSeaLevelMap = self.mc.normalize_map(self.aboveSeaLevelMap)
+        self.aboveSeaLevelMap = [x * self.mc.maxElev for x in self.aboveSeaLevelMap]
 
-    def _generate_base_temperature(self, aboveSeaLevelMap):
+    def _generate_base_temperature(self):
         """Generate base temperature based on latitude and elevation using accurate solar radiation model"""
         for y in range(self.mc.iNumPlotsY):
             lat = self.mc.get_latitude_for_y(y)
@@ -113,7 +109,7 @@ class ClimateMap:
                 else:
                     # Land temperature with elevation lapse rate
                     base_land_temp = solar_factor * (self.mc.maximumTemp - self.mc.minimumTemp) + self.mc.minimumTemp
-                    elevation_cooling = aboveSeaLevelMap[i] * self.mc.maxElev * self.mc.tempLapse
+                    elevation_cooling = self.aboveSeaLevelMap[i] * self.mc.tempLapse
                     self.TemperatureMap[i] = base_land_temp - elevation_cooling
 
         # Apply thermal inertia for more realistic temperature distribution
@@ -169,34 +165,11 @@ class ClimateMap:
         # Step 4: Compute velocities with Coriolis effects
         self._compute_ocean_velocities_with_coriolis(neighbours, conduct, pressure, force_U, force_V)
 
-    def _calculate_direction_vector(self, i, j):
-        """Calculate unit vector (dx, dy) from tile i to tile j"""
-        x_i = i % self.mc.iNumPlotsX
-        y_i = i // self.mc.iNumPlotsX
-        x_j = j % self.mc.iNumPlotsX
-        y_j = j // self.mc.iNumPlotsX
-
-        # Calculate raw differences
-        dx = x_j - x_i
-        dy = y_j - y_i
-
-        # Handle wrapping
-        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-            dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
-        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-            dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
-
-        # Normalize to unit vector
-        distance = math.sqrt(dx*dx + dy*dy)
-        if distance > 0:
-            return dx / distance, dy / distance
-        else:
-            return 0.0, 0.0
-
     def _generate_forcing_fields(self):
         """Generate forcing fields for ocean currents"""
         force_U = [0.0] * self.mc.iNumPlots
         force_V = [0.0] * self.mc.iNumPlots
+        sign = lambda a: (a > 0) - (a < 0)
 
         for i in range(self.mc.iNumPlots):
             if self.em.IsBelowSeaLevel(i):
@@ -205,8 +178,10 @@ class ClimateMap:
                 latitude_rad = math.radians(latitude)
 
                 # Primary latitude-based forcing (east/west only)
-                force_U[i] = -self.mc.latitudinalForcingStrength * math.cos(4 * latitude_rad) * math.cos(latitude_rad)
-                force_V[i] = 0.0  # No primary north/south forcing
+                force_U[i] = (-self.mc.latitudinalForcingStrength *
+                            math.cos(3 * latitude_rad) * math.cos(latitude_rad))
+                force_V[i] = (-0.3 * self.mc.latitudinalForcingStrength * sign(latitude) *
+                            math.cos(3 * latitude_rad) * math.cos(latitude_rad))
 
                 # Secondary temperature gradient forcing
                 temp_grad_u, temp_grad_v = self._calculate_temperature_gradients(i)
@@ -224,7 +199,8 @@ class ClimateMap:
         x_i = i % self.mc.iNumPlotsX
         y_i = i // self.mc.iNumPlotsX
 
-        for neighbour_i in self.mc.neighbours[i]:
+        for dir in range(1,9):
+            neighbour_i = self.mc.neighbours[i][dir]
             if neighbour_i >= 0:
                 if self.em.IsBelowSeaLevel(neighbour_i):
                     x_j = neighbour_i % self.mc.iNumPlotsX
@@ -264,9 +240,9 @@ class ClimateMap:
             # Calculate depth for this tile
             depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
 
-            # Check all 8 neighbours (directions 1-8, skip 0 which is self)
-            for direction in range(1, 9):
-                j = self.mc.neighbours[i][direction]
+            # Check all 8 neighbours
+            for dir in range(1,9):
+                j = self.mc.neighbours[i][dir]
                 if j < 0:
                     continue
                 if not self.em.IsBelowSeaLevel(j):
@@ -302,7 +278,7 @@ class ClimateMap:
                 # Calculate face-based forcing accumulator
                 acc = 0.0
                 for idx, j in enumerate(neighbours[i]):
-                    dx, dy = self._calculate_direction_vector(i, j)
+                    dx, dy = self.mc.calculate_direction_vector(i, j)
                     F_face_ij = ((force_U[i] + force_U[j]) * 0.5 * dx +
                                 (force_V[i] + force_V[j]) * 0.5 * dy)
                     acc += conduct[i][idx] * pressure[j] - F_face_ij
@@ -340,7 +316,7 @@ class ClimateMap:
             flux_y = 0.0
 
             for idx, j in enumerate(neighbours[i]):
-                dx, dy = self._calculate_direction_vector(i, j)
+                dx, dy = self.mc.calculate_direction_vector(i, j)
 
                 # Calculate face-based forcing for this edge
                 F_face_ij = (force_U[i] + force_U[j]) * 0.5 * dx + (force_V[i] + force_V[j]) * 0.5 * dy
@@ -376,16 +352,15 @@ class ClimateMap:
             self.OceanCurrentU[i] = pressure_flux_x[i] + coriolis_flux_x
             self.OceanCurrentV[i] = pressure_flux_y[i] + coriolis_flux_y
 
-        maxV = max(abs(x) for x in self.OceanCurrentU + self.OceanCurrentV)
-        self.OceanCurrentU = [u / maxV for u in self.OceanCurrentU]
-        self.OceanCurrentV = [u / maxV for u in self.OceanCurrentV]
+        # maxV = max(abs(x) for x in self.OceanCurrentU + self.OceanCurrentV)
+        # self.OceanCurrentU = [u / maxV for u in self.OceanCurrentU]
+        # self.OceanCurrentV = [u / maxV for u in self.OceanCurrentV]
 
     def _apply_ocean_current_and_maritime_effects(self):
         """
         Main method to apply ocean current heat transport effects.
         Modifies self.TemperatureMap with thermal anomalies from ocean currents.
         """
-        print("Applying ocean current heat transport...")
 
         # Store original temperatures as baseline
         self.baseTemperatureMap = list(self.TemperatureMap)
@@ -401,14 +376,6 @@ class ClimateMap:
 
         # Apply maritime effects to adjacent land areas
         self._applyMaritimeEffects()
-
-    def _diffuse_ocean_heat(self):
-        """Apply diffusion to ocean temperatures to simulate heat spread"""
-        self.TemperatureMap = self.mc.gaussian_blur(
-            self.TemperatureMap,
-            radius=self.mc.oceanDiffusionRadius,
-            filter_func=lambda i: self.em.IsBelowSeaLevel(i)
-        )
 
     def _calculateOceanDistances(self):
         """
@@ -442,7 +409,8 @@ class ClimateMap:
             current_tile, current_distance = ocean_queue.popleft()
 
             # Check all neighbours
-            for neighbour in self.mc.neighbours[current_tile]:
+            for dir in range(1,9):
+                neighbour = self.mc.neighbours[current_tile][dir]
                 # If neighbour distance is greater than current + 1, update it
                 if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
                     self.oceanDistanceMap[neighbour] = current_distance + 1
@@ -480,7 +448,8 @@ class ClimateMap:
             basin_size += 1
 
             # Add neighbours to stack
-            for neighbour in self.mc.neighbours[current]:
+            for dir in range(1,9):
+                neighbour = self.mc.neighbours[current][dir]
                 if (neighbour >= 0 and
                     self.oceanBasinMap[neighbour] == -1 and
                     self.em.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
@@ -567,6 +536,14 @@ class ClimateMap:
                 anomaly = heat_sum[i] / strength_sum[i]
                 self.TemperatureMap[i] = self.baseTemperatureMap[i] + anomaly
 
+    def _diffuse_ocean_heat(self):
+        """Apply diffusion to ocean temperatures to simulate heat spread"""
+        self.TemperatureMap = self.mc.gaussian_blur(
+            self.TemperatureMap,
+            radius=self.mc.oceanDiffusionRadius,
+            filter_func=lambda i: self.em.IsBelowSeaLevel(i)
+        )
+
     def _applyMaritimeEffects(self):
         """
         Apply maritime climate effects to coastal land areas using pre-calculated distances.
@@ -586,7 +563,8 @@ class ClimateMap:
             total_influence = 0.0
             total_weight = 0.0
 
-            for neighbour in self.mc.neighbours[land_tile]:
+            for dir in range(1,9):
+                neighbour = self.mc.neighbours[land_tile][dir]
                 if neighbour >= 0:
                     neighbour_distance = self.oceanDistanceMap[neighbour]
 
@@ -614,314 +592,6 @@ class ClimateMap:
                 maritime_effect = (total_influence / total_weight) * self.mc.maritime_strength
                 self.TemperatureMap[land_tile] = original_temps[land_tile] + maritime_effect
 
-    def _generate_wind_patterns(self):
-        """Generate wind patterns based on atmospheric circulation"""
-        # Generate winds for each atmospheric circulation cell
-        wind_cells = [
-            # (ymin_lat, ymax_lat, u_pattern, v_pattern)
-            (0.0, self.mc.horseLatitude, 'negative_linear', 'negative_peak'),      # North Hadley
-            (-self.mc.horseLatitude, 0.0, 'negative_linear', 'positive_peak'),    # South Hadley
-            (self.mc.horseLatitude, self.mc.polarFrontLatitude, 'positive_linear', 'positive_peak'), # North Ferrel
-            (-self.mc.polarFrontLatitude, -self.mc.horseLatitude, 'positive_linear', 'negative_peak'), # South Ferrel
-            (self.mc.polarFrontLatitude, self.mc.topLatitude, 'negative_linear', 'negative_peak'), # North Polar
-            (self.mc.bottomLatitude, -self.mc.polarFrontLatitude, 'negative_linear', 'positive_peak') # South Polar
-        ]
-
-        for ymin_lat, ymax_lat, u_pattern, v_pattern in wind_cells:
-            ymin = self.mc.get_y_for_latitude(ymin_lat)
-            ymax = self.mc.get_y_for_latitude(ymax_lat)
-            self._apply_wind_cell(ymin, ymax, u_pattern, v_pattern)
-
-        self._apply_temperature_gradient_winds()
-        self._apply_mountain_wind_blocking()
-        self._smooth_wind_map(5)
-
-    def _apply_wind_cell(self, ymin, ymax, u_pattern, v_pattern):
-        """Apply wind patterns for a specific atmospheric cell"""
-        for y in range(ymin, ymax):
-            progress = float(y - ymin) / float(ymax - ymin) if ymax > ymin else 0
-            coriolis_factor = 1 - 2 * abs(float(y) / self.mc.iNumPlotsY - 0.5)
-
-            # Calculate wind components based on patterns
-            u_wind = self._calculate_wind_component(progress, u_pattern, coriolis_factor)
-            v_wind = self._calculate_wind_component(progress, v_pattern, coriolis_factor)
-
-            for x in range(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                self.WindU[i] = u_wind
-                self.WindV[i] = v_wind
-
-    def _calculate_wind_component(self, progress, pattern, coriolis_factor):
-        """Calculate wind component based on pattern type"""
-        if pattern == 'negative_linear':
-            return -(1.0 - progress) * coriolis_factor
-        elif pattern == 'positive_linear':
-            return progress * coriolis_factor
-        elif pattern == 'negative_peak':
-            return -progress * coriolis_factor
-        elif pattern == 'positive_peak':
-            return (1.0 - progress) * coriolis_factor
-        else:
-            return 0.0
-
-    def _apply_temperature_gradient_winds(self):
-        """Add temperature gradient effects to wind patterns"""
-        y_range = range(1, self.mc.iNumPlotsY - 1) if not self.mc.wrapY else range(self.mc.iNumPlotsY)
-        x_range = range(1, self.mc.iNumPlotsX - 1) if not self.mc.wrapX else range(self.mc.iNumPlotsX)
-
-        for y in y_range:
-            for x in x_range:
-                i = y * self.mc.iNumPlotsX + x
-
-                # Calculate temperature gradients
-                x_next = (x + 1) % self.mc.iNumPlotsX
-                x_prev = (x - 1) % self.mc.iNumPlotsX
-                y_next = (y + 1) % self.mc.iNumPlotsY
-                y_prev = (y - 1) % self.mc.iNumPlotsY
-
-                temp_grad_x = (self.TemperatureMap[y * self.mc.iNumPlotsX + x_next] -
-                              self.TemperatureMap[y * self.mc.iNumPlotsX + x_prev]) * 0.5
-                temp_grad_y = (self.TemperatureMap[y_next * self.mc.iNumPlotsX + x] -
-                              self.TemperatureMap[y_prev * self.mc.iNumPlotsX + x]) * 0.5
-
-                # Add gradient effects to wind
-                self.WindU[i] += self.mc.tempGradientFactorWind * temp_grad_x
-                self.WindV[i] += self.mc.tempGradientFactorWind * temp_grad_y
-
-    def _apply_mountain_wind_blocking(self):
-        """Enhanced wind-topography interactions including blocking, deflection, and channeling"""
-        # Apply basic mountain blocking and deflection
-        self._apply_basic_mountain_blocking()
-
-        # Apply orographic lifting effects
-        self._apply_orographic_lifting()
-
-        # Apply valley wind channeling
-        self._apply_valley_wind_channeling()
-
-        # Apply ridge deflection over longer distances
-        self._apply_ridge_deflection()
-
-    def _apply_basic_mountain_blocking(self):
-        """Apply basic wind blocking and deflection at mountain peaks"""
-        sign = lambda a: (a > 0) - (a < 0)
-
-        for i in range(self.mc.iNumPlots):
-            x = i % self.mc.iNumPlotsX
-            y = i // self.mc.iNumPlotsX
-
-            if self.em.plotTypes[i] == self.mc.PLOT_PEAK:
-                # Calculate deflection positions
-                deflect_x = x - sign(self.WindU[i])
-                deflect_y = y - sign(self.WindV[i])
-
-                deflect_x, deflect_y = self.mc.wrap_coordinates(deflect_x, deflect_y)
-
-                # Deflect wind around mountain
-                if deflect_x >= 0:
-                    deflect_i = y * self.mc.iNumPlotsX + deflect_x
-                    self.WindV[deflect_i] += self.WindU[deflect_i] * sign(self.WindV[deflect_i])
-                    self.WindU[deflect_i] = 0
-
-                if deflect_y >= 0:
-                    deflect_j = deflect_y * self.mc.iNumPlotsX + x
-                    self.WindU[deflect_j] += self.WindV[deflect_j] * sign(self.WindU[deflect_j])
-                    self.WindV[deflect_j] = 0
-
-                # Set wind at peak to zero
-                self.WindU[i] = 0
-                self.WindV[i] = 0
-
-    def _apply_orographic_lifting(self):
-        """Apply orographic lifting effects on windward slopes"""
-        sign = lambda a: (a > 0) - (a < 0)
-
-        for i in range(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_HILLS or self.em.plotTypes[i] == self.mc.PLOT_PEAK:
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-
-                # Calculate upwind direction
-                wind_u = self.WindU[i]
-                wind_v = self.WindV[i]
-
-                if abs(wind_u) < 0.001 and abs(wind_v) < 0.001:
-                    continue
-
-                # Check upwind elevation
-                upwind_x = x - sign(wind_u)
-                upwind_y = y - sign(wind_v)
-
-                upwind_x, upwind_y = self.mc.wrap_coordinates(upwind_x, upwind_y)
-
-                if upwind_x >= 0 and upwind_y >= 0:
-                    upwind_i = upwind_y * self.mc.iNumPlotsX + upwind_x
-                    elevation_diff = self.em.elevationMap[i] - self.em.elevationMap[upwind_i]
-
-                    if elevation_diff > 0:
-                        # Windward slope - increase wind speed due to orographic lifting
-                        lift_factor = 1.0 + self.mc.orographicLiftFactor * elevation_diff
-                        self.WindU[i] *= lift_factor
-                        self.WindV[i] *= lift_factor
-
-    def _apply_valley_wind_channeling(self):
-        """Apply wind channeling effects in valleys and passes"""
-        for i in range(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_LAND:
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-
-                # Check if this is a valley (surrounded by higher terrain)
-                if self._is_valley_location(i):
-                    # Calculate valley orientation
-                    valley_direction = self._calculate_valley_direction(i)
-
-                    if valley_direction is not None:
-                        # Channel wind along valley direction
-                        wind_magnitude = math.sqrt(self.WindU[i]**2 + self.WindV[i]**2)
-                        channeled_magnitude = wind_magnitude * self.mc.valleyChannelingFactor
-
-                        self.WindU[i] = channeled_magnitude * math.cos(valley_direction)
-                        self.WindV[i] = channeled_magnitude * math.sin(valley_direction)
-
-    def _apply_ridge_deflection(self):
-        """Apply wind deflection around ridges over longer distances"""
-        for i in range(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_PEAK:
-                x = i % self.mc.iNumPlotsX
-                y = i // self.mc.iNumPlotsX
-
-                # Apply deflection effects in a radius around the peak
-                for distance in range(1, self.mc.ridgeDeflectionDistance + 1):
-                    self._apply_deflection_at_distance(x, y, distance)
-
-    def _is_valley_location(self, i):
-        """Check if a location is in a valley (surrounded by higher terrain)"""
-        x = i % self.mc.iNumPlotsX
-        y = i // self.mc.iNumPlotsX
-        current_elevation = self.em.elevationMap[i]
-
-        higher_neighbours = 0
-        total_neighbours = 0
-
-        # Check all 8 neighbours
-        for direction in range(1, 9):
-            neighbour_i = self.mc.neighbours[i][direction]
-            if neighbour_i >= 0:
-                total_neighbours += 1
-                if self.em.elevationMap[neighbour_i] > current_elevation:
-                    higher_neighbours += 1
-
-        # Consider it a valley if more than half the neighbours are higher
-        return total_neighbours > 0 and (higher_neighbours / float(total_neighbours)) > 0.6
-
-    def _calculate_valley_direction(self, i):
-        """Calculate the primary direction of a valley"""
-        x = i % self.mc.iNumPlotsX
-        y = i // self.mc.iNumPlotsX
-        current_elevation = self.em.elevationMap[i]
-
-        # Find the direction of steepest descent
-        max_gradient = 0
-        best_direction = None
-
-        # Check cardinal and diagonal directions
-        directions = [
-            (1, 0, 0),      # East
-            (-1, 0, math.pi),   # West
-            (0, 1, math.pi/2),  # North
-            (0, -1, -math.pi/2), # South
-            (1, 1, math.pi/4),   # Northeast
-            (-1, 1, 3*math.pi/4), # Northwest
-            (1, -1, -math.pi/4),  # Southeast
-            (-1, -1, -3*math.pi/4) # Southwest
-        ]
-
-        for dx, dy, angle in directions:
-            neighbour_x, neighbour_y = self.mc.wrap_coordinates(x + dx, y + dy)
-
-            if neighbour_x >= 0 and neighbour_y >= 0:
-                neighbour_i = neighbour_y * self.mc.iNumPlotsX + neighbour_x
-                gradient = current_elevation - self.em.elevationMap[neighbour_i]
-
-                if gradient > max_gradient:
-                    max_gradient = gradient
-                    best_direction = angle
-
-        return best_direction
-
-    def _apply_deflection_at_distance(self, peak_x, peak_y, distance):
-        """Apply wind deflection at a specific distance from a peak"""
-        # Apply deflection in a circle around the peak
-        for angle_step in range(0, 360, 45):  # Check 8 directions
-            angle = math.radians(angle_step)
-
-            # Calculate position at this distance and angle
-            offset_x = int(distance * math.cos(angle))
-            offset_y = int(distance * math.sin(angle))
-
-            target_x, target_y = self.mc.wrap_coordinates(peak_x + offset_x, peak_y + offset_y)
-
-            if target_x >= 0 and target_y >= 0:
-                target_i = target_y * self.mc.iNumPlotsX + target_x
-
-                # Don't deflect wind at other peaks
-                if self.em.plotTypes[target_i] == self.mc.PLOT_PEAK:
-                    continue
-
-                # Calculate deflection strength (decreases with distance)
-                deflection_strength = 1.0 / (distance + 1)
-
-                # Calculate direction away from peak
-                dx = target_x - peak_x
-                dy = target_y - peak_y
-
-                # Handle wrapping
-                if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-                    dx = dx - math.copysign(self.mc.iNumPlotsX, dx)
-                if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-                    dy = dy - math.copysign(self.mc.iNumPlotsY, dy)
-
-                if dx != 0 or dy != 0:
-                    deflection_distance = math.sqrt(dx*dx + dy*dy)
-                    deflection_u = (dx / deflection_distance) * deflection_strength * 0.3
-                    deflection_v = (dy / deflection_distance) * deflection_strength * 0.3
-
-                    # Apply deflection
-                    self.WindU[target_i] += deflection_u
-                    self.WindV[target_i] += deflection_v
-
-    def _smooth_wind_map(self, iterations):
-        """Smooth wind patterns while preserving mountain blocking"""
-        for n in range(iterations):
-            for i in range(self.mc.iNumPlots):
-
-                # Skip peaks
-                if self.em.plotTypes[i] == self.mc.PLOT_PEAK:
-                    continue
-
-                sumU = self.WindU[i]
-                sumV = self.WindV[i]
-                count = 1.0
-
-                # Average with non-peak neighbours
-                for direction in range(1, 9):
-                    neighbour_i = self.mc.neighbours[i][direction]
-                    if neighbour_i >= 0:
-                        if self.em.plotTypes[i] != self.mc.PLOT_PEAK:
-                            sumU += self.WindU[neighbour_i]
-                            sumV += self.WindV[neighbour_i]
-                            count += 1.0
-
-                self.WindU[i] = sumU / count
-                self.WindV[i] = sumV / count
-
-    def _apply_temperature_smoothing(self):
-        """Apply smoothing to temperature map"""
-        return
-        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: not self.em.IsBelowSeaLevel(i))
-        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing)
-
     def _apply_polar_cooling(self):
         """Apply additional cooling to polar regions"""
         # Cool northern polar region
@@ -938,12 +608,20 @@ class ClimateMap:
                 i = y * self.mc.iNumPlotsX + x
                 self.TemperatureMap[i] *= cooling_factor
 
-        self.TemperatureMap = self.mc.normalize_map(self.TemperatureMap)
+    def _apply_temperature_smoothing(self):
+        """Apply smoothing to temperature map"""
+        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: not self.em.IsBelowSeaLevel(i))
+        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing)
+
+        # self.TemperatureMap = self.mc.normalize_map(self.TemperatureMap)
 
     def GenerateRainfallMap(self):
         """Generate rainfall map using moisture transport and precipitation models"""
-        print("Generating Rainfall Map")
 
+        print("Generating Wind Patterns")
+        self._generate_wind_patterns()
+
+        print("Generating Rainfall Map")
         moistureMap = [0.0] * self.mc.iNumPlots
 
         self._initialize_moisture_sources(moistureMap)
@@ -952,6 +630,276 @@ class ClimateMap:
         self._distribute_precipitation(moistureMap)
         self._add_rainfall_variation()
         self._finalize_rainfall_map()
+
+    def _generate_wind_patterns(self):
+        """Generate realistic atmospheric wind patterns using quasi-geostrophic model"""
+
+        # Step 1: Calculate column thickness field from elevation and temperature
+        thickness_field = self._calculate_atmospheric_thickness()
+
+        # Step 2: Precompute atmospheric connectivity (all land tiles)
+        neighbours, conduct, sumK = self._precompute_atmospheric_connectivity()
+
+        # Step 3: Solve streamfunction using iterative beta forcing solver
+        streamfunction = self._solve_atmospheric_streamfunction(neighbours, conduct, sumK, thickness_field)
+
+        # Step 5: Extract geostrophic winds from streamfunction
+        self._compute_winds_from_streamfunction(streamfunction)
+
+
+    def _calculate_atmospheric_thickness(self):
+        """Calculate effective atmospheric column thickness H from elevation and temperature"""
+        thickness_field = [0.0] * self.mc.iNumPlots
+
+        # Physical constants (tunable parameters)
+        H0 = self.mc.atmosphericBaseThickness  # Base thickness ~10 km
+        R_over_g = self.mc.atmosphericThermalFactor  # R*T/g scaling ~0.03 km/K
+
+        for i in range(self.mc.iNumPlots):
+            # Base thickness
+            H = H0
+
+            # Thermal contribution: warmer air = thicker column
+            thermal_contrib = R_over_g * self.TemperatureMap[i]
+            H += thermal_contrib
+
+            # Orographic contribution: higher elevation = thinner air column above
+            orographic_contrib = -self.aboveSeaLevelMap[i] * self.mc.orographicFactor
+            H += orographic_contrib
+
+            thickness_field[i] = max(0.1, H)  # Ensure positive thickness
+
+        return thickness_field
+
+
+    def _calculate_beta_parameter(self, latitude_deg):
+        """Calculate beta parameter: beta = (2*Omega*cos(phi))/R"""
+        latitude_rad = math.radians(latitude_deg)
+        beta = (2 * self.mc.earthRotationRate * math.cos(latitude_rad)) / self.mc.earthRadius
+        return beta * self.mc.betaPlaneStrength
+
+    def _calculate_vorticity_forcing(self, thickness_field, streamfunction=None):
+        """Calculate complete QG forcing: local + beta-plane effects"""
+        forcing = [0.0] * self.mc.iNumPlots
+
+        # Reference parameters
+        f0_squared = (2 * self.mc.earthRotationRate * math.sin(math.radians(45.0)))**2
+        g_H0 = self.mc.gravity * self.mc.atmosphericBaseThickness * 1000.0  # Convert km to m
+
+        # Calculate Rossby number scaling for numerical stability
+        # Ro = U / (f * L) where U is characteristic velocity, L is characteristic length
+        f0 = 2 * self.mc.earthRotationRate * math.sin(math.radians(45.0))
+        rossby_number = self.mc.characteristicVelocity / (f0 * self.mc.characteristicLength)
+
+        # Apply atmospheric scaling factor to bring equations into stable numerical range
+        # This accounts for the scale separation between synoptic and grid scales
+        scaling = (f0_squared / g_H0) * self.mc.atmosphericScalingFactor * rossby_number
+
+        # Calculate local forcing (thermal/topographic)
+        for i in range(self.mc.iNumPlots):
+            # Normalize thickness anomaly relative to base thickness
+            thickness_anomaly = (thickness_field[i] - self.mc.atmosphericBaseThickness) / self.mc.atmosphericBaseThickness
+
+            # Apply scaled QG forcing
+            forcing[i] = scaling * thickness_anomaly * 1000.0  # Convert back to appropriate units
+
+            # Add boundary layer damping for friction effects
+            forcing[i] *= self.mc.atmosphericDampingFactor
+
+        # Add beta-plane forcing if streamfunction is provided
+        if streamfunction is not None:
+            beta_forcing = self._calculate_beta_forcing(streamfunction)
+            for i in range(self.mc.iNumPlots):
+                forcing[i] += beta_forcing[i]
+
+        return forcing
+
+    def _calculate_beta_forcing(self, streamfunction):
+        """Calculate beta forcing: -beta * v_g where v_g = dpsi/dx"""
+        beta_forcing = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            y = i // self.mc.iNumPlotsX
+            latitude = self.mc.get_latitude_for_y(y)
+            beta = self._calculate_beta_parameter(latitude)
+
+            # Calculate v_g = dpsi/dx (meridional geostrophic wind)
+            x_i = i % self.mc.iNumPlotsX
+            dpsi_dx, _ = self._calculate_streamfunction_gradients(i, x_i, y, streamfunction)
+            v_geostrophic = dpsi_dx
+
+            # Beta forcing = -beta * v_g
+            beta_forcing[i] = -beta * v_geostrophic
+
+        return beta_forcing
+
+
+    def _precompute_atmospheric_connectivity(self):
+        """Precompute connectivity and conductances for atmospheric flow (all tiles)"""
+        neighbours = [[] for _ in range(self.mc.iNumPlots)]
+        conduct = [[] for _ in range(self.mc.iNumPlots)]
+        sumK = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            # Include all tiles (land and ocean) for atmospheric flow
+
+            # Check all 8 neighbours
+            for dir in range(1,9):
+                j = self.mc.neighbours[i][dir]
+                if j < 0:
+                    continue
+
+                # Calculate conductance based on terrain
+                k = self._calculate_atmospheric_conductance(i, j)
+
+                if k > 0:
+                    neighbours[i].append(j)
+                    conduct[i].append(k)
+                    sumK[i] += k
+
+        return neighbours, conduct, sumK
+
+
+    def _calculate_atmospheric_conductance(self, i, j):
+        """Calculate atmospheric conductance between tiles i and j"""
+        # Base conductance
+        k = self.mc.atmosphericK0
+
+        # Reduce conductance over rough terrain (mountains)
+        elevation_i = max(0, self.aboveSeaLevelMap[i])
+        elevation_j = max(0, self.aboveSeaLevelMap[j])
+        avg_elevation = (elevation_i + elevation_j) * 0.5
+
+        # Apply topographic drag factor
+        topo_factor = 1.0 / (1.0 + self.mc.topographicDrag * avg_elevation)
+        k *= topo_factor
+
+        # Different friction over land vs ocean
+        if self.em.IsBelowSeaLevel(i) and self.em.IsBelowSeaLevel(j):
+            # Ocean: lower friction
+            k *= self.mc.oceanAtmosphericFriction
+        elif not self.em.IsBelowSeaLevel(i) and not self.em.IsBelowSeaLevel(j):
+            # Land: higher friction
+            k *= self.mc.landAtmosphericFriction
+        else:
+            # Mixed: intermediate friction
+            k *= (self.mc.oceanAtmosphericFriction + self.mc.landAtmosphericFriction) * 0.5
+
+        return k
+
+
+    def _solve_atmospheric_streamfunction(self, neighbours, conduct, sumK, thickness_field):
+        """Solve QG streamfunction with iterative beta forcing"""
+        streamfunction = [0.0] * self.mc.iNumPlots
+
+        # Initial forcing (local only)
+        forcing = self._calculate_vorticity_forcing(thickness_field)
+
+        # Outer iteration for beta forcing convergence
+        for beta_iter in range(5):  # 5 beta iterations should be sufficient
+
+            # Boundary layer parameter alpha2 for friction
+            alpha_squared = self.mc.atmosphericFrictionParameter**2
+
+            # Inner iteration for streamfunction solver
+            for iteration in range(self.mc.currentSolverIterations):
+                streamfunction_new = streamfunction[:]
+                residual_SS = []
+
+                for i in range(self.mc.iNumPlots):
+                    if sumK[i] == 0:
+                        continue
+
+                    # Standard Laplacian term
+                    laplacian_sum = 0.0
+                    for idx, j in enumerate(neighbours[i]):
+                        laplacian_sum += conduct[i][idx] * streamfunction[j]
+
+                    # QG equation: del2psi - alpha2psi = forcing
+                    # Rearranged: psi = (sumk*psi_j + forcing) / (sumk + alpha2)
+                    denominator = sumK[i] + alpha_squared
+                    if denominator > 0:
+                        streamfunction_new[i] = (laplacian_sum + forcing[i]) / denominator
+
+                    residual_SS.append((streamfunction_new[i] - streamfunction[i])**2)
+
+                streamfunction = streamfunction_new
+                residual = math.sqrt(sum(residual_SS) / len(residual_SS)) if residual_SS else 0.0
+
+                # Check convergence
+                if (iteration >= self.mc.minSolverIterations and
+                    len(residual_SS) > 0 and
+                    residual < self.mc.solverTolerance):
+                    break
+
+            # Update forcing with beta effect for next iteration
+            forcing = self._calculate_vorticity_forcing(thickness_field, streamfunction)
+
+        print("Atmospheric solver finished after %d beta iterations, %d inner iterations (RMSE: %.2e)" %
+              (beta_iter + 1, iteration + 1, residual))
+
+        return streamfunction
+
+
+    def _compute_winds_from_streamfunction(self, streamfunction):
+        """Extract geostrophic winds from streamfunction: u = -dpsi/dy, v = dpsi/dx"""
+
+        for i in range(self.mc.iNumPlots):
+            x_i = i % self.mc.iNumPlotsX
+            y_i = i // self.mc.iNumPlotsX
+
+            # Calculate gradients using finite differences
+            dpsi_dx, dpsi_dy = self._calculate_streamfunction_gradients(i, x_i, y_i, streamfunction)
+
+            # Geostrophic winds: u = -dpsi/dy, v = dpsi/dx
+            u_geo = -dpsi_dy
+            v_geo = dpsi_dx
+
+            # Apply equatorial velocity capping for f = 0 regions
+            # latitude = self.mc.get_latitude_for_y(y_i)
+            # if abs(latitude) < self.mc.equatorialCapLatitude:
+            #     # Smooth capping function
+            #     cap_factor = abs(latitude) / self.mc.equatorialCapLatitude
+            #     max_velocity = self.mc.equatorialMaxVelocity
+
+            #     current_speed = math.sqrt(u_geo*u_geo + v_geo*v_geo)
+            #     if current_speed > max_velocity * cap_factor:
+            #         scale = (max_velocity * cap_factor) / current_speed
+            #         u_geo *= scale
+            #         v_geo *= scale
+
+            self.WindU[i] = u_geo
+            self.WindV[i] = v_geo
+
+        # Normalize wind vectors
+        maxV = max(abs(x) for x in self.WindU + self.WindV)
+        # if maxV > 0:
+        #     self.WindU = [u / maxV for u in self.WindU]
+        #     self.WindV = [v / maxV for v in self.WindV]
+
+
+    def _calculate_streamfunction_gradients(self, i, x_i, y_i, streamfunction):
+        """Calculate dpsi/dx and dpsi/dy using centered differences"""
+
+        # East-West gradient (dpsi/dx)
+        x_east = (x_i + 1) % self.mc.iNumPlotsX if self.mc.wrapX else min(x_i + 1, self.mc.iNumPlotsX - 1)
+        x_west = (x_i - 1) % self.mc.iNumPlotsX if self.mc.wrapX else max(x_i - 1, 0)
+
+        i_east = y_i * self.mc.iNumPlotsX + x_east
+        i_west = y_i * self.mc.iNumPlotsX + x_west
+
+        dpsi_dx = (streamfunction[i_east] - streamfunction[i_west]) * 0.5
+
+        # North-South gradient (dpsi/dy)
+        y_north = (y_i + 1) % self.mc.iNumPlotsY if self.mc.wrapY else min(y_i + 1, self.mc.iNumPlotsY - 1)
+        y_south = (y_i - 1) % self.mc.iNumPlotsY if self.mc.wrapY else max(y_i - 1, 0)
+
+        i_north = y_north * self.mc.iNumPlotsX + x_i
+        i_south = y_south * self.mc.iNumPlotsX + x_i
+
+        dpsi_dy = (streamfunction[i_north] - streamfunction[i_south]) * 0.5
+
+        return dpsi_dx, dpsi_dy
 
     def _initialize_moisture_sources(self, moistureMap):
         """Initialize moisture sources from water bodies"""
