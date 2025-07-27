@@ -679,7 +679,7 @@ class ClimateMap:
         return beta * self.mc.betaPlaneStrength
 
     def _calculate_vorticity_forcing(self, thickness_field, streamfunction=None):
-        """Calculate complete QG forcing: local + beta-plane effects"""
+        """Calculate complete QG forcing: local + beta-plane + thermal circulation effects"""
         forcing = [0.0] * self.mc.iNumPlots
 
         # Reference parameters
@@ -705,6 +705,11 @@ class ClimateMap:
 
             # Add boundary layer damping for friction effects
             forcing[i] *= self.mc.atmosphericDampingFactor
+
+        # Add thermal circulation forcing (NEW)
+        thermal_forcing = self._calculate_thermal_circulation_forcing()
+        for i in range(self.mc.iNumPlots):
+            forcing[i] += thermal_forcing[i]
 
         # Add beta-plane forcing if streamfunction is provided
         if streamfunction is not None:
@@ -732,6 +737,97 @@ class ClimateMap:
             beta_forcing[i] = -beta * v_geostrophic
 
         return beta_forcing
+
+    def _calculate_thermal_circulation_forcing(self):
+        """Calculate thermal circulation forcing to drive large-scale atmospheric patterns"""
+        forcing = [0.0] * self.mc.iNumPlots
+
+        for i in range(self.mc.iNumPlots):
+            y = i // self.mc.iNumPlotsX
+            latitude = self.mc.get_latitude_for_y(y)
+
+            # Calculate base thermal forcing components
+            hadley_forcing = self._calculate_hadley_cell_forcing(latitude)
+            itcz_forcing = self._calculate_itcz_forcing(latitude)
+            subtropical_forcing = self._calculate_subtropical_high_forcing(latitude)
+
+            # Combine thermal forcing components
+            thermal_forcing = (hadley_forcing + itcz_forcing + subtropical_forcing) * self.mc.thermalCirculationStrength
+
+            # Amplify thermal forcing over oceans for stronger trade winds
+            if self.em.IsBelowSeaLevel(i):
+                thermal_forcing *= self.mc.thermalGradientAmplification
+
+            forcing[i] = thermal_forcing
+
+        return forcing
+
+    def _calculate_hadley_cell_forcing(self, latitude):
+        """Calculate Hadley cell circulation forcing based on latitude"""
+        abs_lat = abs(latitude)
+
+        # Hadley cell extends from equator to ~30 degrees
+        if abs_lat <= 30.0:
+            # Normalize latitude within Hadley cell range
+            normalized_lat = abs_lat / 30.0
+
+            # Create circulation pattern: upwelling at equator, downwelling at 30 degrees
+            # Use sine function to create smooth transition
+            circulation_factor = math.cos(normalized_lat * math.pi / 2.0)
+
+            # Positive forcing = upwelling (equator), negative = downwelling (30 degrees)
+            hadley_forcing = circulation_factor * self.mc.hadleyCellStrength
+
+            # Add asymmetry for cross-equatorial flow
+            if latitude != 0:
+                sign = 1 if latitude > 0 else -1
+                asymmetry = 0.1 * sign * math.sin(normalized_lat * math.pi)
+                hadley_forcing += asymmetry
+
+            return hadley_forcing
+        else:
+            return 0.0
+
+    def _calculate_itcz_forcing(self, latitude):
+        """Calculate Inter-Tropical Convergence Zone forcing"""
+        abs_lat = abs(latitude)
+
+        # ITCZ is strongest near equator within specified width
+        if abs_lat <= self.mc.itczWidth:
+            # Gaussian-like profile centered at equator
+            sigma = self.mc.itczWidth / 3.0  # 3-sigma covers most of ITCZ
+            gaussian_factor = math.exp(-(latitude**2) / (2 * sigma**2))
+
+            # Strong upwelling forcing in ITCZ
+            itcz_forcing = gaussian_factor * self.mc.equatorialUpwellingStrength
+
+            return itcz_forcing
+        else:
+            return 0.0
+
+    def _calculate_subtropical_high_forcing(self, latitude):
+        """Calculate subtropical high pressure zone forcing"""
+        abs_lat = abs(latitude)
+
+        # Subtropical highs centered around 30 degrees latitude
+        subtropical_center = 30.0
+        subtropical_width = 10.0  # Width of subtropical high zone
+
+        # Check if we're in the subtropical high zone
+        if abs(abs_lat - subtropical_center) <= subtropical_width:
+            # Distance from subtropical center
+            distance_from_center = abs(abs_lat - subtropical_center)
+
+            # Gaussian-like profile centered at 30 degrees
+            sigma = subtropical_width / 2.5
+            gaussian_factor = math.exp(-(distance_from_center**2) / (2 * sigma**2))
+
+            # Strong downwelling (subsidence) forcing in subtropical highs
+            subtropical_forcing = -gaussian_factor * self.mc.subtropicalSubsidenceStrength
+
+            return subtropical_forcing
+        else:
+            return 0.0
 
 
     def _precompute_atmospheric_connectivity(self):

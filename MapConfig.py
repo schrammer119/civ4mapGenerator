@@ -182,7 +182,7 @@ class MapConfig:
         self.atmosphericFrictionParameter = 0.01     # Boundary layer parameter alpha
         self.topographicDrag = 0.001               # Drag coefficient for elevation
         self.oceanAtmosphericFriction = 1.0        # Ocean friction multiplier
-        self.landAtmosphericFriction = 0.1         # Land friction multiplier
+        self.landAtmosphericFriction = 1.0         # Land friction multiplier
 
         # Atmospheric scaling parameters
         self.atmosphericScalingFactor = 1e6         # Dimensionless scaling factor for QG equations
@@ -200,6 +200,15 @@ class MapConfig:
         # Beta-plane parameters for QG atmospheric dynamics
         self.earthRadius = 6.371e6                 # Earth radius in meters
         self.betaPlaneStrength = 1.0               # Tuning parameter for beta effect strength
+
+        # Thermal circulation parameters for large-scale atmospheric patterns
+        self.thermalCirculationStrength = 2.0     # Overall strength of thermal circulation forcing
+        self.hadleyCellStrength = 1.5              # Strength of Hadley cell circulation
+        self.itczWidth = 15.0                      # Width of ITCZ in degrees latitude
+        self.subtropicalHighStrength = 1.2         # Strength of subtropical high pressure zones
+        self.thermalGradientAmplification = 3.0    # Amplification factor for thermal gradients over oceans
+        self.equatorialUpwellingStrength = 2.0     # Strength of equatorial upwelling forcing
+        self.subtropicalSubsidenceStrength = 1.8   # Strength of subtropical subsidence forcing
 
         # --- Rainfall ---
         self.rainOverallFactor = 0.008      # A global multiplier for the total amount of rainfall.
