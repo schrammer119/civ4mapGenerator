@@ -1209,12 +1209,10 @@ class ClimateMap:
             # Add orographic precipitation to current location
             self.RainfallMap[current_location] += total_precipitation
 
-            # Update peak rainfall tracking
+            # Update peak rainfall tracking (simplified)
             if debug_stats and self.RainfallMap[current_location] > debug_stats['peak_rainfall_value']:
                 debug_stats['peak_rainfall_location'] = current_location
                 debug_stats['peak_rainfall_value'] = self.RainfallMap[current_location]
-                debug_stats['peak_rainfall_sources']['orographic'] = orographic_precipitation
-                debug_stats['peak_rainfall_sources']['frontal'] = frontal_precipitation
 
             # Reduce transported moisture (orographic precipitation creates natural rain shadow)
             transported_moisture = moisture - total_precipitation
@@ -1224,12 +1222,10 @@ class ClimateMap:
             # Add orographic precipitation to current location
             self.RainfallMap[current_location] += moisture
 
-            # Update peak rainfall tracking
+            # Update peak rainfall tracking (simplified)
             if debug_stats and self.RainfallMap[current_location] > debug_stats['peak_rainfall_value']:
                 debug_stats['peak_rainfall_location'] = current_location
                 debug_stats['peak_rainfall_value'] = self.RainfallMap[current_location]
-                debug_stats['peak_rainfall_sources']['orographic'] = orographic_precipitation
-                debug_stats['peak_rainfall_sources']['frontal'] = frontal_precipitation
 
             return 0.0, True
 
@@ -1281,13 +1277,10 @@ class ClimateMap:
             if debug_stats:
                 debug_stats['minimum_precipitation_applied'] += minimum_added
 
-        # Track peak rainfall location
+        # Simplified peak tracking - just track the location, calculate sources later
         if debug_stats and self.RainfallMap[location] + precipitation > debug_stats['peak_rainfall_value']:
             debug_stats['peak_rainfall_location'] = location
             debug_stats['peak_rainfall_value'] = self.RainfallMap[location] + precipitation
-            # Update sources for this location
-            debug_stats['peak_rainfall_sources']['base'] = base_precip
-            debug_stats['peak_rainfall_sources']['minimum'] = minimum_added if minimum_precip_applied else 0.0
 
         # Check if all moisture precipitates
         if precipitation >= moisture:
