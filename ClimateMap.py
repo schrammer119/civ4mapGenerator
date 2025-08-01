@@ -1075,7 +1075,7 @@ class ClimateMap:
                     wind_unit_y = wind_v / wind_speed
 
                     # Get 4-neighbor transport weights and apply orographic effects
-                    neighbor_data = self._get_4neighbor_transport_weights(location, wind_unit_x, wind_unit_y, moisture)
+                    neighbor_data = self._get_4neighbor_transport_weights(location, wind_unit_x, wind_unit_y, moisture, debug_stats)
 
                     # Debug: Track transport weights
                     if track_parcel and self.mc.debugTransportFlow:
@@ -1097,8 +1097,15 @@ class ClimateMap:
                             if debug_stats:
                                 debug_stats['transports'] += 1
                                 debug_stats['max_distance'] = max(debug_stats['max_distance'], new_distance)
-                        elif track_parcel:
-                            print("  Transport blocked: max distance %d reached" % self.mc.rainfallMaxTransportDistance)
+                        else:
+                            # Track distance limit losses
+                            if debug_stats:
+                                debug_stats['distance_limit_losses'] += transported_moisture
+                                debug_stats['distance_limit_events'] += 1
+
+                            if track_parcel:
+                                print("  Transport blocked: max distance %d reached, lost %.3f moisture" %
+                                      (self.mc.rainfallMaxTransportDistance, transported_moisture))
                 else:
                     # No wind transport
                     if track_parcel and self.mc.debugTransportFlow:
@@ -1112,7 +1119,7 @@ class ClimateMap:
         if debug_stats and self.mc.debugMoistureSummary:
             self._print_debug_summary(debug_stats)
 
-    def _get_4neighbor_transport_weights(self, location, wind_unit_x, wind_unit_y, moisture):
+    def _get_4neighbor_transport_weights(self, location, wind_unit_x, wind_unit_y, moisture, debug_stats=None):
         """Calculate weights for 4-neighbor transport based on wind direction with orographic effects"""
 
         # 4-neighbor directions: North, South, East, West
@@ -1145,7 +1152,7 @@ class ClimateMap:
             if weight > 0:
                 # Apply orographic effects before transport
                 transported_moisture, fully_precipitated = self._apply_transport_effects(
-                    location, neighbor_location, moisture * weight
+                    location, neighbor_location, moisture * weight, debug_stats
                 )
 
                 if not fully_precipitated:
@@ -1153,7 +1160,7 @@ class ClimateMap:
 
         return neighbor_data
 
-    def _apply_transport_effects(self, current_location, target_location, moisture):
+    def _apply_transport_effects(self, current_location, target_location, moisture, debug_stats=None):
         """Apply orographic effects during moisture transport"""
 
         if self.em.plotTypes[current_location] == self.mc.PLOT_OCEAN:
@@ -1168,6 +1175,8 @@ class ClimateMap:
         temperature_change = current_temp - target_temp
 
         total_precipitation = 0.0
+        orographic_precipitation = 0.0
+        frontal_precipitation = 0.0
 
         # Orographic effects (elevation-based)
         if elevation_change > 0:
@@ -1182,15 +1191,30 @@ class ClimateMap:
             orographic_precipitation = moisture * elevation_change * self.mc.rainfallOrographicFactor * orographic_multiplier
             total_precipitation += orographic_precipitation
 
+            # Track for debugging
+            if debug_stats:
+                debug_stats['orographic_precipitation'] += orographic_precipitation
+
         # Frontal/cyclonic effects (temperature-based)
         if temperature_change > 0:
             # Moving from warm to cold air - warm air rises over cold, causing precipitation
             frontal_precipitation = moisture * temperature_change * self.mc.rainfallFrontalFactor
             total_precipitation += frontal_precipitation
 
+            # Track for debugging
+            if debug_stats:
+                debug_stats['frontal_precipitation'] += frontal_precipitation
+
         if total_precipitation < moisture:
             # Add orographic precipitation to current location
             self.RainfallMap[current_location] += total_precipitation
+
+            # Update peak rainfall tracking
+            if debug_stats and self.RainfallMap[current_location] > debug_stats['peak_rainfall_value']:
+                debug_stats['peak_rainfall_location'] = current_location
+                debug_stats['peak_rainfall_value'] = self.RainfallMap[current_location]
+                debug_stats['peak_rainfall_sources']['orographic'] = orographic_precipitation
+                debug_stats['peak_rainfall_sources']['frontal'] = frontal_precipitation
 
             # Reduce transported moisture (orographic precipitation creates natural rain shadow)
             transported_moisture = moisture - total_precipitation
@@ -1199,6 +1223,13 @@ class ClimateMap:
         else:
             # Add orographic precipitation to current location
             self.RainfallMap[current_location] += moisture
+
+            # Update peak rainfall tracking
+            if debug_stats and self.RainfallMap[current_location] > debug_stats['peak_rainfall_value']:
+                debug_stats['peak_rainfall_location'] = current_location
+                debug_stats['peak_rainfall_value'] = self.RainfallMap[current_location]
+                debug_stats['peak_rainfall_sources']['orographic'] = orographic_precipitation
+                debug_stats['peak_rainfall_sources']['frontal'] = frontal_precipitation
 
             return 0.0, True
 
@@ -1328,17 +1359,58 @@ class ClimateMap:
         # Moisture conservation analysis
         total_initial = debug_stats['total_initial_moisture']
         total_precipitated = debug_stats['total_precipitation']
+        distance_losses = debug_stats['distance_limit_losses']
         conservation_ratio = total_precipitated / total_initial if total_initial > 0 else 0.0
 
         print("Moisture Conservation:")
         print("  Initial moisture: %.3f" % total_initial)
         print("  Total precipitation: %.3f" % total_precipitated)
+        print("  Distance limit losses: %.3f (%d events)" % (distance_losses, debug_stats['distance_limit_events']))
         print("  Conservation ratio: %.1f%%" % (conservation_ratio * 100))
 
         if conservation_ratio > 1.1:
             print("  WARNING: Moisture gain detected! (>110%)")
         elif conservation_ratio < 0.1:
             print("  WARNING: Severe moisture loss detected! (<10%)")
+
+        # Detailed rainfall source breakdown
+        print("\nRainfall Source Breakdown:")
+        total_base_ocean = debug_stats['base_precipitation_ocean']
+        total_base_land = debug_stats['base_precipitation_land']
+        total_orographic = debug_stats['orographic_precipitation']
+        total_frontal = debug_stats['frontal_precipitation']
+        total_minimum = debug_stats['minimum_precipitation_applied']
+
+        print("  Base ocean precipitation: %.3f (%.1f%%)" %
+              (total_base_ocean, 100.0 * total_base_ocean / total_precipitated if total_precipitated > 0 else 0))
+        print("  Base land precipitation: %.3f (%.1f%%)" %
+              (total_base_land, 100.0 * total_base_land / total_precipitated if total_precipitated > 0 else 0))
+        print("  Orographic precipitation: %.3f (%.1f%%)" %
+              (total_orographic, 100.0 * total_orographic / total_precipitated if total_precipitated > 0 else 0))
+        print("  Frontal precipitation: %.3f (%.1f%%)" %
+              (total_frontal, 100.0 * total_frontal / total_precipitated if total_precipitated > 0 else 0))
+        print("  Minimum precipitation: %.3f (%.1f%%)" %
+              (total_minimum, 100.0 * total_minimum / total_precipitated if total_precipitated > 0 else 0))
+
+        # Peak rainfall analysis
+        if debug_stats['peak_rainfall_location'] >= 0:
+            peak_loc = debug_stats['peak_rainfall_location']
+            peak_value = debug_stats['peak_rainfall_value']
+            peak_sources = debug_stats['peak_rainfall_sources']
+
+            print("\nPeak Rainfall Analysis:")
+            print("  Peak location: %d (pre-normalization value: %.3f)" % (peak_loc, peak_value))
+            print("  Peak source breakdown:")
+            print("    Base: %.3f, Orographic: %.3f, Frontal: %.3f, Minimum: %.3f" %
+                  (peak_sources['base'], peak_sources['orographic'],
+                   peak_sources['frontal'], peak_sources['minimum']))
+
+            # Additional location info
+            if peak_loc < len(self.TemperatureMap):
+                temp = self.TemperatureMap[peak_loc]
+                elev = self.aboveSeaLevelMap[peak_loc] if peak_loc < len(self.aboveSeaLevelMap) else 0
+                plot_type = "Ocean" if self.em.plotTypes[peak_loc] == self.mc.PLOT_OCEAN else "Land"
+                print("    Location details: %s, Temp=%.1fC, Elevation=%.1fm" % (plot_type, temp, elev))
 
         # Transport statistics
         print("\nTransport Statistics:")
@@ -1361,6 +1433,9 @@ class ClimateMap:
         wind_effectiveness = float(debug_stats['transports']) / (debug_stats['transports'] + debug_stats['no_wind_events']) if (debug_stats['transports'] + debug_stats['no_wind_events']) > 0 else 0
         print("  Wind transport effectiveness: %.1f%%" % (wind_effectiveness * 100))
 
+        # Temperature analysis
+        self._print_temperature_analysis()
+
         # Rainfall map analysis
         rainfall_stats = self._analyze_rainfall_distribution()
         print("\nRainfall Distribution:")
@@ -1369,7 +1444,52 @@ class ClimateMap:
         print("  Avg rainfall (land only): %.3f" % rainfall_stats['avg_land_rainfall'])
         print("  Ocean rainfall (should be ~0): %.6f" % rainfall_stats['avg_ocean_rainfall'])
 
+        # Parameter effectiveness
+        print("\nParameter Effectiveness:")
+        if total_minimum > 0:
+            print("  Minimum precipitation forcing ocean rain: TRUE")
+            ocean_min_ratio = total_minimum / rainfall_stats['avg_ocean_rainfall'] if rainfall_stats['avg_ocean_rainfall'] > 0 else 0
+            print("    Ocean minimum ratio: %.1f%%" % (ocean_min_ratio * 100))
+
+        if total_orographic > 0:
+            print("  Orographic effects active: TRUE (%.3f total)" % total_orographic)
+        else:
+            print("  Orographic effects active: FALSE")
+
+        if total_frontal > 0:
+            print("  Frontal effects active: TRUE (%.3f total)" % total_frontal)
+        else:
+            print("  Frontal effects active: FALSE")
+
         print("==========================================\n")
+
+    def _print_temperature_analysis(self):
+        """Print temperature analysis for debugging"""
+        # Calculate temperature statistics
+        land_temps = []
+        ocean_temps = []
+
+        for i in xrange(self.mc.iNumPlots):
+            temp = self.TemperatureMap[i]
+            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+                ocean_temps.append(temp)
+            else:
+                land_temps.append(temp)
+
+        print("\nTemperature Analysis:")
+        if land_temps:
+            land_min = min(land_temps)
+            land_max = max(land_temps)
+            land_avg = sum(land_temps) / len(land_temps)
+            print("  Land temperature range: %.1f to %.1f C (avg: %.1f C)" % (land_min, land_max, land_avg))
+            print("  Convective base temp: %.1f C, Max temp: %.1f C" %
+                  (self.rainfallConvectiveBaseTemp, self.rainfallConvectiveMaxTemp))
+
+        if ocean_temps:
+            ocean_min = min(ocean_temps)
+            ocean_max = max(ocean_temps)
+            ocean_avg = sum(ocean_temps) / len(ocean_temps)
+            print("  Ocean temperature range: %.1f to %.1f C (avg: %.1f C)" % (ocean_min, ocean_max, ocean_avg))
 
     def _analyze_rainfall_distribution(self):
         """Analyze current rainfall distribution for debug purposes"""
