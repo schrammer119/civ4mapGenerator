@@ -95,6 +95,7 @@ class MapConfig:
 
         # --- Plate Dynamics & Forces ---
         self.plateDensityFactor = 1.3       # Height factor based on plate density
+        self.elevationVelScale = 3e5
         self.plateVelocityFactor = 4.0      # Multiplier for elevation changes caused by plate velocity.
         self.plateBuoyancyFactor = 0.9      # Multiplier for elevation based on distance from a plate's center (buoyancy).
         self.baseSlabPull = 0.9             # Base strength of the slab-pull force at subduction zones.
@@ -131,14 +132,16 @@ class MapConfig:
         self.climateSmoothing = 3           # General smoothing radius for climate maps (temperature, moisture).
         self.topLatitude = 70.0             # Latitude of the top map edge in degrees.
         self.bottomLatitude = -70.0         # Latitude of the bottom map edge in degrees.
+        self.gridSpacingX = 40075017.0 / self.iNumPlotsX # Grid spacing in meters - approximate distance between adjacent cells
+        self.gridSpacingY = (self.topLatitude - self.bottomLatitude) * 40007863.0 / 180.0 / self.iNumPlotsY # Grid spacing in meters - approximate distance between adjacent cells
 
         # --- Temperature ---
-        self.minimumTemp = -20.77           # Base temperature at the poles (Celsius).
-        self.maximumTemp = 29.0             # Base temperature at the equator (Celsius).
-        self.maxWaterTempC = 35.0           # Maximum possible ocean temperature.
-        self.minWaterTempC = -10.0          # Minimum possible ocean temperature (can be below freezing due to salinity).
-        self.maxElev = 5.1                  # Maximum elevation in km
-        self.tempLapse = 1.3                # Temperature decrease in Celsius per kilometer of elevation.
+        self.minimumTemp = -32.0           # Base temperature at the poles (Celsius).
+        self.maximumTemp = 35.0             # Base temperature at the equator (Celsius).
+        self.maxWaterTempC = 29.0           # Maximum possible ocean temperature.
+        self.minWaterTempC = -2.0          # Minimum possible ocean temperature (can be below freezing due to salinity).
+        self.maxElev = 4500.0                  # Maximum elevation in m
+        self.tempLapse = 0.0013                # Temperature decrease in Celsius per metre of elevation.
         self.thermalInertiaFactor = 0.3     # How much temperature is smoothed between land and sea. Higher values mean more smoothing.
 
         # --- Solar Radiation ---
@@ -171,57 +174,34 @@ class MapConfig:
         self.min_basin_size = 20             # Minimum size of a water body to have a maritime effect on adjacent land.
 
         # --- Wind ---
-        # Atmospheric model parameters
-        self.atmosphericBaseThickness = 10.0        # Base atmospheric thickness (km)
-        self.atmosphericThermalFactor = 0.03        # R/g scaling for temperature effects
-        self.orographicFactor = 0.5                 # Elevation effect on thickness
-        self.atmosphericDampingFactor = 0.95         # Overall damping factor
+        # QG Solver Parameters
+        self.qgCoriolisF0 = 1.03e-4                    # Reference Coriolis parameter (1/s) - controls overall rotation effects
+        self.qgBetaParameter = 1.6e-7                # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
+        self.qgMeanLayerDepth = 8000                # Mean atmospheric layer depth (m) - base thickness for PV calculations
+        self.qgThermalExpansion = 150              # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
+        self.qgDiagonalWeight = 1.0                 # Diagonal neighbor weight in stencil - tuning parameter for numerical accuracy
+        self.qgHadleyStrength = 8e10               # Hadley cell amplitude (1/s2) - tropical heating strength
 
-        # QG solver parameters
-        self.atmosphericK0 = 1.0                    # Base atmospheric conductance
-        self.atmosphericFrictionParameter = 0.01     # Boundary layer parameter alpha
-        self.topographicDrag = 0.001               # Drag coefficient for elevation
-        self.oceanAtmosphericFriction = 1.0        # Ocean friction multiplier
-        self.landAtmosphericFriction = 1.0         # Land friction multiplier
+        # Solver Control
+        self.qgJacobiIterations = 1000               # Inner Jacobi solver iterations - balance accuracy vs speed
+        self.qgConvergenceTolerance = 1e-1          # Solver tolerance - smaller = more accurate but slower
+        self.qgSolverFriction = 7e-12        # jacobi solver damping
 
-        # Atmospheric scaling parameters
-        self.atmosphericScalingFactor = 1e6         # Dimensionless scaling factor for QG equations
-        self.characteristicVelocity = 10.0          # Characteristic atmospheric velocity (m/s)
-        self.characteristicLength = 100000.0        # Characteristic length scale (m) - ~100 km
-        self.rossbyNumberScaling = 1.0              # Rossby number scaling factor
-
-        # Equatorial handling
-        self.equatorialCapLatitude = 15.0          # Latitude threshold for velocity capping
-        self.equatorialMaxVelocity = 0.3           # Maximum velocity near equator
-
-        # Physical constants (if not already defined)
-        self.gravity = 9.81                        # m/s2
-
-        # Beta-plane parameters for QG atmospheric dynamics
-        self.earthRadius = 6.371e6                 # Earth radius in meters
-        self.betaPlaneStrength = 1.0               # Tuning parameter for beta effect strength
-
-        # Thermal circulation parameters for large-scale atmospheric patterns
-        self.thermalCirculationStrength = 2.0     # Overall strength of thermal circulation forcing
-        self.hadleyCellStrength = 1.5              # Strength of Hadley cell circulation
-        self.itczWidth = 15.0                      # Width of ITCZ in degrees latitude
-        self.subtropicalHighStrength = 1.2         # Strength of subtropical high pressure zones
-        self.thermalGradientAmplification = 3.0    # Amplification factor for thermal gradients over oceans
-        self.equatorialUpwellingStrength = 2.0     # Strength of equatorial upwelling forcing
-        self.subtropicalSubsidenceStrength = 1.8   # Strength of subtropical subsidence forcing
-
-        # --- Rainfall ---
-        self.rainOverallFactor = 0.008      # A global multiplier for the total amount of rainfall.
-        self.rainConvectionFactor = 0.07    # Contribution of convective rainfall (from warm, moist air rising).
-        self.rainOrographicFactor = 0.11    # Contribution of orographic rainfall (from air forced up by mountains).
-        self.rainFrontalFactor = 0.03       # Contribution of frontal rainfall (from warm and cold air masses meeting).
-        self.rainPerlinFactor = 0.05        # Amount of random Perlin noise to add to the rainfall map for variety.
-
-        # --- Atmospheric Stability ---
-        self.stabilityThreshold = 0.15      # Temp difference threshold to determine if atmosphere is stable or unstable.
-        self.unstableConvectionFactor = 1.3 # Multiplier for convection in an unstable atmosphere (promotes rain).
-        self.stableConvectionFactor = 0.7   # Multiplier for convection in a stable atmosphere (suppresses rain).
-        self.inversionStrength = 0.5        # Strength of temperature inversions, which can trap moisture and affect rain.
+        # --- Rain ---
+        # # Rainfall Model Parameters - Temperature values in Celsius!
+        self.rainfallConvectiveBasePercentile = 0.1   # Percentile for base convective temperature (30% coldest land)
+        self.rainfallConvectiveMaxPercentile = 0.2    # Percentile for peak convective temperature (10% hottest land)
+        self.rainfallMaxTransportDistance = 100      # Maximum transport distance in tiles
+        self.rainfallConvectiveMaxRate = 0.15        # Maximum convective base rainfall rate at peak temperature
+        self.rainfallConvectiveDeclineRate = 0.05    # Rate of decline above peak temperature per degree
+        self.rainfallConvectiveMinFactor = 0.5       # Minimum convective factor for very hot temperatures
+        self.rainfallOceanPrecipitation = 0.0       # Base precipitation rate over ocean to prevent buildup
+        self.rainfallOrographicFactor = 0.00005       # Multiplier for orographic precipitation (% moisture/1m elevation)
+        self.rainfallFrontalFactor = 0.0005           # Multiplier for frontal/cyclonic precipitation
+        self.rainPeakOrographicFactor = 2.0
+        self.rainHillOrographicFactor = 1.3
+        self.rainfallMinimumPrecipitation = 0.01     # Minimum absolute precipitation to ensure linear decay
+        self.rainSmoothing = 2
 
 
     # -------------------------------------------------------------------------
@@ -231,7 +211,7 @@ class MapConfig:
     def _precalculate_neighbours(self):
         """Pre-calculates and caches neighbour relationships for all tiles for performance."""
         self.neighbours = {}
-        for i in range(self.iNumPlots):
+        for i in xrange(self.iNumPlots):
             self.neighbours[i] = [self._get_neighbour_tile(i, direction) for direction in range(9)]
 
     def _get_neighbour_tile(self, i, direction):
@@ -299,14 +279,14 @@ class MapConfig:
         if not map_data:
             return map_data
 
-        min_val = min(map_data)
-        max_val = max(map_data)
+        min_val = float(min(map_data))
+        max_val = float(max(map_data))
         range_val = max_val - min_val
 
         if range_val == 0:
             return [0.0] * len(map_data)
         else:
-            return [(val - min_val) / range_val for val in map_data]
+            return [(float(val) - min_val) / range_val for val in map_data]
 
     def find_value_from_percent(self, data_list, percent, descending=True):
         """Finds the value in a list at a given percentile."""
@@ -375,7 +355,7 @@ class MapConfig:
         # Create Gaussian kernel
         kernel = []
         kernel_sum = 0.0
-        for i in range(-radius, radius + 1):
+        for i in xrange(-radius, radius + 1):
             val = math.exp(-(i ** 2) / (2 * sigma ** 2))
             kernel.append(val)
             kernel_sum += val
@@ -385,14 +365,14 @@ class MapConfig:
 
         # Horizontal pass
         temp_grid = [0.0] * self.iNumPlots
-        for i in range(self.iNumPlots):
+        for i in xrange(self.iNumPlots):
             if filter_func is None or filter_func(i):
                 x = i % self.iNumPlotsX
                 y = i // self.iNumPlotsX
                 weighted_sum = 0.0
                 weight_total = 0.0
 
-                for k in range(-radius, radius + 1):
+                for k in xrange(-radius, radius + 1):
                     neighbour_x = x + k
                     if self.wrapX:
                         neighbour_x = neighbour_x % self.iNumPlotsX
@@ -410,14 +390,14 @@ class MapConfig:
 
         # Vertical pass
         result_grid = [0.0] * self.iNumPlots
-        for i in range(self.iNumPlots):
+        for i in xrange(self.iNumPlots):
             if filter_func is None or filter_func(i):
                 x = i % self.iNumPlotsX
                 y = i // self.iNumPlotsX
                 weighted_sum = 0.0
                 weight_total = 0.0
 
-                for k in range(-radius, radius + 1):
+                for k in xrange(-radius, radius + 1):
                     neighbour_y = y + k
                     if self.wrapY:
                         neighbour_y = neighbour_y % self.iNumPlotsY
@@ -444,8 +424,8 @@ class MapConfig:
         """Generate a grid of Perlin noise values"""
         perlin = self.Perlin2D(seed)
         grid = []
-        for y in range(self.iNumPlotsY):
-            for x in range(self.iNumPlotsX):
+        for y in xrange(self.iNumPlotsY):
+            for x in xrange(self.iNumPlotsX):
                 normalized_x = x / scale
                 normalized_y = y / scale
                 grid.append(perlin.noise(normalized_x, normalized_y))

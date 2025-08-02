@@ -4,6 +4,38 @@
 
 This project creates a Civilization IV map generator (`PlanetForge.py`) that uses plate tectonics and climate models to produce natural, organic, earth-like maps.
 
+## Desired generation pipeline:
+
+-   **Elevation Generation**
+    -- plate/continent random generation
+    -- elevation from plate tectonic model
+    -- determine sea level
+    -- fill in "lakes"
+    -- determine plot types
+    -- create above-sea level elevation map, with added bonus elevation for mountains and hills
+-   **Climate Generation**
+    -- generate base solar/elevation temperature
+    -- generate ocean currents & thermal effects
+    -- generate wind patterns
+    -- generate moisture and distribute as rain
+    -- generate rivers and lakes
+-   **Terrain Generation**
+    -- classify maps into biomes, apply terrain
+    -- add features
+    -- add resources
+
+## TODO list:
+
+    - remove "lakes" in elevation generation, in conjunction with ocean basin id (move from climate)
+    - Move above sea level generation into elevation map
+    - add elevation for peaks and hills based on average peak/hill height parameters, and promenince level
+    - adjust parameters: min/max temps, max elevation, peak/hill heights based on new changes
+    - Fix rainfall
+    - add river/lake generation
+    - terrain map generation (ALL)
+    - there is some sort of intermitent infinite loop in the rainfall generation (maybe, but somewhere)
+    - add more N/S wind somehow
+
 ## Development Guidelines
 
 ### Core Development Priorities
@@ -63,19 +95,6 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 -   Keep examples/ folder in .gitignore
 -   Commit working versions frequently
 -   Document major algorithm changes in commit messages
--   **Task Completion Commits**: At the end of every task, stage the recent changes for a commit and create a reasonable but concise description in the commit message. If an existing commit is already staged, update it and its message with your recent changes.
-
-### Documentation
-
--   Keep README.md concise and focused
--   Document any external dependencies in requirements.txt
--   Include usage instructions and customization options
-
-### Memory Bank Management
-
--   **Task Completion**: Always update the memory bank when a task is completed
--   **Progress Tracking**: Document significant algorithm implementations and improvements
--   **Context Preservation**: Maintain project context and technical decisions for future reference
 
 ### Tool Notes
 
