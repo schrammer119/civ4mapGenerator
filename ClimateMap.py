@@ -673,11 +673,14 @@ class ClimateMap:
         # Step 2: Setup meridional forcing profile
         meridional_forcing = self._calculate_meridional_forcing()
 
-        # Step 3: Solve QG equation with nested iteration loops
+        # Step 3: Pre-calculate pressure gradient winds (independent of streamfunction)
+        self._precalculate_pressure_gradient_winds()
+
+        # Step 4: Solve QG equation with nested iteration loops
         streamfunction = self._solve_qg_streamfunction(thickness_field, meridional_forcing)
         self.streamfunction = streamfunction
 
-        # Step 4: Final wind extraction (u-component was calculated in loop, just get final v)
+        # Step 5: Final wind extraction (combine streamfunction + pressure gradient winds)
         self._finalize_wind_extraction(streamfunction)
 
     @profile
@@ -741,8 +744,114 @@ class ClimateMap:
         return forcing
 
     @profile
+    def _precalculate_pressure_gradient_winds(self):
+        """Pre-calculate pressure gradient winds from temperature, elevation, and meridional forcing"""
+
+        sign = lambda a: (a > 0) - (a < 0)
+        # Pre-allocate arrays
+        num_plots = self.mc.iNumPlots
+        pressure_field = [0.0] * num_plots
+
+        # Cache frequently used values
+        dx = self.mc.gridSpacingX
+        dy = self.mc.gridSpacingY
+        num_plots_x = self.mc.iNumPlotsX
+        num_plots_y = self.mc.iNumPlotsY
+        wrap_x = self.mc.wrapX
+        wrap_y = self.mc.wrapY
+
+        # Physical parameters
+        pres_atmo = self.mc.atmoPres
+        gravity = self.mc.gravity
+        gasConstant = self.mc.gasConstant
+        layerDepth = self.mc.qgMeanLayerDepth
+        rhoAir = self.mc.rhoAir
+        meridional_strength = self.mc.qgMeridionalPressureStrength
+        bernoulli_factor = self.mc.bernoulliFactor
+
+        # Calculate reference temperature for pressure calculation
+        temp_sum = sum(self.TemperatureMap)
+        temp_ref = temp_sum / len(self.TemperatureMap)
+
+        # Step 1: Calculate pressure field from temperature, elevation, and meridional forcing
+        for i in xrange(num_plots):
+            y_i = i // num_plots_x
+            latitude = self.mc.get_latitude_for_y(y_i)
+            lat_rad = math.radians(latitude)
+
+            # barometric pressure at altitude
+            pressure_elev = pres_atmo * (math.exp(-gravity * self.aboveSeaLevelMap[i] / gasConstant / (temp_ref + 273.15)) - 1.0)
+
+            # Temperature effect on pressure (warmer = lower surface pressure due to rising air)
+            pressure_temp = -(pressure_elev + pres_atmo) * gravity * layerDepth / gasConstant * (1.0 / (temp_ref + 273.15) - 1.0 / (self.TemperatureMap[i] + 273.15))
+
+            # Artificial meridional pressure pattern for Hadley/Ferrel/Polar cells
+            # cos(lat)*cos(3*lat) creates alternating pressure zones
+            meridional_pressure = -meridional_strength * math.cos(lat_rad) * math.cos(3.0 * lat_rad)
+
+            # Total pressure field
+            pressure_field[i] = pres_atmo + pressure_elev + pressure_temp + meridional_pressure
+
+        # Step 2: Calculate pressure gradients and convert to wind components
+        self.pressure_gradient_u = [0.0] * num_plots  # Store as class variables
+        self.pressure_gradient_v = [0.0] * num_plots
+
+        for i in xrange(num_plots):
+            x_i = i % num_plots_x
+            y_i = i // num_plots_x
+
+            # Calculate pressure gradient in x-direction (E/W)
+            if wrap_x:
+                x_east = (x_i + 1) % num_plots_x
+                x_west = (x_i - 1) % num_plots_x
+                i_east = y_i * num_plots_x + x_east
+                i_west = y_i * num_plots_x + x_west
+                dp_dx = (pressure_field[i_east] - pressure_field[i_west]) / (2.0 * dx)
+            else:
+                if x_i == 0:
+                    # Forward difference at west boundary
+                    i_east = y_i * num_plots_x + (x_i + 1)
+                    dp_dx = (pressure_field[i_east] - pressure_field[i]) / dx
+                elif x_i == num_plots_x - 1:
+                    # Backward difference at east boundary
+                    i_west = y_i * num_plots_x + (x_i - 1)
+                    dp_dx = (pressure_field[i] - pressure_field[i_west]) / dx
+                else:
+                    # Central difference in interior
+                    i_east = y_i * num_plots_x + (x_i + 1)
+                    i_west = y_i * num_plots_x + (x_i - 1)
+                    dp_dx = (pressure_field[i_east] - pressure_field[i_west]) / (2.0 * dx)
+
+            # Calculate pressure gradient in y-direction (N/S)
+            if wrap_y:
+                y_north = (y_i + 1) % num_plots_y
+                y_south = (y_i - 1) % num_plots_y
+                i_north = y_north * num_plots_x + x_i
+                i_south = y_south * num_plots_x + x_i
+                dp_dy = (pressure_field[i_north] - pressure_field[i_south]) / (2.0 * dy)
+            else:
+                if y_i == 0:
+                    # Forward difference at south boundary
+                    i_north = (y_i + 1) * num_plots_x + x_i
+                    dp_dy = (pressure_field[i_north] - pressure_field[i]) / dy
+                elif y_i == num_plots_y - 1:
+                    # Backward difference at north boundary
+                    i_south = (y_i - 1) * num_plots_x + x_i
+                    dp_dy = (pressure_field[i] - pressure_field[i_south]) / dy
+                else:
+                    # Central difference in interior
+                    i_north = (y_i + 1) * num_plots_x + x_i
+                    i_south = (y_i - 1) * num_plots_x + x_i
+                    dp_dy = (pressure_field[i_north] - pressure_field[i_south]) / (2.0 * dy)
+
+            # Convert pressure gradients to wind components
+            # Wind flows from high to low pressure (negative gradient)
+            self.pressure_gradient_u[i] = -bernoulli_factor * sign(dp_dx) * (2.0 * dy * abs(dp_dx) / rhoAir)**0.5
+            self.pressure_gradient_v[i] = -bernoulli_factor * sign(dp_dy) * (2.0 * dx * abs(dp_dy) / rhoAir)**0.5
+
+    @profile
     def _solve_qg_streamfunction(self, thickness_field, meridional_forcing):
-        """Solve QG streamfunction equation with nested iteration loops - OPTIMIZED"""
+        """Solve QG streamfunction equation with nested iteration loops - OPTIMIZED with pressure gradient feedback"""
 
         # Pre-allocate arrays to avoid repeated memory allocation
         num_plots = self.mc.iNumPlots
@@ -768,7 +877,6 @@ class ClimateMap:
         coriolis_f0 = self.mc.qgCoriolisF0
         mean_layer_depth = self.mc.qgMeanLayerDepth
         beta_param = self.mc.qgBetaParameter
-        diag_weight = self.mc.qgDiagonalWeight
 
         # Pre-compute all neighbor relationships to avoid repeated lookups
         cardinal_neighbors = []
@@ -780,7 +888,7 @@ class ClimateMap:
 
             # Cardinal neighbors
             for dir in xrange(1, 5):
-                neighbor_i = self.mc.neighbours[i][dir]
+                neighbor_i = neighbours[i][dir]
                 if neighbor_i >= 0:
                     card_neighs.append(neighbor_i)
                     weights += 1.0
@@ -809,8 +917,10 @@ class ClimateMap:
                     H_anomaly = mean_layer_depth - H_total
                     forcing += coriolis_f0 * H_anomaly / H_total
 
-                # Beta-plane advection: -beta * v
-                forcing -= beta_values[i] * v_wind[i]
+                # Beta-plane advection: -beta * v (including pressure gradient component)
+                total_v = v_wind[i] + self.pressure_gradient_v[i]
+                forcing -= beta_values[i] * total_v
+
                 pv_forcing[i] = forcing
 
             # Inline Jacobi iteration to avoid function call overhead
@@ -842,7 +952,7 @@ class ClimateMap:
             # Check convergence
             total_residual = residual_sum / num_plots
 
-            # Inline v-wind extraction for efficiency
+            # Inline wind extraction for efficiency
             for i in xrange(num_plots):
                 x_i = i % num_plots_x
                 y_i = i // num_plots_x
@@ -874,18 +984,19 @@ class ClimateMap:
             if total_residual < convergence_tolerance:
                 break
 
-        print("Solver converged in %d steps (max: %d, residual: %.2e)" %
+        print("QG Solver converged in %d steps (max: %d, residual: %.2e)" %
             (inner_iter + 1, max_iterations, total_residual))
 
         return streamfunction
 
     @profile
     def _finalize_wind_extraction(self, streamfunction):
-        """Extract final u and v wind components from converged streamfunction"""
+        """Extract final u and v wind components from converged streamfunction with pressure gradient winds"""
 
         dx = self.mc.gridSpacingX
         dy = self.mc.gridSpacingY
 
+        # Extract streamfunction winds and add pressure gradient contribution
         for i in xrange(self.mc.iNumPlots):
             x_i = i % self.mc.iNumPlotsX
             y_i = i // self.mc.iNumPlotsX
@@ -912,9 +1023,11 @@ class ClimateMap:
                     i_south = (y_i - 1) * self.mc.iNumPlotsX + x_i
                     dpsi_dy = (streamfunction[i_north] - streamfunction[i_south]) / (2.0 * dy)
 
-            self.WindU[i] = -dpsi_dy
+            # Combine streamfunction u-wind with pre-calculated pressure gradient u-wind
+            streamfunction_u = -dpsi_dy
+            self.WindU[i] = streamfunction_u + self.pressure_gradient_u[i]
 
-            # v = dpsi/dx (east-west derivative) - already calculated in loop, recalculate for final
+            # v = dpsi/dx (east-west derivative)
             if self.mc.wrapX:
                 x_east = (x_i + 1) % self.mc.iNumPlotsX
                 x_west = (x_i - 1) % self.mc.iNumPlotsX
@@ -933,14 +1046,9 @@ class ClimateMap:
                     i_west = y_i * self.mc.iNumPlotsX + (x_i - 1)
                     dpsi_dx = (streamfunction[i_east] - streamfunction[i_west]) / (2.0 * dx)
 
-            self.WindV[i] = dpsi_dx
-
-        # Optional: normalize wind vectors if needed
-        # max_wind = max(abs(u) for u in self.WindU + self.WindV)
-        # if max_wind > 0:
-        #     scale = 1.0 / max_wind
-        #     self.WindU = [u * scale for u in self.WindU]
-        #     self.WindV = [v * scale for v in self.WindV]
+            # Combine streamfunction v-wind with pre-calculated pressure gradient v-wind
+            streamfunction_v = dpsi_dx
+            self.WindV[i] = streamfunction_v + self.pressure_gradient_v[i]
 
     def _set_dynamic_temperature_thresholds(self):
         """Set temperature thresholds based on actual temperature distribution"""

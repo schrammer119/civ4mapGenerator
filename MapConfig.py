@@ -178,14 +178,22 @@ class MapConfig:
         self.qgCoriolisF0 = 1.03e-4                    # Reference Coriolis parameter (1/s) - controls overall rotation effects
         self.qgBetaParameter = 1.6e-7                # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
         self.qgMeanLayerDepth = 8000                # Mean atmospheric layer depth (m) - base thickness for PV calculations
-        self.qgThermalExpansion = 150              # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
+        self.qgThermalExpansion = 100              # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
         self.qgDiagonalWeight = 1.0                 # Diagonal neighbor weight in stencil - tuning parameter for numerical accuracy
-        self.qgHadleyStrength = 8e10               # Hadley cell amplitude (1/s2) - tropical heating strength
+        self.qgHadleyStrength = 2e11               # Hadley cell amplitude (1/s2) - tropical heating strength
 
         # Solver Control
         self.qgJacobiIterations = 1000               # Inner Jacobi solver iterations - balance accuracy vs speed
         self.qgConvergenceTolerance = 1e-1          # Solver tolerance - smaller = more accurate but slower
         self.qgSolverFriction = 7e-12        # jacobi solver damping
+
+        # Pressure gradient wind parameters
+        self.rhoAir = 1.225 # kg/m3
+        self.atmoPres = 101300 # Pa
+        self.gravity = 9.81 # m/s2
+        self.gasConstant = 287 # J/(kg K)
+        self.qgMeridionalPressureStrength = 5e5   # Strength of artificial meridional pressure pattern
+        self.bernoulliFactor = 0.1
 
         # --- Rain ---
         # # Rainfall Model Parameters - Temperature values in Celsius!

@@ -193,10 +193,6 @@ if True:
         fig.colorbar(p2, ax=ax2, label='Temperature')
 
         # Plot 3: Wind Patterns with Topography (bottom-left)
-        # Create topographic background for wind patterns (shows elevation)
-        topo_background = ax3.imshow(elevation_background, origin='lower',
-                                cmap='terrain', alpha=0.5, vmin=0, vmax=1)
-
         # Add contour lines to show major elevation features
         ax3.contour(elevation_background, levels=[em.seaLevelThreshold],
                 colors=['blue'], linewidths=[1], alpha=0.7)
