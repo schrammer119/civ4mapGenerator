@@ -7,7 +7,7 @@ from PlanetForge import *
 from MapConfig import MapConfig
 from ClimateMap import ClimateMap
 
-random.seed(1234)
+random.seed(542069)
 
 # Initialize shared MapConfig instance
 mc = MapConfig()
@@ -209,7 +209,7 @@ if True:
         q3 = ax3.streamplot(X, Y, U_wind, V_wind,
                         color=wind_magnitude,           # Color by speed
                         cmap='plasma',        # Colormap
-                        # density=2,             # Density of streamlines
+                        density=3,             # Density of streamlines
                         # linewidth=2,           # Line thickness
                         # arrowsize=1.5,         # Arrow size
                         arrowstyle='->')       # Arrow style
