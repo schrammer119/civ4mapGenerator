@@ -5,6 +5,11 @@ import math
 from collections import deque
 from MapConfig import MapConfig
 from Wrappers import *
+import sys
+
+if sys.version_info[0] >= 3:
+    # Python 3: xrange doesn't exist, so we alias it to range
+    xrange = range
 
 class ElevationMap:
     @profile

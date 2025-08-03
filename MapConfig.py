@@ -3,6 +3,11 @@ import CvUtil
 import random
 import math
 from collections import deque
+import sys
+
+if sys.version_info[0] >= 3:
+    # Python 3: xrange doesn't exist, so we alias it to range
+    xrange = range
 
 class MapConfig:
     """
@@ -200,15 +205,17 @@ class MapConfig:
         # --- Rain ---
         # # Rainfall Model Parameters - Temperature values in Celsius!
         self.specificHumidityFactor = 0.012
+        self.oceanCE = 2.0e-3
+        self.landCE = 0.8e-3
         self.rainfallConvectiveBasePercentile = 0.1   # Percentile for base convective temperature (30% coldest land)
         self.rainfallConvectiveMaxPercentile = 0.2    # Percentile for peak convective temperature (10% hottest land)
-        self.rainfallMaxTransportDistance = 300      # Maximum transport distance in tiles
+        self.rainfallMaxTransportDistance = 40      # Maximum transport distance in tiles
         self.rainfallConvectiveDeclineRate = 0.05    # Rate of decline above peak temperature per degree
         self.rainfallConvectiveMinFactor = 0.5       # Minimum convective factor for very hot temperatures
         self.rainfallConvectiveMaxRate = 0.2        # Maximum convective base rainfall rate at peak temperature
-        self.rainfallConvectiveOceanRate = 0.01
-        self.rainfallOrographicFactor = 0.0       # Multiplier for orographic precipitation (% moisture/1m elevation)
-        self.rainfallFrontalFactor = 0.0           # Multiplier for frontal/cyclonic precipitation
+        self.rainfallConvectiveOceanRate = 0.05
+        self.rainfallOrographicFactor = 0.0001       # Multiplier for orographic precipitation (% moisture/1m elevation)
+        self.rainfallFrontalFactor = 0.1           # Multiplier for frontal/cyclonic precipitation
         self.rainfallMinimumPrecipitation = 0.0001     # Minimum absolute precipitation to ensure linear decay
         self.rainPeakOrographicFactor = 2.0
         self.rainHillOrographicFactor = 1.3

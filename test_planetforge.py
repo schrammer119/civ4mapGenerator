@@ -203,13 +203,21 @@ if True:
 
         # Plot wind patterns with color based on magnitude
         wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
-        q3 = ax3.quiver(X, Y, U_wind, V_wind, wind_magnitude,
-                        alpha=0.8, cmap='plasma')
+        # q3 = ax3.quiver(X, Y, U_wind, V_wind, wind_magnitude,
+        #                 alpha=0.8, cmap='plasma')
+
+        q3 = ax3.streamplot(X, Y, U_wind, V_wind,
+                        color=wind_magnitude,           # Color by speed
+                        cmap='plasma',        # Colormap
+                        # density=2,             # Density of streamlines
+                        # linewidth=2,           # Line thickness
+                        # arrowsize=1.5,         # Arrow size
+                        arrowstyle='->')       # Arrow style
 
         ax3.set_title('Wind Patterns with Topography')
         ax3.set_xlim(0, mc.iNumPlotsX)
         ax3.set_ylim(0, mc.iNumPlotsY)
-        fig.colorbar(q3, ax=ax3, label='Wind Magnitude')
+        fig.colorbar(q3.lines, ax=ax3, label='Wind Magnitude')
 
         # Plot 4: Rainfall Map with Landforms (bottom-right)
         # Overlay rainfall data with transparency
