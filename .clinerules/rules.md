@@ -26,15 +26,10 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ## TODO list:
 
-    - remove "lakes" in elevation generation, in conjunction with ocean basin id (move from climate)
-    - Move above sea level generation into elevation map
-    - add elevation for peaks and hills based on average peak/hill height parameters, and promenince level
-    - adjust parameters: min/max temps, max elevation, peak/hill heights based on new changes
     - Fix rainfall
     - add river/lake generation
     - terrain map generation (ALL)
     - there is some sort of intermitent infinite loop in the rainfall generation (maybe, but somewhere)
-    - add more N/S wind somehow
 
 ## Development Guidelines
 

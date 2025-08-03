@@ -33,26 +33,20 @@ class ClimateMap:
     def _initialize_data_structures(self):
         """Initialize all climate data structures"""
         # Temperature maps
-        self.aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
         self.TemperatureMap = [0.0] * self.mc.iNumPlots
-        self.NormalizedTemperatureMap = [0.0] * self.mc.iNumPlots
 
         # Ocean current maps
         self.OceanCurrentU = [0.0] * self.mc.iNumPlots
         self.OceanCurrentV = [0.0] * self.mc.iNumPlots
 
-        # Current momentum maps
-        self.oceanBasinMap = [-1] * self.mc.iNumPlots
-        self.CurrentMomentumU = [0.0] * self.mc.iNumPlots
-        self.CurrentMomentumV = [0.0] * self.mc.iNumPlots
-        self.CurrentMomentumMagnitude = [0.0] * self.mc.iNumPlots
-
         # Wind maps
         self.streamfunction = [0.0] * self.mc.iNumPlots
         self.WindU = [0.0] * self.mc.iNumPlots
         self.WindV = [0.0] * self.mc.iNumPlots
+        self.atmospheric_pressure = [0.0] * self.mc.iNumPlots
 
         # Rainfall maps
+        self.moisture_amount = [0.0] * self.mc.iNumPlots
         self.RainfallMap = [0.0] * self.mc.iNumPlots
         self.ConvectionRainfallMap = [0.0] * self.mc.iNumPlots
         self.OrographicRainfallMap = [0.0] * self.mc.iNumPlots
@@ -79,8 +73,9 @@ class ClimateMap:
         """Generate temperature map including ocean currents and atmospheric effects"""
 
         print("Generating Base Temperature Map")
-        self._calculate_elevation_effects()
         self._generate_base_temperature()
+
+        print("Max Base Temp=%f  Min Base Temp=%f" % (max(self.TemperatureMap), min(self.TemperatureMap)))
 
         print("Generating Ocean Currents")
         self._generate_ocean_currents()
@@ -89,17 +84,6 @@ class ClimateMap:
         print("Finishing Temperature Map")
         # self._apply_polar_cooling()
         self._apply_temperature_smoothing()
-
-    @profile
-    def _calculate_elevation_effects(self):
-        """Calculate elevation effects on temperature"""
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
-                self.aboveSeaLevelMap[i] = 0.0
-            else:
-                self.aboveSeaLevelMap[i] = self.em.elevationMap[i] - self.em.seaLevelThreshold
-        self.aboveSeaLevelMap = self.mc.normalize_map(self.aboveSeaLevelMap)
-        self.aboveSeaLevelMap = [x * self.mc.maxElev for x in self.aboveSeaLevelMap]
 
     @profile
     def _generate_base_temperature(self):
@@ -120,7 +104,7 @@ class ClimateMap:
                 else:
                     # Land temperature with elevation lapse rate
                     base_land_temp = solar_factor * (self.mc.maximumTemp - self.mc.minimumTemp) + self.mc.minimumTemp
-                    elevation_cooling = self.aboveSeaLevelMap[i] * self.mc.tempLapse
+                    elevation_cooling = self.em.aboveSeaLevelMap[i] * self.mc.tempLapse
                     self.TemperatureMap[i] = base_land_temp - elevation_cooling
 
     def _calculate_solar_radiation(self, latitude):
@@ -131,11 +115,7 @@ class ClimateMap:
         # Solar radiation follows cosine of latitude (Lambert's cosine law)
         solar_factor = max(self.mc.minSolarFactor, math.cos(lat_rad) + self.mc.solarHadleyCellEffects * math.cos(3 * lat_rad) + self.mc.solarFifthOrder * math.cos(5 * lat_rad))
 
-        # Account for Earth's albedo and atmospheric absorption
-        effective_solar = solar_factor * (1.0 - self.mc.earthAlbedo)
-
-        # Normalize to 0-1 range for temperature calculation
-        return min(1.0, effective_solar)
+        return solar_factor
 
     @profile
     def _generate_ocean_currents(self):
@@ -412,19 +392,11 @@ class ClimateMap:
         self.oceanDistanceMap = [0 if self.em.plotTypes[i] == self.mc.PLOT_OCEAN
                                 else self.mc.iNumPlots for i in range(self.mc.iNumPlots)]
 
-        # Identify ocean basins and calculate sizes
-        self.basinSizes = {}
-        basin_counter = 0
-
         # Flood fill to identify connected ocean basins
         initial_ocean_tiles = []
         for i in xrange(self.mc.iNumPlots):
             if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
-                if self.oceanBasinMap[i] == -1:
-                    basin_size = self._floodFillBasin(i, basin_counter)
-                    self.basinSizes[basin_counter] = basin_size
-                    basin_counter += 1
-                if self.basinSizes[self.oceanBasinMap[i]] >= self.mc.min_basin_size:
+                if self.em.basinSizes[self.em.oceanBasinMap[i]] >= self.mc.min_basin_size:
                     initial_ocean_tiles.append((i, 0))
 
         # BFS to calculate distances from ocean using an efficient deque
@@ -448,38 +420,6 @@ class ClimateMap:
                 self.distanceQueue.append((self.oceanDistanceMap[i], i))
 
         self.distanceQueue.sort()  # Sort by distance for processing order
-
-    def _floodFillBasin(self, start_tile, basin_id):
-        """
-        Flood fill to identify connected ocean basin and return its size.
-        """
-        if self.oceanBasinMap[start_tile] != -1:  # Already processed
-            return 0
-
-        basin_size = 0
-        stack = [start_tile]
-
-        while stack:
-            current = stack.pop()
-
-            if (current < 0 or
-                self.oceanBasinMap[current] != -1 or
-                self.em.plotTypes[current] != self.mc.PLOT_OCEAN):
-                continue
-
-            # Mark as part of this basin
-            self.oceanBasinMap[current] = basin_id
-            basin_size += 1
-
-            # Add neighbours to stack
-            for dir in xrange(1,9):
-                neighbour = self.mc.neighbours[current][dir]
-                if (neighbour >= 0 and
-                    self.oceanBasinMap[neighbour] == -1 and
-                    self.em.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
-                    stack.append(neighbour)
-
-        return basin_size
 
     @profile
     def _transportOceanHeat(self):
@@ -509,8 +449,8 @@ class ClimateMap:
                 continue
 
             # Skip small basins
-            basin_id = self.oceanBasinMap[source_tile]
-            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+            basin_id = self.em.oceanBasinMap[source_tile]
+            if basin_id != -1 and self.em.basinSizes[basin_id] < self.mc.min_basin_size:
                 continue
 
             # Initialize thermal plume
@@ -602,8 +542,8 @@ class ClimateMap:
 
                         # For direct ocean neighbours, check basin size
                         if neighbour_distance == 0:
-                            basin_id = self.oceanBasinMap[neighbour]
-                            if basin_id != -1 and self.basinSizes[basin_id] < self.mc.min_basin_size:
+                            basin_id = self.em.oceanBasinMap[neighbour]
+                            if basin_id != -1 and self.em.basinSizes[basin_id] < self.mc.min_basin_size:
                                 continue  # Skip small water bodies
 
                         # Calculate influence with distance decay
@@ -640,8 +580,6 @@ class ClimateMap:
         """Apply smoothing to temperature map"""
         self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: self.em.plotTypes[i] != self.mc.PLOT_OCEAN)
         self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing)
-
-        self.NormalizedTemperatureMap = self.mc.normalize_map(self.TemperatureMap)
 
     @profile
     def GenerateRainfallMap(self):
@@ -701,7 +639,7 @@ class ClimateMap:
             H += self.mc.qgThermalExpansion * temp_anomaly
 
             # Topographic effect: higher elevation = thinner air column above
-            H -= self.aboveSeaLevelMap[i]
+            H -= self.em.aboveSeaLevelMap[i]
 
             # Ensure positive thickness
             thickness_field[i] = max(0.1, H)
@@ -750,7 +688,6 @@ class ClimateMap:
         sign = lambda a: (a > 0) - (a < 0)
         # Pre-allocate arrays
         num_plots = self.mc.iNumPlots
-        pressure_field = [0.0] * num_plots
 
         # Cache frequently used values
         dx = self.mc.gridSpacingX
@@ -773,6 +710,8 @@ class ClimateMap:
         temp_sum = sum(self.TemperatureMap)
         temp_ref = temp_sum / len(self.TemperatureMap)
 
+        pressure_field = [0.0] * self.mc.iNumPlots
+
         # Step 1: Calculate pressure field from temperature, elevation, and meridional forcing
         for i in xrange(num_plots):
             y_i = i // num_plots_x
@@ -780,7 +719,7 @@ class ClimateMap:
             lat_rad = math.radians(latitude)
 
             # barometric pressure at altitude
-            pressure_elev = pres_atmo * (math.exp(-gravity * self.aboveSeaLevelMap[i] / gasConstant / (temp_ref + 273.15)) - 1.0)
+            pressure_elev = pres_atmo * (math.exp(-gravity * self.em.aboveSeaLevelMap[i] / gasConstant / (temp_ref + 273.15)) - 1.0)
 
             # Temperature effect on pressure (warmer = lower surface pressure due to rising air)
             pressure_temp = -(pressure_elev + pres_atmo) * gravity * layerDepth / gasConstant * (1.0 / (temp_ref + 273.15) - 1.0 / (self.TemperatureMap[i] + 273.15))
@@ -790,6 +729,7 @@ class ClimateMap:
             meridional_pressure = -meridional_strength * math.cos(lat_rad) * math.cos(3.0 * lat_rad)
 
             # Total pressure field
+            self.atmospheric_pressure[i] = pres_atmo + pressure_elev + pressure_temp
             pressure_field[i] = pres_atmo + pressure_elev + pressure_temp + meridional_pressure
 
         # Step 2: Calculate pressure gradients and convert to wind components
@@ -1076,18 +1016,27 @@ class ClimateMap:
 
         for i in xrange(self.mc.iNumPlots):
             if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
-                moisture_amount = self.NormalizedTemperatureMap[i]
+                y = i // self.mc.iNumPlotsX
+                lat = self.mc.get_latitude_for_y(y)
+                lat_rad = math.radians(lat)
 
-                maxMoisture = max(moisture_amount, maxMoisture)
-                minMoisture = min(moisture_amount, minMoisture)
+                q_a = self.mc.specificHumidityFactor * math.cos(lat_rad)
+                wind_speed = (self.WindU[i]*self.WindU[i] + self.WindV[i]*self.WindV[i])**0.5
+                e_s = 610.94 * math.exp(17.625 * self.TemperatureMap[i] / (self.TemperatureMap[i] + 243.04))
+                q_s = 0.62198 * e_s / (self.atmospheric_pressure[i] - e_s)
+
+                self.moisture_amount[i] = wind_speed * (q_s - q_a)
+
+                maxMoisture = max(self.moisture_amount[i], maxMoisture)
+                minMoisture = min(self.moisture_amount[i], minMoisture)
 
                 # Create moisture parcel: [location, moisture_amount, distance_traveled]
-                moisture_parcels.append([i, moisture_amount, 0, i])
+                moisture_parcels.append([i, self.moisture_amount[i], 0, i])
 
-        moisture_parcels = [(i, (v - minMoisture) / (maxMoisture - minMoisture), d, id) for i, v, d, id in moisture_parcels]
+        self.moisture_amount = [v / maxMoisture for v in self.moisture_amount]
+        moisture_parcels = [(i, v / maxMoisture, d, id) for i, v, d, id in moisture_parcels]
 
-        print("DEBUG: Moisture production - Max: %.2f  Min: %.2f" %
-            (maxMoisture, minMoisture))
+        print("DEBUG: Moisture production - max=%f min=%f" % (maxMoisture, minMoisture))
 
         return moisture_parcels
 
@@ -1114,6 +1063,10 @@ class ClimateMap:
             'total_oro_rain': 0.0,
             'total_front_rain': 0.0,
             'num_neighbours': 0,
+            'w_N': 0.0,
+            'w_S': 0.0,
+            'w_E': 0.0,
+            'w_W': 0.0,
             'total_transports': 0,
             'branch_fully_precip': False,
             'tile_type': '',
@@ -1123,7 +1076,7 @@ class ClimateMap:
 
         max_moisture_parcel = max(moisture_parcels, key=lambda x: x[1])
         self.debug_id = max_moisture_parcel[0]
-        print("DEBUG PARCEL %d INIT: x=%3d  y=%3d  moisture=%4.2f" % (
+        print("DEBUG PARCEL %d INIT: x=%3d  y=%3d  moisture=%5.3f" % (
             max_moisture_parcel[0],
             max_moisture_parcel[0] % self.mc.iNumPlotsX,
             max_moisture_parcel[0] // self.mc.iNumPlotsX,
@@ -1157,6 +1110,10 @@ class ClimateMap:
                     self.debug_data['tile_oro_rain'] = 0.0
                     self.debug_data['tile_front_rain'] = 0.0
                     self.debug_data['num_neighbours'] = 0
+                    self.debug_data['w_N'] = 0.0
+                    self.debug_data['w_S'] = 0.0
+                    self.debug_data['w_E'] = 0.0
+                    self.debug_data['w_W'] = 0.0
 
                 if precipitation > 0:
                     self.RainfallMap[location] += precipitation
@@ -1165,7 +1122,7 @@ class ClimateMap:
                     # If all moisture precipitated, end this branch
                     if fully_precipitated:
                         if id == self.debug_id:
-                            print("DEBUG PARCEL %d: %6s=%5d  distance=%3d  moisture=%4.2f  rain=%4.2f  conv_rain=%4.2f  min_rain=%4.2f  oro_rain=%4.2f  front_rain=%4.2f  num_neighbours=%1d  branch_end=%r" % (
+                            print("DEBUG PARCEL %d: %6s=%5d  distance=%3d  moisture=%5.3f  rain=%5.3f  conv_rain=%5.3f  min_rain=%5.3f  oro_rain=%5.3f  front_rain=%5.3f  num_neighbours=%1d  branch_end=%r" % (
                                 self.debug_data['parcel_id'],
                                 self.debug_data['tile_type'],
                                 self.debug_data['i'],
@@ -1200,7 +1157,7 @@ class ClimateMap:
                         self.debug_data['num_neighbours'] = len(neighbor_data)
                         self.debug_data['total_transports'] += len(neighbor_data)
 
-                        print("DEBUG PARCEL %d: %6s=%5d  distance=%3d  moisture=%4.2f  rain=%4.2f  conv_rain=%4.2f  min_rain=%4.2f  oro_rain=%4.2f  front_rain=%4.2f  num_neighbours=%1d  branch_end=%r" % (
+                        print("DEBUG PARCEL %d: %6s=%5d  distance=%3d  moisture=%5.3f  rain=%5.3f  conv_rain=%5.3f  min_rain=%5.3f  oro_rain=%5.3f  front_rain=%5.3f  num_neighbours=%1d  branch_end=%r" % (
                             self.debug_data['parcel_id'],
                             self.debug_data['tile_type'],
                             self.debug_data['i'],
@@ -1239,39 +1196,54 @@ class ClimateMap:
     def _get_4neighbor_transport_weights(self, location, wind_unit_x, wind_unit_y, moisture):
         """Calculate weights for 4-neighbor transport based on wind direction with orographic effects"""
 
-        # 4-neighbor directions: North, South, East, West
-        neighbor_locations = [
-            self.mc.neighbours[location][self.mc.N],   # North
-            self.mc.neighbours[location][self.mc.S],   # South
-            self.mc.neighbours[location][self.mc.E],   # East
-            self.mc.neighbours[location][self.mc.W]    # West
-        ]
-
-        # Direction unit vectors for N, S, E, W
-        direction_vectors = [
-            (0, -1),  # North (negative Y)
-            (0, 1),   # South (positive Y)
-            (1, 0),   # East (positive X)
-            (-1, 0)   # West (negative X)
-        ]
-
         neighbor_data = []
 
-        for i, neighbor_location in enumerate(neighbor_locations):
-            if neighbor_location < 0:
-                continue
+        if wind_unit_x > wind_unit_y:
+            if wind_unit_y > 0.0:
+                neighbor_location = self.mc.neighbours[location][self.mc.N]
+            else:
+                neighbor_location = self.mc.neighbours[location][self.mc.S]
 
-            # Calculate weight using dot product (cos of angle between wind and direction)
-            dir_x, dir_y = direction_vectors[i]
-            weight = wind_unit_x * dir_x + wind_unit_y * dir_y
+            if neighbor_location > 0:
+                smaller_parcel = moisture * abs(wind_unit_y)
+                transported_moisture, fully_precipitated = self._apply_transport_effects(location, neighbor_location, smaller_parcel)
+                if not fully_precipitated:
+                    neighbor_data.append((neighbor_location, transported_moisture))
+            else:
+                smaller_parcel = 0.0
 
-            # Only transport in positive wind direction
-            if weight > 0:
-                # Apply orographic effects before transport
-                transported_moisture, fully_precipitated = self._apply_transport_effects(
-                    location, neighbor_location, moisture * weight
-                )
+            if wind_unit_x > 0:
+                neighbor_location = self.mc.neighbours[location][self.mc.E]
+            else:
+                neighbor_location = self.mc.neighbours[location][self.mc.W]
 
+            if neighbor_location > 0:
+                larger_parcel = moisture - smaller_parcel
+                transported_moisture, fully_precipitated = self._apply_transport_effects(location, neighbor_location, larger_parcel)
+                if not fully_precipitated:
+                    neighbor_data.append((neighbor_location, transported_moisture))
+        else:
+            if wind_unit_x > 0:
+                neighbor_location = self.mc.neighbours[location][self.mc.E]
+            else:
+                neighbor_location = self.mc.neighbours[location][self.mc.W]
+
+            if neighbor_location > 0:
+                smaller_parcel = moisture * abs(wind_unit_x)
+                transported_moisture, fully_precipitated = self._apply_transport_effects(location, neighbor_location, smaller_parcel)
+                if not fully_precipitated:
+                    neighbor_data.append((neighbor_location, transported_moisture))
+            else:
+                smaller_parcel = 0.0
+
+            if wind_unit_y > 0.0:
+                neighbor_location = self.mc.neighbours[location][self.mc.N]
+            else:
+                neighbor_location = self.mc.neighbours[location][self.mc.S]
+
+            if neighbor_location > 0:
+                larger_parcel = moisture - smaller_parcel
+                transported_moisture, fully_precipitated = self._apply_transport_effects(location, neighbor_location, larger_parcel)
                 if not fully_precipitated:
                     neighbor_data.append((neighbor_location, transported_moisture))
 
@@ -1280,11 +1252,11 @@ class ClimateMap:
     def _apply_transport_effects(self, current_location, target_location, moisture):
         """Apply orographic effects during moisture transport"""
 
-        if self.em.plotTypes[current_location] == self.mc.PLOT_OCEAN:
-            return moisture, False
+        # if self.em.plotTypes[current_location] == self.mc.PLOT_OCEAN:
+        #     return moisture, False
 
-        current_elevation = self.aboveSeaLevelMap[current_location]
-        target_elevation = self.aboveSeaLevelMap[target_location]
+        current_elevation = self.em.aboveSeaLevelMap[current_location]
+        target_elevation = self.em.aboveSeaLevelMap[target_location]
         elevation_change = target_elevation - current_elevation
 
         current_temp = self.TemperatureMap[current_location]
@@ -1333,19 +1305,19 @@ class ClimateMap:
             # Reduce transported moisture (orographic precipitation creates natural rain shadow)
             transported_moisture = moisture - total_precipitation
 
-            if moisture > 0.7 and (orographic_precipitation > 0.01 or frontal_precipitation > 0.01):
-                print("DEBUG TRANSPORT @ %5d (%3d, %3d): init_moisture=%4.2f  tot_rain=%4.2f  oro_fac=%5.2f  oro_rain=%4.2f  front_fac=%5.2f  front_rain=%4.2f  trans_moisture=%4.2f  branch_end=False" % (
-                    current_location,
-                    current_location % self.mc.iNumPlotsX,
-                    current_location // self.mc.iNumPlotsX,
-                    moisture,
-                    total_precipitation,
-                    oro_fac,
-                    orographic_precipitation,
-                    front_fac,
-                    frontal_precipitation,
-                    transported_moisture
-                ))
+            # if moisture > 0.7 and (orographic_precipitation > 0.01 or frontal_precipitation > 0.01):
+            #     print("DEBUG TRANSPORT @ %5d (%3d, %3d): init_moisture=%5.3f  tot_rain=%5.3f  oro_fac=%5.2f  oro_rain=%5.3f  front_fac=%5.2f  front_rain=%5.3f  trans_moisture=%5.3f  branch_end=False" % (
+            #         current_location,
+            #         current_location % self.mc.iNumPlotsX,
+            #         current_location // self.mc.iNumPlotsX,
+            #         moisture,
+            #         total_precipitation,
+            #         oro_fac,
+            #         orographic_precipitation,
+            #         front_fac,
+            #         frontal_precipitation,
+            #         transported_moisture
+            #     ))
 
             return transported_moisture, False
         else:
@@ -1360,19 +1332,19 @@ class ClimateMap:
                 self.debug_data['total_front_rain'] += frontal_precipitation * moisture / total_precipitation if total_precipitation != 0.0 else 0.0
                 self.debug_data['total_rain'] += moisture
 
-            if moisture > 0.7 and (orographic_precipitation > 0.01 or frontal_precipitation > 0.01):
-                print("DEBUG TRANSPORT @ %5d (%3d, %3d): init_moisture=%4.2f  tot_rain=%4.2f  oro_fac=%5.2f  oro_rain=%4.2f  front_fac=%5.2f  front_rain=%4.2f  trans_moisture=%4.2f  branch_end=True" % (
-                    current_location,
-                    current_location % self.mc.iNumPlotsX,
-                    current_location // self.mc.iNumPlotsX,
-                    moisture,
-                    moisture,
-                    oro_fac,
-                    orographic_precipitation * moisture / total_precipitation if total_precipitation != 0.0 else 0.0,
-                    front_fac,
-                    frontal_precipitation * moisture / total_precipitation if total_precipitation != 0.0 else 0.0,
-                    0.0
-                ))
+            # if moisture > 0.7 and (orographic_precipitation > 0.01 or frontal_precipitation > 0.01):
+            #     print("DEBUG TRANSPORT @ %5d (%3d, %3d): init_moisture=%5.3f  tot_rain=%5.3f  oro_fac=%5.2f  oro_rain=%5.3f  front_fac=%5.2f  front_rain=%5.3f  trans_moisture=%5.3f  branch_end=True" % (
+            #         current_location,
+            #         current_location % self.mc.iNumPlotsX,
+            #         current_location // self.mc.iNumPlotsX,
+            #         moisture,
+            #         moisture,
+            #         oro_fac,
+            #         orographic_precipitation * moisture / total_precipitation if total_precipitation != 0.0 else 0.0,
+            #         front_fac,
+            #         frontal_precipitation * moisture / total_precipitation if total_precipitation != 0.0 else 0.0,
+            #         0.0
+            #     ))
 
             return 0.0, True
 
@@ -1383,25 +1355,27 @@ class ClimateMap:
         # Different precipitation rates for ocean vs land
         if self.em.plotTypes[location] == self.mc.PLOT_OCEAN:
             # Ocean: light precipitation to prevent moisture buildup
-            base_precip = moisture * self.mc.rainfallOceanPrecipitation
+            conv_rate = self.mc.rainfallConvectiveOceanRate
         else:
-            # Land: temperature-driven convective base rainfall (inline calculation)
-            if temp_celsius <= self.rainfallConvectiveBaseTemp:
-                # No convective rainfall below base temperature
-                base_precip = 0.0
-            elif temp_celsius <= self.rainfallConvectiveMaxTemp:
-                # Linear increase from base to max temperature
-                temp_range = self.rainfallConvectiveMaxTemp - self.rainfallConvectiveBaseTemp
-                temp_factor = (temp_celsius - self.rainfallConvectiveBaseTemp) / temp_range
-                convective_rate = self.mc.rainfallConvectiveMaxRate * temp_factor
-                base_precip = moisture * convective_rate
-            else:
-                # Above max temperature, convective activity declines
-                temp_excess = temp_celsius - self.rainfallConvectiveMaxTemp
-                decline_factor = temp_excess * self.mc.rainfallConvectiveDeclineRate
-                temp_factor = max(self.mc.rainfallConvectiveMinFactor, 1.0 - decline_factor)
-                convective_rate = self.mc.rainfallConvectiveMaxRate * temp_factor
-                base_precip = moisture * convective_rate
+            conv_rate = self.mc.rainfallConvectiveMaxRate
+
+        # Land: temperature-driven convective base rainfall (inline calculation)
+        if temp_celsius <= self.rainfallConvectiveBaseTemp:
+            # No convective rainfall below base temperature
+            base_precip = 0.0
+        elif temp_celsius <= self.rainfallConvectiveMaxTemp:
+            # Linear increase from base to max temperature
+            temp_range = self.rainfallConvectiveMaxTemp - self.rainfallConvectiveBaseTemp
+            temp_factor = (temp_celsius - self.rainfallConvectiveBaseTemp) / temp_range
+            convective_rate = conv_rate * temp_factor
+            base_precip = moisture * convective_rate
+        else:
+            # Above max temperature, convective activity declines
+            temp_excess = temp_celsius - self.rainfallConvectiveMaxTemp
+            decline_factor = temp_excess * self.mc.rainfallConvectiveDeclineRate
+            temp_factor = max(self.mc.rainfallConvectiveMinFactor, 1.0 - decline_factor)
+            convective_rate = conv_rate * temp_factor
+            base_precip = moisture * convective_rate
 
         # Ensure minimum precipitation to guarantee linear decay
         precipitation = max(base_precip, self.mc.rainfallMinimumPrecipitation)
@@ -1523,7 +1497,7 @@ class ClimateMap:
         # )
 
         # Normalize to 0-1 range
-        self.RainfallMap = self.mc.normalize_map(self.RainfallMap)
+        # self.RainfallMap = self.mc.normalize_map(self.RainfallMap)
 
     @profile
     def GenerateRiverMap(self):

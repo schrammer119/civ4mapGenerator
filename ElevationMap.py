@@ -47,6 +47,11 @@ class ElevationMap:
         self.elevationMap = [0.0] * self.mc.iNumPlots
         self.prominenceMap = [0.0] * self.mc.iNumPlots
 
+        # Post process maps
+        self.aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
+        self.oceanBasinMap = [-1] * self.mc.iNumPlots
+        self.basinSizes = {}
+
         # Utility maps
         self.dx_centroid = [0.0] * self.mc.iNumPlots
         self.dy_centroid = [0.0] * self.mc.iNumPlots
@@ -95,6 +100,9 @@ class ElevationMap:
         self._calculate_prominence_map()
         self._calculate_terrain_thresholds()
         self._calculate_plot_types()
+        self._calculateOceanBasins()
+        self._optimize_wrap_edges()
+        self._calculate_elevation_effects()
 
     @profile
     def _generate_continental_plates(self):
@@ -1454,6 +1462,352 @@ class ElevationMap:
                 self.plotTypes[i] = self.mc.PLOT_HILLS
             else:
                 self.plotTypes[i] = self.mc.PLOT_LAND
+
+
+    @profile
+    def _calculateOceanBasins(self):
+        """
+        Identifies ocean basins and sizes. Fills in small basins that would end up lakes
+        """
+
+        # Identify ocean basins and calculate sizes
+        basin_counter = 0
+
+        # Flood fill to identify connected ocean basins
+        for i in xrange(self.mc.iNumPlots):
+            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
+                if self.oceanBasinMap[i] == -1:
+                    basin_size = self._floodFillBasin(i, basin_counter)
+                    self.basinSizes[basin_counter] = basin_size
+                    basin_counter += 1
+
+        # fill in small basins
+        for i in xrange(self.mc.iNumPlots):
+            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
+                if self.basinSizes[self.oceanBasinMap[i]] < self.mc.basinLakeSize:
+                    self.plotTypes[i] = self.mc.PLOT_LAND
+
+    def _floodFillBasin(self, start_tile, basin_id):
+        """
+        Flood fill to identify connected ocean basin and return its size.
+        """
+        if self.oceanBasinMap[start_tile] != -1:  # Already processed
+            return 0
+
+        basin_size = 0
+        stack = [start_tile]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.oceanBasinMap[current] != -1 or
+                self.plotTypes[current] != self.mc.PLOT_OCEAN):
+                continue
+
+            # Mark as part of this basin
+            self.oceanBasinMap[current] = basin_id
+            basin_size += 1
+
+            # Add neighbours to stack
+            for dir in xrange(1,5):
+                neighbour = self.mc.neighbours[current][dir]
+                if (neighbour >= 0 and
+                    self.oceanBasinMap[neighbour] == -1 and
+                    self.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
+                    stack.append(neighbour)
+
+        return basin_size
+
+    @profile
+    def _optimize_wrap_edges(self):
+        """Optimize map wrapping to minimize continent splitting across edges"""
+        if not self.mc.enableWrapOptimization:
+            return
+
+        # Find optimal offsets for each axis
+        x_offset = 0
+        y_offset = 0
+
+        if self.mc.wrapX:
+            x_offset = self._find_optimal_x_offset()
+
+        if self.mc.wrapY:
+            y_offset = self._find_optimal_y_offset()
+
+        # Apply offsets if any were found
+        if x_offset != 0 or y_offset != 0:
+            print("Optimizing wrap edges - X offset: %d, Y offset: %d" % (x_offset, y_offset))
+            self._apply_map_offsets(x_offset, y_offset)
+
+    def _find_optimal_x_offset(self):
+        """Find X offset that places vertical wrap boundary through widest ocean stretch"""
+        # First identify all columns that are completely ocean
+        all_ocean_columns = []
+        for cut_x in xrange(self.mc.iNumPlotsX):
+            ocean_count = 0
+            for y in xrange(self.mc.iNumPlotsY):
+                index = y * self.mc.iNumPlotsX + cut_x
+                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                    ocean_count += 1
+
+            if ocean_count == self.mc.iNumPlotsY:
+                all_ocean_columns.append(cut_x)
+
+        # If no all-ocean columns, fall back to best single column
+        if not all_ocean_columns:
+            return self._find_best_single_x_cut()
+
+        # Find the widest consecutive stretch of all-ocean columns
+        widest_stretch = self._find_widest_consecutive_stretch(all_ocean_columns, self.mc.iNumPlotsX)
+
+        if widest_stretch:
+            # Place cut in middle of widest stretch
+            middle_position = (widest_stretch[0] + widest_stretch[1]) // 2
+            return (-middle_position) % self.mc.iNumPlotsX
+
+        # Fallback to first all-ocean column
+        return (-all_ocean_columns[0]) % self.mc.iNumPlotsX
+
+    def _find_optimal_y_offset(self):
+        """Find Y offset that places horizontal wrap boundary through widest ocean stretch"""
+        # First identify all rows that are completely ocean
+        all_ocean_rows = []
+        for cut_y in xrange(self.mc.iNumPlotsY):
+            ocean_count = 0
+            for x in xrange(self.mc.iNumPlotsX):
+                index = cut_y * self.mc.iNumPlotsX + x
+                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                    ocean_count += 1
+
+            if ocean_count == self.mc.iNumPlotsX:
+                all_ocean_rows.append(cut_y)
+
+        # If no all-ocean rows, fall back to best single row
+        if not all_ocean_rows:
+            return self._find_best_single_y_cut()
+
+        # Find the widest consecutive stretch of all-ocean rows
+        widest_stretch = self._find_widest_consecutive_stretch(all_ocean_rows, self.mc.iNumPlotsY)
+
+        if widest_stretch:
+            # Place cut in middle of widest stretch
+            middle_position = (widest_stretch[0] + widest_stretch[1]) // 2
+            return (-middle_position) % self.mc.iNumPlotsY
+
+        # Fallback to first all-ocean row
+        return (-all_ocean_rows[0]) % self.mc.iNumPlotsY
+
+    def _apply_map_offsets(self, x_offset, y_offset):
+        """Apply calculated offsets to all map arrays"""
+        if x_offset == 0 and y_offset == 0:
+            return
+
+        # List of all map arrays that need to be shifted
+        map_arrays = [
+            self.continentID,
+            self.continentU,
+            self.continentV,
+            self.elevationBaseMap,
+            self.elevationVelMap,
+            self.elevationBuoyMap,
+            self.elevationPrelMap,
+            self.elevationBoundaryMap,
+            self.elevationMap,
+            self.prominenceMap,
+            self.aboveSeaLevelMap,
+            self.oceanBasinMap,
+            self.plotTypes,
+            self.dx_centroid,
+            self.dy_centroid,
+            self.d_centroid
+        ]
+
+        # Apply offset to each map array
+        for map_array in map_arrays:
+            self._shift_map_array(map_array, x_offset, y_offset)
+
+        # Update continent centroids and seed positions
+        self._update_positions_after_offset(x_offset, y_offset)
+
+    def _shift_map_array(self, map_array, x_offset, y_offset):
+        """Shift a 2D map array by the given offsets"""
+        if x_offset == 0 and y_offset == 0:
+            return
+
+        # Create temporary array to hold shifted data
+        temp_array = [0] * len(map_array)
+
+        for old_index in xrange(len(map_array)):
+            old_x = old_index % self.mc.iNumPlotsX
+            old_y = old_index // self.mc.iNumPlotsX
+
+            # Calculate new position with offset
+            new_x = (old_x + x_offset) % self.mc.iNumPlotsX if self.mc.wrapX else old_x
+            new_y = (old_y + y_offset) % self.mc.iNumPlotsY if self.mc.wrapY else old_y
+
+            # Handle non-wrapping boundaries
+            if not self.mc.wrapX and (new_x < 0 or new_x >= self.mc.iNumPlotsX):
+                continue
+            if not self.mc.wrapY and (new_y < 0 or new_y >= self.mc.iNumPlotsY):
+                continue
+
+            new_index = new_y * self.mc.iNumPlotsX + new_x
+            if 0 <= new_index < len(temp_array):
+                temp_array[new_index] = map_array[old_index]
+
+        # Copy shifted data back to original array
+        for i in xrange(len(map_array)):
+            map_array[i] = temp_array[i]
+
+    def _update_positions_after_offset(self, x_offset, y_offset):
+        """Update continent centroids and seed positions after offset"""
+        # Update continent seed positions
+        for continent in self.seedList:
+            for seed in continent["seeds"]:
+                if self.mc.wrapX:
+                    seed["x"] = (seed["x"] + x_offset) % self.mc.iNumPlotsX
+                if self.mc.wrapY:
+                    seed["y"] = (seed["y"] + y_offset) % self.mc.iNumPlotsY
+                seed["i"] = seed["y"] * self.mc.iNumPlotsX + seed["x"]
+
+            # Update continent centroids
+            if self.mc.wrapX:
+                continent["x_centroid"] = (continent["x_centroid"] + x_offset) % self.mc.iNumPlotsX
+            if self.mc.wrapY:
+                continent["y_centroid"] = (continent["y_centroid"] + y_offset) % self.mc.iNumPlotsY
+
+        # Update plume positions
+        for plume in self.plumeList:
+            if self.mc.wrapX:
+                plume["x"] = (plume["x"] + x_offset) % self.mc.iNumPlotsX
+                if plume["x_wrap_plus"] is not None:
+                    plume["x_wrap_plus"] = plume["x"] + self.mc.iNumPlotsX
+                if plume["x_wrap_minus"] is not None:
+                    plume["x_wrap_minus"] = plume["x"] - self.mc.iNumPlotsX
+
+            if self.mc.wrapY:
+                plume["y"] = (plume["y"] + y_offset) % self.mc.iNumPlotsY
+                if plume["y_wrap_plus"] is not None:
+                    plume["y_wrap_plus"] = plume["y"] + self.mc.iNumPlotsY
+                if plume["y_wrap_minus"] is not None:
+                    plume["y_wrap_minus"] = plume["y"] - self.mc.iNumPlotsY
+
+    def _find_widest_consecutive_stretch(self, positions, wrap_size):
+        """Find the widest consecutive stretch in a list of positions (considering wrapping)"""
+        if not positions:
+            return None
+
+        if len(positions) == 1:
+            return (positions[0], positions[0])
+
+        # Sort positions for easier processing
+        sorted_positions = sorted(positions)
+
+        # Find consecutive stretches
+        stretches = []
+        current_start = sorted_positions[0]
+        current_end = sorted_positions[0]
+
+        for i in xrange(1, len(sorted_positions)):
+            pos = sorted_positions[i]
+            if pos == current_end + 1:
+                # Extend current stretch
+                current_end = pos
+            else:
+                # End current stretch, start new one
+                stretches.append((current_start, current_end))
+                current_start = pos
+                current_end = pos
+
+        # Add final stretch
+        stretches.append((current_start, current_end))
+
+        # Check for wrap-around stretch (end connects to beginning)
+        if len(stretches) > 1:
+            first_stretch = stretches[0]
+            last_stretch = stretches[-1]
+
+            if first_stretch[0] == 0 and last_stretch[1] == wrap_size - 1:
+                # Wrap-around case: combine first and last stretches
+                wrap_length = (first_stretch[1] - first_stretch[0] + 1) + (last_stretch[1] - last_stretch[0] + 1)
+                wrap_stretch = (last_stretch[0] - wrap_size, first_stretch[1])  # Adjusted coordinates
+
+                # Remove the individual stretches and add combined
+                stretches = stretches[1:-1] + [(wrap_stretch, wrap_length)]
+
+        # Find widest stretch
+        widest_stretch = None
+        max_width = 0
+
+        for stretch in stretches:
+            if isinstance(stretch[1], int):  # Normal stretch
+                width = stretch[1] - stretch[0] + 1
+                if width > max_width:
+                    max_width = width
+                    widest_stretch = stretch
+            else:  # Wrap-around stretch (stretch, length) tuple
+                width = stretch[1]
+                if width > max_width:
+                    max_width = width
+                    # Convert back to normal coordinates for wrap-around
+                    widest_stretch = stretch[0]
+
+        return widest_stretch
+
+    def _find_best_single_x_cut(self):
+        """Fallback: find column with most ocean when no all-ocean columns exist"""
+        max_ocean_in_cut = -1
+        best_cut_position = 0
+
+        for cut_x in xrange(self.mc.iNumPlotsX):
+            ocean_count = 0
+            for y in xrange(self.mc.iNumPlotsY):
+                index = y * self.mc.iNumPlotsX + cut_x
+                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                    ocean_count += 1
+
+            if ocean_count > max_ocean_in_cut:
+                max_ocean_in_cut = ocean_count
+                best_cut_position = cut_x
+
+        return (-best_cut_position) % self.mc.iNumPlotsX
+
+    def _find_best_single_y_cut(self):
+        """Fallback: find row with most ocean when no all-ocean rows exist"""
+        max_ocean_in_cut = -1
+        best_cut_position = 0
+
+        for cut_y in xrange(self.mc.iNumPlotsY):
+            ocean_count = 0
+            for x in xrange(self.mc.iNumPlotsX):
+                index = cut_y * self.mc.iNumPlotsX + x
+                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                    ocean_count += 1
+
+            if ocean_count > max_ocean_in_cut:
+                max_ocean_in_cut = ocean_count
+                best_cut_position = cut_y
+
+        return (-best_cut_position) % self.mc.iNumPlotsY
+
+    @profile
+    def _calculate_elevation_effects(self):
+        """Calculate elevation effects on temperature"""
+        for i in xrange(self.mc.iNumPlots):
+            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
+                self.aboveSeaLevelMap[i] = 0.0
+            else:
+                self.aboveSeaLevelMap[i] = self.elevationMap[i] - self.seaLevelThreshold
+        self.aboveSeaLevelMap = self.mc.normalize_map(self.aboveSeaLevelMap)
+
+        for i in xrange(self.mc.iNumPlots):
+            self.aboveSeaLevelMap[i] *= self.mc.maxElev
+
+            if self.plotTypes[i] == self.mc.PLOT_PEAK:
+                self.aboveSeaLevelMap[i] += self.mc.peakElev
+            elif self.plotTypes[i] == self.mc.PLOT_HILLS:
+                self.aboveSeaLevelMap[i] += self.mc.hillElev
 
     def _calculate_wrap_aware_centroid(self, coordinates):
         """Calculate centroid considering map wrapping using circular mean"""

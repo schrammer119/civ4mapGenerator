@@ -125,6 +125,11 @@ class MapConfig:
         self.landPercent = 0.38             # Target percentage of land on the map. Adjusted by sea level setting.
         self.coastPercent = 0.01            # Percentage of shallow water (coast) relative to the total water area.
         self.perlinNoiseFactor = 0.2        # Amount of Perlin noise to add to the final elevation map for small-scale variety.
+        self.basinLakeSize = 10
+        self.enableWrapOptimization = True  # Enable wrap edge optimization to minimize continent splitting
+        self.maxElev = 4500.0                  # Maximum elevation in m
+        self.peakElev = 1000.0
+        self.hillElev = 500.0
 
     def _initialize_climate_parameters(self):
         """Initializes all parameters related to the ClimateMap generation."""
@@ -140,12 +145,10 @@ class MapConfig:
         self.maximumTemp = 35.0             # Base temperature at the equator (Celsius).
         self.maxWaterTempC = 29.0           # Maximum possible ocean temperature.
         self.minWaterTempC = -2.0          # Minimum possible ocean temperature (can be below freezing due to salinity).
-        self.maxElev = 4500.0                  # Maximum elevation in m
-        self.tempLapse = 0.0013                # Temperature decrease in Celsius per metre of elevation.
+        self.tempLapse = 0.0065                # Temperature decrease in Celsius per metre of elevation.
         self.thermalInertiaFactor = 0.3     # How much temperature is smoothed between land and sea. Higher values mean more smoothing.
 
         # --- Solar Radiation ---
-        self.earthAlbedo = 0.3              # Average reflectivity of the planet (0-1). Higher albedo means a cooler planet.
         self.minSolarFactor = 0.1           # Minimum solar heating at the poles to prevent extreme cold.
         self.solarHadleyCellEffects = -0.12 # Adjusts solar radiation to model Hadley Cell effects (cooler equator, warmer subtropics).
         self.solarFifthOrder = 0.04         # A fifth-order term for fine-tuning the solar radiation curve.
@@ -176,10 +179,9 @@ class MapConfig:
         # --- Wind ---
         # QG Solver Parameters
         self.qgCoriolisF0 = 1.03e-4                    # Reference Coriolis parameter (1/s) - controls overall rotation effects
-        self.qgBetaParameter = 1.6e-7                # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
+        self.qgBetaParameter = 1.6e-11                # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
         self.qgMeanLayerDepth = 8000                # Mean atmospheric layer depth (m) - base thickness for PV calculations
-        self.qgThermalExpansion = 100              # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
-        self.qgDiagonalWeight = 1.0                 # Diagonal neighbor weight in stencil - tuning parameter for numerical accuracy
+        self.qgThermalExpansion = 60              # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
         self.qgHadleyStrength = 2e11               # Hadley cell amplitude (1/s2) - tropical heating strength
 
         # Solver Control
@@ -197,18 +199,19 @@ class MapConfig:
 
         # --- Rain ---
         # # Rainfall Model Parameters - Temperature values in Celsius!
+        self.specificHumidityFactor = 0.012
         self.rainfallConvectiveBasePercentile = 0.1   # Percentile for base convective temperature (30% coldest land)
         self.rainfallConvectiveMaxPercentile = 0.2    # Percentile for peak convective temperature (10% hottest land)
-        self.rainfallMaxTransportDistance = 100      # Maximum transport distance in tiles
-        self.rainfallConvectiveMaxRate = 0.15        # Maximum convective base rainfall rate at peak temperature
+        self.rainfallMaxTransportDistance = 300      # Maximum transport distance in tiles
         self.rainfallConvectiveDeclineRate = 0.05    # Rate of decline above peak temperature per degree
         self.rainfallConvectiveMinFactor = 0.5       # Minimum convective factor for very hot temperatures
-        self.rainfallOceanPrecipitation = 0.0       # Base precipitation rate over ocean to prevent buildup
-        self.rainfallOrographicFactor = 0.00005       # Multiplier for orographic precipitation (% moisture/1m elevation)
-        self.rainfallFrontalFactor = 0.0005           # Multiplier for frontal/cyclonic precipitation
+        self.rainfallConvectiveMaxRate = 0.2        # Maximum convective base rainfall rate at peak temperature
+        self.rainfallConvectiveOceanRate = 0.01
+        self.rainfallOrographicFactor = 0.0       # Multiplier for orographic precipitation (% moisture/1m elevation)
+        self.rainfallFrontalFactor = 0.0           # Multiplier for frontal/cyclonic precipitation
+        self.rainfallMinimumPrecipitation = 0.0001     # Minimum absolute precipitation to ensure linear decay
         self.rainPeakOrographicFactor = 2.0
         self.rainHillOrographicFactor = 1.3
-        self.rainfallMinimumPrecipitation = 0.01     # Minimum absolute precipitation to ensure linear decay
         self.rainSmoothing = 2
 
 

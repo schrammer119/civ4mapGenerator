@@ -1,11 +1,13 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
-import traceback
+import random
 
 from PlanetForge import *
 from MapConfig import MapConfig
 from ClimateMap import ClimateMap
+
+random.seed(1234)
 
 # Initialize shared MapConfig instance
 mc = MapConfig()
@@ -122,7 +124,7 @@ if True:
         plt.tight_layout()
 
         # Create land-only elevation map with sea level applied
-        elev = [0 if x < em.seaLevelThreshold else x for x in em.elevationMap]
+        elev = [-1000.0 if em.plotTypes[i]==mc.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
 
         Z = np.array(elev).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
         iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
@@ -131,9 +133,9 @@ if True:
         fig, ax = plt.subplots()
         p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
         ax.plot([i % mc.iNumPlotsX for i in iPeaks], [
-                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
         ax.plot([i % mc.iNumPlotsX for i in iHills], [
-                i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='tab:brown', ms=8)
+                i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='none', ms=8)
         ax.set_title('Final Map with Plot Types')
         fig.colorbar(p)
 
@@ -197,12 +199,12 @@ if True:
         ax3.contour(elevation_background, levels=[em.seaLevelThreshold],
                 colors=['blue'], linewidths=[1], alpha=0.7)
         ax3.plot([i % mc.iNumPlotsX for i in iPeaks], [
-                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
 
         # Plot wind patterns with color based on magnitude
         wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
         q3 = ax3.quiver(X, Y, U_wind, V_wind, wind_magnitude,
-                        alpha=0.8, cmap='plasma', width=0.003)
+                        alpha=0.8, cmap='plasma')
 
         ax3.set_title('Wind Patterns with Topography')
         ax3.set_xlim(0, mc.iNumPlotsX)
@@ -210,16 +212,14 @@ if True:
         fig.colorbar(q3, ax=ax3, label='Wind Magnitude')
 
         # Plot 4: Rainfall Map with Landforms (bottom-right)
-        ax4.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.4, vmin=0, vmax=1)
-
         # Overlay rainfall data with transparency
-        p4 = ax4.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues, alpha=0.8)
+        p4 = ax4.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues, alpha=0.8, clim=(0.0,1.0))
 
         # Add contour lines to show land boundaries
         ax4.contour(elevation_background, levels=[em.seaLevelThreshold],
                 colors='black', linewidths=1, alpha=0.6)
         ax4.plot([i % mc.iNumPlotsX for i in iPeaks], [
-                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="0.7", ms=8)
+                i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
 
         ax4.set_title('Rainfall Map with Landforms')
         fig.colorbar(p4, ax=ax4, label='Rainfall')
