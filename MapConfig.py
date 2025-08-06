@@ -221,6 +221,42 @@ class MapConfig:
         self.rainHillOrographicFactor = 1.3
         self.rainSmoothing = 2
 
+        # --- Rivers --- #
+        self.RiverMinBasinSize = 8           # Minimum basin size to qualify for rivers
+        self.riverNodeSmoothing = 4
+        self.RiverTargetCountStandard = 30  # Target number of major rivers for standard map
+        self.RiverFlowAccumulationFactor = 1000.0  # Base factor for flow accumulation calculations
+        self.LakeRainfallRequirement = 0.4  # Minimum rainfall for lake formation (normalized 0-1)
+        self.LakeTargetCount = 8  # Target number of lakes for standard map
+
+        # Node-based Flow Parameters (D4 - Cardinal directions only)
+        self.NodeFlowDirections = [
+            (0, 1),   # North
+            (1, 0),   # East
+            (0, -1),  # South
+            (-1, 0)   # West
+        ]
+
+        # Enhanced river generation parameters
+        self.RiverSpilloverHeight = 100.0  # Allow slight uphill flow to prevent rigid drainage (elevation units, converts to meters)
+        self.RiverDistanceFlowBonus = 0.15  # Flow bonus per distance unit from outlet to encourage longer rivers
+        self.RiverElevationSourceBonus = 0.08  # Flow bonus for high elevation sources (mountains)
+        self.RiverPeakSourceBonus = 0.25  # Additional flow bonus for nodes near peaks
+        self.RiverHillSourceBonus = 0.12  # Additional flow bonus for nodes near hills
+        self.RiverSinuosityPenalty = 10.0  # Penalty for straight-line flow to encourage winding rivers
+
+        # Strategic river selection parameters
+        self.RiverGlacialCategoryWeight = 0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
+        self.RiverLengthCategoryWeight = 0.4
+        self.RiverParallelismDistance = 3  # Maximum distance to consider segments parallel
+        self.RiverCustomThresholdRange = [0.3, 0.4, 0.5, 0.6, 0.7]  # Test ratios for optimal threshold finding
+
+        # Enhanced lake parameters
+        self.LakeMaxGrowthSize = 9  # Maximum tiles for lakes (game constraint)
+        self.LakeElevationWeight = 0.6  # Weight for elevation-based lake growth
+        self.LakeOceanProximityWeight = 0.4  # Weight for ocean proximity in lake growth
+        self.LakeOceanConnectionRange = 4  # Maximum distance to attempt ocean connections
+
 
     # -------------------------------------------------------------------------
     # Shared Utility Functions
@@ -479,3 +515,106 @@ class MapConfig:
             u = x if h < 4 else y
             v = y if h < 4 else x
             return (u if (h & 1) == 0 else -u) + (v if (h & 2) == 0 else -v)
+
+    def get_node_index(self, x, y):
+        """Convert node coordinates to flat index."""
+        return y * self.iNumPlotsX + x
+
+    def get_node_coords(self, node_index):
+        """Convert flat node index to coordinates."""
+        x = node_index % self.iNumPlotsX
+        y = node_index // self.iNumPlotsX
+        return x, y
+
+    def is_node_valid_for_flow(self, node_x, node_y, flow_direction=None):
+        """
+        Check if a node can participate in flow, considering boundary restrictions.
+
+        Boundary rules:
+        - wrapY=False: y=0 invalid, y=height-1 flows E/W/S only, y=1 flows E/W/N
+        - wrapX=False: x=0 flows E/N/S, x=width-1 invalid, x=width-2 flows W/N/S
+        """
+        # Check basic bounds
+        if node_x < 0 or node_x >= self.iNumPlotsX or node_y < 0 or node_y >= self.iNumPlotsY:
+            return False
+
+        # Handle non-wrapping boundaries
+        if not self.wrapY:
+            if node_y == 0:  # Bottom boundary - invalid
+                return False
+            elif node_y == 1:  # Near bottom boundary - E/W/N only
+                if flow_direction == (0, -1):  # South flow
+                    return False
+            elif node_y == self.iNumPlotsY - 1:  # Top boundary - E/W/S only
+                if flow_direction == (0, 1):  # North flow
+                    return False
+
+        if not self.wrapX:
+            if node_x == self.iNumPlotsX - 1:  # Right boundary - invalid
+                return False
+            elif node_x == 0:  # Left boundary - E/N/S only
+                if flow_direction == (-1, 0):  # West flow
+                    return False
+            elif node_x == self.iNumPlotsX - 2:  # Near right boundary - W/N/S only
+                if flow_direction == (1, 0):  # East flow
+                    return False
+
+        return True
+
+    def get_valid_node_neighbors(self, node_x, node_y):
+        """Get valid neighboring nodes for D4 flow calculation."""
+        neighbors = []
+
+        for dx, dy in self.NodeFlowDirections:
+            nx = node_x + dx
+            ny = node_y + dy
+
+            # Handle wrapping
+            if self.wrapX:
+                nx = nx % self.iNumPlotsX
+            elif nx < 0 or nx >= self.iNumPlotsX:
+                continue
+
+            if self.wrapY:
+                ny = ny % self.iNumPlotsY
+            elif ny < 0 or ny >= self.iNumPlotsY:
+                continue
+
+            # Check if this flow direction is valid from source node
+            if (self.is_node_valid_for_flow(node_x, node_y, (dx, dy)) and
+                self.is_node_valid_for_flow(nx, ny)):
+                neighbors.append((nx, ny))
+
+        return neighbors
+
+    def get_node_intersecting_tiles(self, node_x, node_y):
+        """Get the 4 tiles that intersect at this node position"""
+        intersecting_tiles = []
+
+        # Node (x,y) is intersection of tiles (x,y), (x+1,y), (x+1,y-1), (x,y-1)
+        tile_coords = [(0, 0), (1, 0), (1, -1), (0, -1)]
+
+        for dx, dy in tile_coords:
+            tx = node_x + dx
+            ty = node_y + dy
+
+            # Handle wrapping and bounds
+            if self.wrapX:
+                tx = tx % self.iNumPlotsX
+            elif tx < 0 or tx >= self.iNumPlotsX:
+                continue
+
+            if self.wrapY:
+                ty = ty % self.iNumPlotsY
+            elif ty < 0 or ty >= self.iNumPlotsY:
+                continue
+
+            tile_index = ty * self.iNumPlotsX + tx
+            intersecting_tiles.append(tile_index)
+
+        return intersecting_tiles
+
+    def get_node_intersecting_tiles_from_index(self, node_index):
+        """Get intersecting tiles from node index"""
+        node_x, node_y = self.get_node_coords(node_index)
+        return self.get_node_intersecting_tiles(node_x, node_y)

@@ -35,7 +35,7 @@ class ElevationMap:
     def _initialize_data_structures(self):
         """Initialize all data structures used by the elevation map"""
         # Plate identification and properties
-        self.continentID = [self.mc.plateCount + 1] * self.mc.iNumPlots
+        self.plateID = [self.mc.plateCount + 1] * self.mc.iNumPlots
         self.seedList = []
         self.plumeList = []
 
@@ -56,6 +56,8 @@ class ElevationMap:
         self.aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
         self.oceanBasinMap = [-1] * self.mc.iNumPlots
         self.basinSizes = {}
+        self.continentID = [-1] * self.mc.iNumPlots
+        self.continentSizes = {}
 
         # Utility maps
         self.dx_centroid = [0.0] * self.mc.iNumPlots
@@ -106,6 +108,7 @@ class ElevationMap:
         self._calculate_terrain_thresholds()
         self._calculate_plot_types()
         self._calculateOceanBasins()
+        self._calculateContinentIDs()
         self._optimize_wrap_edges()
         self._calculate_elevation_effects()
 
@@ -138,17 +141,17 @@ class ElevationMap:
             has_available = False
 
             # Process neighbors in random order for organic growth
-            neighbor_dirs = range(1, 9)
+            neighbor_dirs = list(range(1, 9))
             random.shuffle(neighbor_dirs)
 
             for dir_idx in neighbor_dirs:
                 neighbour_index = neighbours[dir_idx]
                 if (neighbour_index >= 0 and
-                    self.continentID[neighbour_index] > self.mc.plateCount):
+                    self.plateID[neighbour_index] > self.mc.plateCount):
 
                     if random.random() < growth_probability:
                         # Claim the neighbouring plot
-                        self.continentID[neighbour_index] = continent_id
+                        self.plateID[neighbour_index] = continent_id
                         continent["size"] += 1
 
                         # Defer centroid update - just mark for later
@@ -171,8 +174,8 @@ class ElevationMap:
     def _place_continent_seeds(self):
         """Place initial seeds for continental plate growth"""
         # Create shuffled coordinate lists for random placement
-        x_coords = range(self.mc.iNumPlotsX)
-        y_coords = range(self.mc.iNumPlotsY)
+        x_coords = list(range(self.mc.iNumPlotsX))
+        y_coords = list(range(self.mc.iNumPlotsY))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
@@ -204,7 +207,7 @@ class ElevationMap:
             }
 
             self.seedList.append(continent_data)
-            self.continentID[main_index] = continent_id
+            self.plateID[main_index] = continent_id
             growth_queue.append((main_index, continent_id))
 
         return growth_queue
@@ -284,7 +287,7 @@ class ElevationMap:
         # More efficient iteration - break early if we can
         plot_count = 0
         for plot_index in xrange(self.mc.iNumPlots):  # xrange for Python 2.4
-            if self.continentID[plot_index] == continent_id:
+            if self.plateID[plot_index] == continent_id:
                 plot_x = plot_index % self.mc.iNumPlotsX
                 plot_y = plot_index // self.mc.iNumPlotsX
                 continent_coordinates.append((plot_x, plot_y))
@@ -302,7 +305,7 @@ class ElevationMap:
         for dir_idx in xrange(1, 9):  # xrange for Python 2.4
             neighbour_index = neighbours[dir_idx]
             if (neighbour_index >= 0 and
-                self.continentID[neighbour_index] > self.mc.plateCount):
+                self.plateID[neighbour_index] > self.mc.plateCount):
                 return True
         return False
 
@@ -314,7 +317,7 @@ class ElevationMap:
         flip_probability = 0.3
 
         for plot_index in xrange(self.mc.iNumPlots):
-            current_continent = self.continentID[plot_index]
+            current_continent = self.plateID[plot_index]
             same_neighbours = 0
             total_neighbours = 0
 
@@ -323,7 +326,7 @@ class ElevationMap:
                 neighbour_index = self.mc.neighbours[plot_index][dir]
                 if neighbour_index >= 0:
                     total_neighbours += 1
-                    if self.continentID[neighbour_index] == current_continent:
+                    if self.plateID[neighbour_index] == current_continent:
                         same_neighbours += 1
 
             # Process isolated or mostly isolated cells
@@ -344,18 +347,18 @@ class ElevationMap:
         for dir in xrange(1,9):
             neighbour_index = self.mc.neighbours[plot_index][dir]
             if neighbour_index >= 0:
-                neighbour_continent = self.continentID[neighbour_index]
+                neighbour_continent = self.plateID[neighbour_index]
                 neighbour_counts[neighbour_continent] = neighbour_counts.get(neighbour_continent, 0) + 1
 
         if neighbour_counts:
             return max(neighbour_counts.items(), key=lambda x: x[1])[0]
-        return self.continentID[plot_index]
+        return self.plateID[plot_index]
 
     def _apply_continent_changes(self, changes):
         """Apply continent ownership changes and update sizes"""
         for plot_index, new_continent in changes:
-            old_continent = self.continentID[plot_index]
-            self.continentID[plot_index] = new_continent
+            old_continent = self.plateID[plot_index]
+            self.plateID[plot_index] = new_continent
             self.seedList[old_continent]["size"] -= 1
             self.seedList[new_continent]["size"] += 1
 
@@ -370,7 +373,7 @@ class ElevationMap:
         for plot_index in xrange(self.mc.iNumPlots):
             x = plot_index % self.mc.iNumPlotsX
             y = plot_index // self.mc.iNumPlotsX
-            continent_id = self.continentID[plot_index]
+            continent_id = self.plateID[plot_index]
 
             if continent_id < self.mc.plateCount:
                 continent = self.seedList[continent_id]
@@ -427,7 +430,7 @@ class ElevationMap:
         max_influence_dist = min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistanceHotspot
 
         for plot_index in xrange(self.mc.iNumPlots):
-            continent_id = self.continentID[plot_index]
+            continent_id = self.plateID[plot_index]
             if continent_id >= self.mc.plateCount:
                 continue
 
@@ -477,7 +480,7 @@ class ElevationMap:
         for plot_index in xrange(self.mc.iNumPlots):
             x = plot_index % self.mc.iNumPlotsX
             y = plot_index // self.mc.iNumPlotsX
-            current_plate = self.continentID[plot_index]
+            current_plate = self.plateID[plot_index]
 
             if current_plate >= self.mc.plateCount:
                 continue
@@ -486,7 +489,7 @@ class ElevationMap:
             for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
                 neighbour_index = self.mc.neighbours[plot_index][direction]
                 if neighbour_index >= 0:
-                    neighbour_plate = self.continentID[neighbour_index]
+                    neighbour_plate = self.plateID[neighbour_index]
 
                     # Process plate boundary
                     if neighbour_plate != current_plate and neighbour_plate < self.mc.plateCount:
@@ -730,7 +733,7 @@ class ElevationMap:
     def _convert_forces_to_velocities(self, u_forces, v_forces, rotational_forces):
         """Convert plate-level forces to per-plot velocities"""
         for plot_index in xrange(self.mc.iNumPlots):
-            continent_id = self.continentID[plot_index]
+            continent_id = self.plateID[plot_index]
             if continent_id < self.mc.plateCount:
                 self.continentU[plot_index] = u_forces[continent_id] - rotational_forces[continent_id] * self.dy_centroid[plot_index]
                 self.continentV[plot_index] = v_forces[continent_id] + rotational_forces[continent_id] * self.dx_centroid[plot_index]
@@ -741,7 +744,7 @@ class ElevationMap:
         for plot_index in xrange(self.mc.iNumPlots):
             x = plot_index % self.mc.iNumPlotsX
             y = plot_index // self.mc.iNumPlotsX
-            continent_id = self.continentID[plot_index]
+            continent_id = self.plateID[plot_index]
 
             if continent_id < self.mc.plateCount:
                 dx, dy = self.mc.get_wrapped_distance(
@@ -758,7 +761,7 @@ class ElevationMap:
         """Generate base elevation map based on plate density"""
         self.elevationBaseMap = [1.0 - self.seedList[continent_id]["plateDensity"]
                                 if continent_id < self.mc.plateCount else 0.0
-                                for continent_id in self.continentID]
+                                for continent_id in self.plateID]
         self.elevationBaseMap = self.mc.normalize_map(self.elevationBaseMap)
 
     @profile
@@ -772,13 +775,13 @@ class ElevationMap:
         # Group ALL tiles by continent (including stationary ones)
         continent_tiles = {}
         for i in xrange(self.mc.iNumPlots):
-            continent_id = self.continentID[i]
+            continent_id = self.plateID[i]
             if continent_id not in continent_tiles:
                 continent_tiles[continent_id] = []
             continent_tiles[continent_id].append(i)
 
         # Process each continent separately
-        for continent_id, tiles in continent_tiles.iteritems():
+        for continent_id, tiles in continent_tiles.items():
             self._solve_potential_field(tiles, continent_id)
 
     def _solve_potential_field(self, tiles, continent_id):
@@ -912,10 +915,10 @@ class ElevationMap:
         neighbours = self.mc.neighbours[tile_idx]
 
         # Find valid neighbors on same continent
-        east_neighbor = neighbours[self.mc.E] if neighbours[self.mc.E] > 0 and self.continentID[neighbours[self.mc.E]] == continent_id else -1
-        west_neighbor = neighbours[self.mc.W] if neighbours[self.mc.W] > 0 and self.continentID[neighbours[self.mc.W]] == continent_id else -1
-        north_neighbor = neighbours[self.mc.N] if neighbours[self.mc.N] > 0 and self.continentID[neighbours[self.mc.N]] == continent_id else -1
-        south_neighbor = neighbours[self.mc.S] if neighbours[self.mc.S] > 0 and self.continentID[neighbours[self.mc.S]] == continent_id else -1
+        east_neighbor = neighbours[self.mc.E] if neighbours[self.mc.E] > 0 and self.plateID[neighbours[self.mc.E]] == continent_id else -1
+        west_neighbor = neighbours[self.mc.W] if neighbours[self.mc.W] > 0 and self.plateID[neighbours[self.mc.W]] == continent_id else -1
+        north_neighbor = neighbours[self.mc.N] if neighbours[self.mc.N] > 0 and self.plateID[neighbours[self.mc.N]] == continent_id else -1
+        south_neighbor = neighbours[self.mc.S] if neighbours[self.mc.S] > 0 and self.plateID[neighbours[self.mc.S]] == continent_id else -1
 
         # Get neighbor elevations
         east_elev = elevations[tile_to_local[east_neighbor]] if east_neighbor in tile_to_local else 0.0
@@ -1014,7 +1017,7 @@ class ElevationMap:
         for plot_index in xrange(self.mc.iNumPlots):
             x = plot_index % self.mc.iNumPlotsX
             y = plot_index // self.mc.iNumPlotsX
-            current_plate = self.continentID[plot_index]
+            current_plate = self.plateID[plot_index]
 
             if current_plate >= self.mc.plateCount:
                 continue
@@ -1024,7 +1027,7 @@ class ElevationMap:
                                                  (self.mc.NE, "NE"), (self.mc.NW, "NW")]:
                 neighbour_index = self.mc.neighbours[plot_index][direction_idx]
                 if neighbour_index >= 0:
-                    neighbour_plate = self.continentID[neighbour_index]
+                    neighbour_plate = self.plateID[neighbour_index]
                     if neighbour_plate != current_plate and neighbour_plate < self.mc.plateCount:
                         boundary_data = self._analyze_boundary_interaction(
                             plot_index, neighbour_index, direction_name
@@ -1049,8 +1052,8 @@ class ElevationMap:
             transform_motion = abs(v_diff)
 
         # Get plate density difference
-        plate1_id = self.continentID[plot1]
-        plate2_id = self.continentID[plot2]
+        plate1_id = self.plateID[plot1]
+        plate2_id = self.plateID[plot2]
         density_diff = (self.seedList[plate1_id]["plateDensity"] -
                        self.seedList[plate2_id]["plateDensity"])
 
@@ -1285,11 +1288,11 @@ class ElevationMap:
             x = plume["x"]
             y = plume["y"]
             plot_index = y * self.mc.iNumPlotsX + x
-            plate_id = self.continentID[plot_index]
+            plate_id = self.plateID[plot_index]
 
             # Create hotspot chain as plate moves over stationary plume
             for age_step in xrange(self.mc.hotspotDecay):
-                if self.continentID[plot_index] != plate_id:
+                if self.plateID[plot_index] != plate_id:
                     break
 
                 # Calculate volcanic intensity (decreases with age)
@@ -1525,6 +1528,55 @@ class ElevationMap:
         return basin_size
 
     @profile
+    def _calculateContinentIDs(self):
+        """
+        Identifies continents and sizes.
+        """
+
+        # Identify ocean basins and calculate sizes
+        continent_counter = 0
+
+        # Flood fill to identify connected ocean basins
+        for i in xrange(self.mc.iNumPlots):
+            if self.plotTypes[i] != self.mc.PLOT_OCEAN:
+                if self.continentID[i] == -1:
+                    continent_size = self._floodFillBasin(i, continent_counter)
+                    self.continentSizes[continent_counter] = continent_size
+                    continent_counter += 1
+
+    def _floodFillContinent(self, start_tile, continent_id):
+        """
+        Flood fill to identify connected continent and return its size.
+        """
+        if self.continentID[start_tile] != -1:  # Already processed
+            return 0
+
+        continent_size = 0
+        stack = [start_tile]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.continentID[current] != -1 or
+                self.plotTypes[current] == self.mc.PLOT_OCEAN):
+                continue
+
+            # Mark as part of this basin
+            self.continentID[current] = continent_id
+            continent_size += 1
+
+            # Add neighbours to stack
+            for dir in xrange(1,9):
+                neighbour = self.mc.neighbours[current][dir]
+                if (neighbour >= 0 and
+                    self.continentID[neighbour] == -1 and
+                    self.plotTypes[neighbour] != self.mc.PLOT_OCEAN):
+                    stack.append(neighbour)
+
+        return continent_size
+
+    @profile
     def _optimize_wrap_edges(self):
         """Optimize map wrapping to minimize continent splitting across edges"""
         if not self.mc.enableWrapOptimization:
@@ -1610,7 +1662,7 @@ class ElevationMap:
 
         # List of all map arrays that need to be shifted
         map_arrays = [
-            self.continentID,
+            self.plateID,
             self.continentU,
             self.continentV,
             self.elevationBaseMap,
@@ -1799,20 +1851,16 @@ class ElevationMap:
     @profile
     def _calculate_elevation_effects(self):
         """Calculate elevation effects on temperature"""
-        for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
-                self.aboveSeaLevelMap[i] = 0.0
-            else:
-                self.aboveSeaLevelMap[i] = self.elevationMap[i] - self.seaLevelThreshold
-        self.aboveSeaLevelMap = self.mc.normalize_map(self.aboveSeaLevelMap)
 
+        max_elev = max(self.elevationMap)
         for i in xrange(self.mc.iNumPlots):
-            self.aboveSeaLevelMap[i] *= self.mc.maxElev
+            if self.plotTypes[i] != self.mc.PLOT_OCEAN:
+                self.aboveSeaLevelMap[i] = self.mc.maxElev * (self.elevationMap[i] - self.seaLevelThreshold) / (max_elev - self.seaLevelThreshold)
 
-            if self.plotTypes[i] == self.mc.PLOT_PEAK:
-                self.aboveSeaLevelMap[i] += self.mc.peakElev
-            elif self.plotTypes[i] == self.mc.PLOT_HILLS:
-                self.aboveSeaLevelMap[i] += self.mc.hillElev
+                if self.plotTypes[i] == self.mc.PLOT_PEAK:
+                    self.aboveSeaLevelMap[i] += self.mc.peakElev
+                elif self.plotTypes[i] == self.mc.PLOT_HILLS:
+                    self.aboveSeaLevelMap[i] += self.mc.hillElev
 
     def _calculate_wrap_aware_centroid(self, coordinates):
         """Calculate centroid considering map wrapping using circular mean"""

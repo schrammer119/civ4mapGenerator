@@ -23,7 +23,10 @@ class ClimateMap:
     @profile
     def __init__(self, elevation_map, map_constants=None):
         """Initialize climate map with required dependencies"""
-        self.em = elevation_map
+        if elevation_map is None:
+            self.em = ElevationMap()
+        else:
+            self.em = elevation_map
 
         # Use provided MapConfig or create new instance
         if map_constants is None:
@@ -60,10 +63,12 @@ class ClimateMap:
         self.rainfallConvectiveMaxTemp = 0.0
 
         # River system maps
-        self.averageHeightMap = [0.0] * self.mc.iNumPlots
-        self.drainageMap = [0.0] * self.mc.iNumPlots
-        self.basinID = [0] * self.mc.iNumPlots
-        self.riverMap = [self.mc.NR] * self.mc.iNumPlots
+        self.node_elevations = [0.0] * self.mc.iNumPlots
+        self.flow_directions = [-1] * self.mc.iNumPlots
+        self.watershed_ids = [-1] * self.mc.iNumPlots
+        self.initial_node_flows = [0.0] * self.mc.iNumPlots
+        self.north_of_rivers = [False] * self.mc.iNumPlots
+        self.west_of_rivers = [False] * self.mc.iNumPlots
 
     @profile
     def GenerateClimateMap(self):
@@ -71,7 +76,7 @@ class ClimateMap:
         print("----Generating Climate System----")
         self.GenerateTemperatureMap()
         self.GenerateRainfallMap()
-        # self.GenerateRiverMap()
+        self.GenerateRiverMap()
 
     @profile
     def GenerateTemperatureMap(self):
@@ -415,8 +420,7 @@ class ClimateMap:
                 # If neighbour distance is greater than current + 1, update it
                 if neighbour >= 0 and self.oceanDistanceMap[neighbour] > current_distance + 1:
                     self.oceanDistanceMap[neighbour] = current_distance + 1
-                    if current_distance + 1 < self.mc.maritime_influence_distance:
-                        ocean_queue.append((neighbour, current_distance + 1))
+                    ocean_queue.append((neighbour, current_distance + 1))
 
         # Create distance queue for maritime processing (sorted by distance)
         self.distanceQueue = []
@@ -1260,8 +1264,1156 @@ class ClimateMap:
 
     @profile
     def GenerateRiverMap(self):
-        """Generate river system (placeholder - would need full implementation)"""
-        print("Generating River Map")
-        # This would contain the full river generation logic from the original
-        # For now, just initialize the river maps
+        """
+        Enhanced river generation using realistic watershed modeling and strategic placement.
+        Two-pass approach with prefiltering for optimal performance and river quality.
+        """
+        print("Generating enhanced rivers and lakes...")
+
+        # Scale targets based on map size
+        target_rivers = self.scale_river_targets_for_map_size(self.mc.RiverTargetCountStandard)
+
+        # Phase 1: Enhanced elevation and flow modeling
+        print("Calculating enhanced node elevations with spillover flow...")
+        self.calculate_enhanced_node_elevations()
+        distances_from_outlets = self.calculate_spillover_flow_directions()
+
+        # Phase 2: Process tiles and calculate enhanced flows
+        print("Processing tiles and calculating enhanced flows...")
+        self.process_tiles_for_watersheds()
+        self.calculate_enhanced_flow_accumulation(distances_from_outlets)
+
+        # Phase 3: Strategic selection with glacial allocation
+        print("Selecting watersheds strategically with glacial allocation...")
+        selected_watersheds = self.allocate_rivers_strategically(target_rivers)
+
+        # Phase 4: Build optimized river systems
+        print("Building optimized river networks...")
+        self.build_optimized_river_systems(selected_watersheds)
+
+        # Phase 5: Advanced lake system
+        print("Generating advanced lake system...")
+        self.lake_data = self.generate_advanced_lake_system(selected_watersheds)
+
+        self.add_lake_moisture()
+
+        # watershed debug
+        size_sum = 0.0
+        dist_sum = 0.0
+        ocean_count = 0
+        count = 0
+        for b in self.watershed_database.values():
+            if b['basin_size'] > self.mc.RiverMinBasinSize:
+                size_sum += b['basin_size']
+                dist_sum += b['max_distance']
+                count += 1
+                if b['reaches_ocean']:
+                    ocean_count += 1
+        avg_size = size_sum / count
+        avg_dist = dist_sum / count
+        print("Watershed Summary: count=%d  avg_size=%.2f  avg_dist=%.2f  ocean_count=%d" % (count, avg_size, avg_dist, ocean_count))
+
+
+        print("Enhanced river and lake generation complete!")
+
+    @profile
+    def calculate_enhanced_node_elevations(self):
+        """Calculate node elevations with selective smoothing to preserve natural drainage patterns"""
+
+        # Start with base node elevations
+
+        for node_i in xrange(self.mc.iNumPlots):
+            node_x, node_y = self.mc.get_node_coords(node_i)
+
+            # Node (x,y) is intersection of tiles (x,y), (x+1,y), (x+1,y-1), (x,y-1)
+            tile_coords = [(0, 0), (1, 0), (1, -1), (0, -1)]
+            total_elevation = 0.0
+            count = 0
+
+            for dx, dy in tile_coords:
+                tx = node_x + dx
+                ty = node_y + dy
+
+                # Handle wrapping and bounds
+                if self.mc.wrapX:
+                    tx = tx % self.mc.iNumPlotsX
+                elif tx < 0 or tx >= self.mc.iNumPlotsX:
+                    continue
+
+                if self.mc.wrapY:
+                    ty = ty % self.mc.iNumPlotsY
+                elif ty < 0 or ty >= self.mc.iNumPlotsY:
+                    continue
+
+                tile_index = ty * self.mc.iNumPlotsX + tx
+                if self.em.plotTypes[tile_index] == self.mc.PLOT_OCEAN:
+                    total_elevation = 0.0
+                    count = 1
+                    break
+                else:
+                    total_elevation += self.em.aboveSeaLevelMap[tile_index]
+                    count += 1
+
+            avg_elevation = total_elevation / count if count > 0 else 0.0
+            self.node_elevations[node_i] = avg_elevation
+
+        # Apply moderate smoothing to reduce noise while preserving major features
+        self.node_elevations = self.mc.gaussian_blur(
+            self.node_elevations,
+            radius=self.mc.riverNodeSmoothing,
+            filter_func=lambda i: self.node_elevations[i] > 0.0
+        )
+
+    @profile
+    def calculate_spillover_flow_directions(self):
+        """Calculate flow directions with spillover capability and cycle prevention"""
+        spillover_height = self.mc.RiverSpilloverHeight
+        straight_count = 1
+        prev_dir = (-2, -2)
+
+        # Calculate flow directions with spillover and ocean outlet detection
+        for node_i in xrange(len(self.node_elevations)):
+            node_x, node_y = self.mc.get_node_coords(node_i)
+
+            if not self.mc.is_node_valid_for_flow(node_x, node_y):
+                continue
+
+            # Check if node intersects ocean tiles (outlet detection)
+            intersecting_tiles = self.mc.get_node_intersecting_tiles(node_x, node_y)
+            is_outlet = False
+            for tile_i in intersecting_tiles:
+                if (tile_i >= 0 and tile_i < self.mc.iNumPlots and
+                    self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN):
+                    is_outlet = True
+                    break
+
+            if is_outlet:
+                self.flow_directions[node_i] = -1  # Ocean outlet
+                continue
+
+            current_elevation = self.node_elevations[node_i]
+            neighbors = self.mc.get_valid_node_neighbors(node_x, node_y)
+
+            best_target = -1
+            best_slope = -spillover_height  # Allow slight uphill flow
+
+            for neighbor_x, neighbor_y in neighbors:
+                neighbor_i = self.mc.get_node_index(neighbor_x, neighbor_y)
+                neighbor_elevation = self.node_elevations[neighbor_i]
+                slope = current_elevation - neighbor_elevation
+                new_dir = (neighbor_x - node_x, neighbor_y - node_y)
+                if new_dir == prev_dir:
+                    slope -= straight_count * self.mc.RiverSinuosityPenalty
+
+                if (slope > best_slope and
+                    not self.flow_directions[neighbor_i] == node_i):
+                    best_slope = slope
+                    best_target = neighbor_i
+
+            if new_dir == prev_dir:
+                straight_count += 1
+            else:
+                straight_count = 1
+                prev_dir = new_dir
+            self.flow_directions[node_i] = best_target
+
+        # Discover watersheds with comprehensive data collection
+        distances_from_outlets = self.discover_watersheds_with_distances_spillover()
+
+        return distances_from_outlets
+
+    def discover_watersheds_with_distances_spillover(self):
+        """Discover watersheds with comprehensive database initialization"""
+
+        # Initialize watershed database
+        self.watershed_database = {}
+        distances_from_outlets = {}
+
+        for start_node in xrange(len(self.flow_directions)):
+            if self.flow_directions[start_node] < 0 or self.watershed_ids[start_node] != -1:
+                continue
+
+            # Trace path with cycle detection
+            path = []
+            current_node = start_node
+
+            while (current_node != -1 and
+                current_node < len(self.flow_directions) and
+                self.watershed_ids[current_node] == -1 and
+                current_node not in path):
+
+                path.append(current_node)
+                current_node = self.flow_directions[current_node]
+
+            # Determine watershed ID and outlet
+            if current_node in path or current_node == -1:
+                # New sink or cycle - create new watershed
+                outlet_node = path[-1] if path else start_node
+                watershed_id = outlet_node  # Use outlet as ID
+
+                # Initialize comprehensive database entry
+                self.watershed_database[watershed_id] = {
+                    'outlet_node': outlet_node,
+                    'basin_size': 0,
+                    'max_distance': 0,
+                    'reaches_ocean': self.flow_directions[outlet_node] == -1,
+                    'continent_id': -1,  # Will be set when processing tiles
+                    'min_elevation': float('inf'),
+                    'max_elevation': float('-inf'),
+                    'nodes': [],
+                    'glacial': False,
+                    'river_network': None,
+                    'selected': False
+                }
+
+                outlet_distance = 0
+            else:
+                # Flows into existing watershed
+                watershed_id = self.watershed_ids[current_node]
+                outlet_distance = distances_from_outlets.get(current_node, 0) + 1
+
+            # Assign watershed ID and distances, update database
+            for i, node in enumerate(path):
+                self.watershed_ids[node] = watershed_id
+                node_distance = outlet_distance + len(path) - 1 - i
+                distances_from_outlets[node] = node_distance
+
+                # Update database if this is a new watershed
+                if watershed_id in self.watershed_database:
+                    data = self.watershed_database[watershed_id]
+                    data['basin_size'] += 1
+                    data['max_distance'] = max(data['max_distance'], node_distance)
+                    data['nodes'].append(node)
+
+                    elevation = self.node_elevations[node]
+                    data['min_elevation'] = min(data['min_elevation'], elevation)
+                    data['max_elevation'] = max(data['max_elevation'], elevation)
+
+        return distances_from_outlets
+
+    @profile
+    def process_tiles_for_watersheds(self):
+        """Process tiles to assign watersheds, set continent IDs, and initialize flows"""
+
+        for tile_i in xrange(self.mc.iNumPlots):
+            if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+                continue
+
+            tile_x = tile_i % self.mc.iNumPlotsX
+            tile_y = tile_i // self.mc.iNumPlotsX
+
+            # Find lowest neighboring node
+            surrounding_nodes = self.mc.get_node_intersecting_tiles(tile_x, tile_y)
+
+            if surrounding_nodes:
+                lowest_node = min(surrounding_nodes,
+                                key=lambda n: self.node_elevations[n] if n < len(self.node_elevations) else float('inf'))
+
+                # Assign watershed and update continent info
+                if lowest_node < len(self.watershed_ids):
+                    watershed_id = self.watershed_ids[lowest_node]
+
+                    # Update watershed database with continent ID
+                    if watershed_id in self.watershed_database:
+                        continent_id = self.em.continentID[tile_i]
+                        if self.watershed_database[watershed_id]['continent_id'] == -1:
+                            self.watershed_database[watershed_id]['continent_id'] = continent_id
+
+                    # Add rainfall to node
+                    if lowest_node < len(self.initial_node_flows):
+                        rainfall = self.RainfallMap[tile_i]
+                        self.initial_node_flows[lowest_node] += rainfall * self.mc.RiverFlowAccumulationFactor
+
+    @profile
+    def calculate_enhanced_flow_accumulation(self, distances_from_outlets):
+        """Enhanced flow accumulation with distance, elevation, and sinuosity bonuses"""
+
+        self.enhanced_flows = list(self.initial_node_flows)
+
+        # Add distance-based bonuses to encourage longer rivers
+        for node_i, distance in distances_from_outlets.items():
+            if distance > 0 and node_i < len(self.enhanced_flows):
+                distance_bonus = distance * self.mc.RiverDistanceFlowBonus
+                self.enhanced_flows[node_i] += distance_bonus
+
+        # Add elevation source bonuses
+        land_elevations = [elev for elev in self.node_elevations if elev > 0]
+        if land_elevations:
+            elevation_threshold = self.mc.find_value_from_percent(land_elevations, 75, descending=True)
+
+            for node_i in xrange(len(self.enhanced_flows)):
+                if self.node_elevations[node_i] > elevation_threshold:
+                    elevation_bonus = (self.node_elevations[node_i] - elevation_threshold) * self.mc.RiverElevationSourceBonus
+                    self.enhanced_flows[node_i] += elevation_bonus
+
+                # Check for nearby peaks/hills
+                intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+                for tile_i in intersecting_tiles:
+                    if tile_i >= 0 and tile_i < self.mc.iNumPlots:
+                        if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
+                            self.enhanced_flows[node_i] += self.mc.RiverPeakSourceBonus
+                        elif self.em.plotTypes[tile_i] == self.mc.PLOT_HILLS:
+                            self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
+
+        # Standard topological accumulation
+        sorted_nodes = [(self.node_elevations[i], i) for i in xrange(len(self.node_elevations))]
+        sorted_nodes.sort(reverse=True)
+
+        for elevation, node_i in sorted_nodes:
+            downstream_node = self.flow_directions[node_i]
+            if downstream_node >= 0 and downstream_node < len(self.enhanced_flows):
+                self.enhanced_flows[downstream_node] += self.enhanced_flows[node_i]
+
+    @profile
+    def allocate_rivers_strategically(self, target_rivers):
+        """Strategic river allocation with continent-aware category-based selection"""
+
+        if not self.watershed_database:
+            return []
+
+        # Filter eligible watersheds (minimum basin size)
+        eligible_watersheds = []
+        for watershed_id, data in self.watershed_database.items():
+            if data['basin_size'] >= self.mc.RiverMinBasinSize:
+                eligible_watersheds.append(watershed_id)
+
+        if not eligible_watersheds:
+            return []
+
+        # Calculate continent areas and allocate rivers proportionally
+        continent_areas = {}
+        total_land = 0
+
+        for watershed_id in eligible_watersheds:
+            data = self.watershed_database[watershed_id]
+            continent_id = data['continent_id']
+            continent_areas[continent_id] = continent_areas.get(continent_id, 0) + data['basin_size']
+            total_land += data['basin_size']
+
+        # Allocate rivers by continent using pure proportional allocation
+        continent_allocations = {}
+        allocated_total = 0
+
+        for continent_id, area in continent_areas.items():
+            if total_land > 0:
+                allocation = int(target_rivers * area / total_land)
+                continent_allocations[continent_id] = allocation
+                allocated_total += allocation
+
+        # Distribute any remaining rivers to largest continents
+        remaining = target_rivers - allocated_total
+        largest_continents = sorted(continent_areas.items(), key=lambda x: x[1], reverse=True)
+
+        for i in xrange(remaining):
+            if i < len(largest_continents):
+                continent_id = largest_continents[i][0]
+                continent_allocations[continent_id] += 1
+
+        # Select rivers by continent with category-based allocation
+        selected_watersheds = []
+
+        for continent_id, river_budget in continent_allocations.items():
+            if river_budget <= 0:
+                continue
+
+            # Get watersheds for this continent
+            continent_watersheds = [ws_id for ws_id in eligible_watersheds
+                                if self.watershed_database[ws_id]['continent_id'] == continent_id]
+
+            if not continent_watersheds:
+                continue
+
+            # Allocate budget by categories within continent
+            glacial_count = int(river_budget * self.mc.RiverGlacialCategoryWeight)
+            longest_count = int(river_budget * self.mc.RiverLengthCategoryWeight)  # 60% of remaining for longest
+            flow_count = river_budget - longest_count - glacial_count  # Rest for highest flow
+
+            # Select by categories
+            continent_selected = []
+
+            # Phase 1: Glacial rivers
+            glacial_selected = self.select_glacial_rivers_for_continent(continent_watersheds, glacial_count)
+            continent_selected.extend(glacial_selected)
+
+            # Phase 2: Longest rivers (from remaining watersheds)
+            remaining_watersheds = [ws_id for ws_id in continent_watersheds if ws_id not in continent_selected]
+            longest_selected = self.select_longest_rivers_for_continent(remaining_watersheds, longest_count)
+            continent_selected.extend(longest_selected)
+
+            # Phase 3: Highest flow potential (from remaining watersheds)
+            remaining_watersheds = [ws_id for ws_id in continent_watersheds if ws_id not in continent_selected]
+            flow_selected = self.select_highest_flow_rivers_for_continent(remaining_watersheds, flow_count)
+            continent_selected.extend(flow_selected)
+
+            selected_watersheds.extend(continent_selected)
+
+        # Mark selected watersheds in database
+        for watershed_id in selected_watersheds:
+            if watershed_id in self.watershed_database:
+                self.watershed_database[watershed_id]['selected'] = True
+
+        return selected_watersheds[:target_rivers]
+
+    def select_glacial_rivers_for_continent(self, continent_watersheds, glacial_count):
+        """Select glacial-fed rivers within a specific continent"""
+
+        if glacial_count <= 0:
+            return []
+
+        # Find watersheds with glacial potential (high elevation, cold temperature)
+        glacial_candidates = []
+
+        for watershed_id in continent_watersheds:
+            data = self.watershed_database[watershed_id]
+
+            # Check for peaks/cold areas in watershed
+            peak_count = 0
+            cold_area = 0
+
+            # Check nodes for glacial potential
+            for node_i in data['nodes']:
+                intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+                for tile_i in intersecting_tiles:
+                    if tile_i >= 0 and tile_i < self.mc.iNumPlots:
+                        if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
+                            peak_count += 1
+                        if self.TemperatureMap[tile_i] < 0.3:  # Cold threshold
+                            cold_area += 1
+
+            if peak_count > 0 and cold_area > 0:
+                # Score: peaks + cold area + distance + basin size
+                glacial_score = peak_count * 10 + cold_area + data['max_distance'] + data['basin_size'] * 0.5
+                glacial_candidates.append((glacial_score, watershed_id))
+
+        # Select best glacial watersheds
+        glacial_candidates.sort(reverse=True)
+        selected_glacial = []
+
+        for i in xrange(min(glacial_count, len(glacial_candidates))):
+            _, watershed_id = glacial_candidates[i]
+            selected_glacial.append(watershed_id)
+            self.watershed_database[watershed_id]['glacial'] = True
+
+        return selected_glacial
+
+    def select_longest_rivers_for_continent(self, continent_watersheds, longest_count):
+        """Select longest river systems within a specific continent"""
+
+        if longest_count <= 0:
+            return []
+
+        # Score by maximum distance from outlet
+        longest_candidates = []
+        for watershed_id in continent_watersheds:
+            data = self.watershed_database[watershed_id]
+            # Score: max distance + basin size bonus
+            score = data['max_distance'] * 2 + data['basin_size'] * 0.3
+            longest_candidates.append((score, watershed_id))
+
+        # Select longest rivers
+        longest_candidates.sort(reverse=True)
+        return [watershed_id for _, watershed_id in longest_candidates[:longest_count]]
+
+    def select_highest_flow_rivers_for_continent(self, continent_watersheds, flow_count):
+        """Select highest flow potential rivers within a specific continent"""
+
+        if flow_count <= 0:
+            return []
+
+        # Score by basin size (proxy for flow potential) + ocean bonus
+        flow_candidates = []
+        for watershed_id in continent_watersheds:
+            data = self.watershed_database[watershed_id]
+            # Score: basin size + ocean bonus + distance bonus
+            score = (data['basin_size'] * 2 +
+                    (15 if data['reaches_ocean'] else 0) +
+                    data['max_distance'] * 0.5)
+            flow_candidates.append((score, watershed_id))
+
+        # Select highest flow potential
+        flow_candidates.sort(reverse=True)
+        return [watershed_id for _, watershed_id in flow_candidates[:flow_count]]
+
+    @profile
+    def build_optimized_river_systems(self, selected_watersheds):
+        """Build optimized river systems with pre-built networks and custom thresholds"""
+
+        total_segments = 0
+
+        for watershed_id in selected_watersheds:
+            if watershed_id not in self.watershed_database:
+                continue
+
+            # Pre-build complete river network at low threshold
+            max_flow = max(self.enhanced_flows[node_i] for node_i in self.watershed_database[watershed_id]['nodes'])
+            low_threshold = max_flow * 0.3
+
+            complete_network = self.build_complete_river_network(watershed_id, low_threshold)
+
+            if not complete_network:
+                continue
+
+            # Find optimal threshold by testing filters on pre-built network
+            optimal_threshold = self.find_optimal_threshold_efficient(
+                complete_network, max_flow
+            )
+
+            # Filter network to optimal threshold
+            final_segments = [seg for seg in complete_network if seg[2] >= optimal_threshold]
+
+            # Handle glacial watersheds - ensure main trunk from glacier to outlet
+            if self.watershed_database[watershed_id]['glacial']:
+                final_segments = self.ensure_glacial_main_trunk(watershed_id, final_segments)
+
+            # Apply parallelism filtering
+            filtered_segments = self.filter_parallel_river_segments(final_segments)
+
+            # Place river segments
+            for from_node, to_node, flow in filtered_segments:
+                if self.place_validated_river_segment(from_node, to_node):
+                    total_segments += 1
+
+        print("Placed %d optimized river segments across %d watersheds" % (total_segments, len(selected_watersheds)))
+
+    def build_complete_river_network(self, watershed_id, threshold):
+        """Build complete river network for watershed at given threshold"""
+
+        outlet_node = self.watershed_database[watershed_id]['outlet_node']
+        river_segments = []
+        connected_nodes = {outlet_node}
+
+        # Find all qualifying nodes
+        candidates = []
+        for node_i in self.watershed_database[watershed_id]['nodes']:
+            if node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
+                candidates.append((self.enhanced_flows[node_i], node_i))
+
+        candidates.sort(reverse=True)
+
+        # Build connected tree from outlet upward
+        for flow, node_i in candidates:
+            downstream = self.flow_directions[node_i]
+            if downstream in connected_nodes and downstream != node_i:
+                river_segments.append((node_i, downstream, flow))
+                connected_nodes.add(node_i)
+
+        return river_segments
+
+    def find_optimal_threshold_efficient(self, complete_network, max_flow):
+        """Find optimal threshold using pre-built network"""
+
+        best_threshold = max_flow * 0.5
+        best_ratio = 0
+
+        # Test threshold ratios on pre-built network
+        for ratio in self.mc.RiverCustomThresholdRange:
+            test_threshold = max_flow * ratio
+            test_segments = [seg for seg in complete_network if seg[2] >= test_threshold]
+
+            if test_segments:
+                # Calculate main trunk length / total splits
+                main_trunk_length, total_splits = self.calculate_trunk_split_ratio(test_segments)
+
+                if total_splits > 0:
+                    length_to_split_ratio = float(main_trunk_length) / total_splits
+
+                    if length_to_split_ratio > best_ratio:
+                        best_ratio = length_to_split_ratio
+                        best_threshold = test_threshold
+
+        return best_threshold
+
+    def calculate_trunk_split_ratio(self, river_segments):
+        """Calculate main trunk length and total splits"""
+
+        if not river_segments:
+            return 0, 0
+
+        # Build connectivity map
+        downstream_map = {}
+        upstream_map = {}
+
+        for from_node, to_node, flow in river_segments:
+            downstream_map[from_node] = to_node
+            if to_node not in upstream_map:
+                upstream_map[to_node] = []
+            upstream_map[to_node].append(from_node)
+
+        # Find main trunk (highest flow path from any source to outlet)
+        outlet_node = None
+        for from_node, to_node, flow in river_segments:
+            if to_node not in downstream_map:  # This is the outlet
+                outlet_node = to_node
+                break
+
+        if outlet_node is None:
+            return 0, 0
+
+        # Trace main trunk backward from outlet
+        main_trunk_length = 0
+        current_node = outlet_node
+
+        while current_node in upstream_map:
+            upstream_nodes = upstream_map[current_node]
+            if not upstream_nodes:
+                break
+
+            # Choose highest flow upstream node
+            best_upstream = max(upstream_nodes,
+                            key=lambda n: next(flow for from_n, to_n, flow in river_segments
+                                                if from_n == n and to_n == current_node))
+
+            main_trunk_length += 1
+            current_node = best_upstream
+
+        # Count total splits (nodes with multiple upstream connections)
+        total_splits = sum(1 for upstream_list in upstream_map.values() if len(upstream_list) > 1)
+
+        return main_trunk_length, max(1, total_splits)
+
+    def ensure_glacial_main_trunk(self, watershed_id, river_segments):
+        """Ensure glacial watersheds have main trunk from glacier to outlet"""
+
+        # Find glacier tile in watershed
+        glacier_node = None
+        max_glacial_score = 0
+
+        for node_i in self.watershed_database[watershed_id]['nodes']:
+            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+            glacial_score = 0
+
+            for tile_i in intersecting_tiles:
+                if tile_i >= 0 and tile_i < self.mc.iNumPlots:
+                    if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
+                        glacial_score += 10
+                    if self.TemperatureMap[tile_i] < 0.3:
+                        glacial_score += 5
+
+            if glacial_score > max_glacial_score:
+                max_glacial_score = glacial_score
+                glacier_node = node_i
+
+        if glacier_node is None:
+            return river_segments
+
+        # Trace path from glacier to outlet and ensure it's included
+        outlet_node = self.watershed_database[watershed_id]['outlet_node']
+        main_trunk_path = self.trace_path_between_nodes(glacier_node, outlet_node)
+
+        # Add main trunk segments to river system
+        enhanced_segments = list(river_segments)
+
+        for i in xrange(len(main_trunk_path) - 1):
+            from_node = main_trunk_path[i]
+            to_node = main_trunk_path[i + 1]
+
+            # Check if segment already exists
+            segment_exists = any(seg[0] == from_node and seg[1] == to_node for seg in enhanced_segments)
+
+            if not segment_exists:
+                flow = self.enhanced_flows[from_node] if from_node < len(self.enhanced_flows) else 1.0
+                enhanced_segments.append((from_node, to_node, flow))
+
+        return enhanced_segments
+
+    def trace_path_between_nodes(self, start_node, end_node):
+        """Trace path from start to end node following flow directions"""
+
+        path = [start_node]
+        current_node = start_node
+        visited = set()
+
+        while current_node != end_node and current_node not in visited:
+            visited.add(current_node)
+
+            if current_node >= len(self.flow_directions):
+                break
+
+            next_node = self.flow_directions[current_node]
+            if next_node == -1:
+                break
+
+            path.append(next_node)
+            current_node = next_node
+
+        return path
+
+    def filter_parallel_river_segments(self, river_segments):
+        """Remove excessively parallel river segments"""
+
+        if len(river_segments) <= 2:
+            return river_segments
+
+        # Group segments by approximate direction and proximity
+        parallel_groups = []
+
+        for segment in river_segments:
+            from_node, to_node, flow = segment
+            from_x, from_y = self.mc.get_node_coords(from_node)
+            to_x, to_y = self.mc.get_node_coords(to_node)
+
+            # Calculate direction
+            dx = to_x - from_x
+            dy = to_y - from_y
+
+            # Handle wrapping
+            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
+                dx = dx - int(math.copysign(self.mc.iNumPlotsX, dx))
+            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
+                dy = dy - int(math.copysign(self.mc.iNumPlotsY, dy))
+
+            # Find matching group or create new one
+            placed = False
+            for group in parallel_groups:
+                group_segment = group[0]
+                group_from, group_to, _ = group_segment
+                group_from_x, group_from_y = self.mc.get_node_coords(group_from)
+                group_to_x, group_to_y = self.mc.get_node_coords(group_to)
+
+                group_dx = group_to_x - group_from_x
+                group_dy = group_to_y - group_from_y
+
+                # Check if directions match and segments are close
+                if (dx == group_dx and dy == group_dy and
+                    abs(from_x - group_from_x) <= self.mc.RiverParallelismDistance and
+                    abs(from_y - group_from_y) <= self.mc.RiverParallelismDistance):
+                    group.append(segment)
+                    placed = True
+                    break
+
+            if not placed:
+                parallel_groups.append([segment])
+
+        # Keep best segments from each parallel group
+        filtered_segments = []
+        for group in parallel_groups:
+            if len(group) <= 2:
+                filtered_segments.extend(group)
+            else:
+                # Keep two highest flow segments
+                group.sort(key=lambda x: x[2], reverse=True)
+                filtered_segments.extend(group[:2])
+
+        return filtered_segments
+
+    @profile
+    def generate_advanced_lake_system(self, selected_watersheds):
+        """Generate lakes from basin scoring with automatic and strategic placement"""
+
+        placed_lakes = []
+
+        # Phase 1: Automatic lakes for selected river watersheds (endorheic only)
+        for watershed_id in selected_watersheds:
+            if watershed_id in self.watershed_database:
+                data = self.watershed_database[watershed_id]
+                if not data['reaches_ocean']:  # Endorheic river watershed
+                    lake = self.create_watershed_lake(watershed_id, automatic=True)
+                    if lake:
+                        placed_lakes.append(lake)
+
+        # Phase 2: Strategic lakes from remaining endorheic basins
+        endorheic_candidates = []
+        for watershed_id, data in self.watershed_database.items():
+            if (not data['reaches_ocean'] and
+                not data['selected'] and
+                data['basin_size'] >= 3):  # Minimum size for strategic lakes
+
+                score = self.score_basin_for_lake(watershed_id, data)
+                if score > 0:
+                    endorheic_candidates.append((score, watershed_id))
+
+        # Select best endorheic basins for strategic lakes
+        endorheic_candidates.sort(reverse=True)
+        target_strategic = max(0, self.mc.LakeTargetCount - len(placed_lakes))
+
+        for i in xrange(min(target_strategic, len(endorheic_candidates))):
+            score, watershed_id = endorheic_candidates[i]
+            lake = self.create_watershed_lake(watershed_id, automatic=False)
+            if lake:
+                placed_lakes.append(lake)
+
+        # Phase 3: Attempt ocean connections for large lakes
+        for lake in placed_lakes:
+            if lake['final_size'] >= 4:  # Only try connecting larger lakes
+                self.attempt_ocean_connection(lake)
+
+        print("Generated %d lakes (%d automatic, %d strategic)" %
+            (len(placed_lakes),
+            sum(1 for lake in placed_lakes if lake.get('automatic', False)),
+            sum(1 for lake in placed_lakes if not lake.get('automatic', False))))
+
+        return {'count': len(placed_lakes), 'lakes': placed_lakes}
+
+    def score_basin_for_lake(self, watershed_id, watershed_data):
+        """Score an endorheic basin for lake placement and size"""
+
+        score = 0
+
+        # Base score from basin size
+        score += watershed_data['basin_size'] * 3
+
+        # Distance score (longer basins = better lakes)
+        score += watershed_data['max_distance'] * 2
+
+        # Elevation relief (deeper basins = better lakes)
+        elevation_relief = watershed_data['max_elevation'] - watershed_data['min_elevation']
+        score += elevation_relief / 10.0  # Convert meters to reasonable scale
+
+        # Average rainfall in basin (check nodes)
+        total_rainfall = 0
+        valid_nodes = 0
+
+        for node_i in watershed_data['nodes']:
+            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+            for tile_i in intersecting_tiles:
+                if tile_i >= 0 and tile_i < self.mc.iNumPlots:
+                    total_rainfall += self.RainfallMap[tile_i]
+                    valid_nodes += 1
+
+        if valid_nodes > 0:
+            avg_rainfall = total_rainfall / valid_nodes
+            if avg_rainfall >= self.mc.LakeRainfallRequirement:
+                score += avg_rainfall * 20
+            else:
+                return 0  # Insufficient rainfall
+
+        return score
+
+    def create_watershed_lake(self, watershed_id, automatic=False):
+        """Create a lake in the specified watershed"""
+
+        data = self.watershed_database[watershed_id]
+
+        # Find lowest elevation point in watershed (lake center)
+        center_tile = -1
+        lowest_elevation = float('inf')
+
+        for node_i in data['nodes']:
+            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+            for tile_i in intersecting_tiles:
+                if (tile_i >= 0 and tile_i < self.mc.iNumPlots and
+                    self.em.plotTypes[tile_i] != self.mc.PLOT_OCEAN):
+
+                    elevation = self.em.aboveSeaLevelMap[tile_i]
+                    if elevation < lowest_elevation:
+                        lowest_elevation = elevation
+                        center_tile = tile_i
+
+        if center_tile == -1:
+            return None
+
+        # Calculate lake size based on basin characteristics
+        if automatic:
+            # Automatic lakes (river watersheds) - moderate size
+            target_size = min(6, max(1, int(data['basin_size'] / 12)))
+        else:
+            # Strategic lakes - size based on score
+            score = self.score_basin_for_lake(watershed_id, data)
+            target_size = min(9, max(1, int(score / 15)))
+
+        # Grow lake from center
+        lake_tiles = self.grow_lake_from_center_basin(center_tile, target_size)
+
+        return {
+            'watershed_id': watershed_id,
+            'center_tile': center_tile,
+            'final_tiles': lake_tiles,
+            'final_size': len(lake_tiles),
+            'automatic': automatic
+        }
+
+    def grow_lake_from_center_basin(self, center_tile, target_size):
+        """Grow a lake outward from center tile using elevation preference"""
+
+        lake_tiles = [center_tile]
+        self.em.plotTypes[center_tile] = self.mc.PLOT_OCEAN
+
+        while len(lake_tiles) < target_size:
+            # Find candidates for expansion (neighbors of existing lake tiles)
+            candidates = []
+
+            for lake_tile in lake_tiles:
+                for dir in xrange(1, 9):  # All 8 directions
+                    neighbor = self.mc.neighbours[lake_tile][dir]
+
+                    if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
+                        neighbor not in lake_tiles and
+                        self.em.plotTypes[neighbor] != self.mc.PLOT_OCEAN):
+
+                        # Score expansion candidate
+                        elevation = self.em.aboveSeaLevelMap[neighbor]
+
+                        # Always grow to higher elevation (lakes fill up)
+                        # Prefer next lowest elevation
+                        min_lake_elevation = min(self.em.aboveSeaLevelMap[lt] for lt in lake_tiles)
+                        elevation_score = 1000 - (elevation - min_lake_elevation)  # Lower is better
+
+                        # Ocean proximity bonus
+                        ocean_distance = self.get_distance_to_ocean(neighbor)
+                        ocean_score = max(0, self.mc.LakeOceanConnectionRange - ocean_distance)
+
+                        total_score = (elevation_score * self.mc.LakeElevationWeight +
+                                    ocean_score * self.mc.LakeOceanProximityWeight)
+
+                        candidates.append((total_score, neighbor))
+
+            if not candidates:
+                break
+
+            # Add best candidate
+            candidates.sort(reverse=True)
+            best_candidate = candidates[0][1]
+
+            lake_tiles.append(best_candidate)
+            self.em.plotTypes[best_candidate] = self.mc.PLOT_OCEAN
+
+        return lake_tiles
+
+    def get_distance_to_ocean(self, tile_i):
+        """Get distance from tile to nearest ocean"""
+
+        if hasattr(self, 'oceanDistanceMap') and tile_i < len(self.oceanDistanceMap):
+            return self.oceanDistanceMap[tile_i]
+
+        # Simple BFS search
+        queue = deque([(tile_i, 0)])
+        visited = {tile_i}
+
+        while queue:
+            current_tile, distance = queue.popleft()
+
+            if distance > self.mc.LakeOceanConnectionRange:
+                break
+
+            for dir in xrange(1, 5):  # Cardinal directions only
+                neighbor = self.mc.neighbours[current_tile][dir]
+
+                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
+                    neighbor not in visited):
+
+                    if self.em.plotTypes[neighbor] == self.mc.PLOT_OCEAN:
+                        return distance + 1
+
+                    visited.add(neighbor)
+                    queue.append((neighbor, distance + 1))
+
+        return self.mc.LakeOceanConnectionRange + 1
+
+    def attempt_ocean_connection(self, lake):
+        """Attempt to connect a lake to the ocean if beneficial"""
+
+        # Find closest ocean from lake edge
+        best_path = None
+        min_distance = float('inf')
+
+        for lake_tile in lake['final_tiles']:
+            for dir in xrange(1, 5):  # Cardinal directions only
+                neighbor = self.mc.neighbours[lake_tile][dir]
+
+                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
+                    self.em.plotTypes[neighbor] != self.mc.PLOT_OCEAN):
+
+                    path = self.find_path_to_ocean(neighbor, 3)  # Short connections only
+
+                    if path and len(path) < min_distance:
+                        min_distance = len(path)
+                        best_path = path
+
+        # Create connection if path is very short
+        if best_path and len(best_path) <= 2:
+            for tile_i in best_path:
+                # Don't remove peaks for connections
+                if self.em.plotTypes[tile_i] != self.mc.PLOT_PEAK:
+                    self.em.plotTypes[tile_i] = self.mc.PLOT_OCEAN
+
+            lake['connected_to_ocean'] = True
+
+    def find_path_to_ocean(self, start_tile, max_distance):
+        """Find shortest path from tile to ocean"""
+
+        queue = deque([(start_tile, [])])
+        visited = {start_tile}
+
+        while queue:
+            current_tile, path = queue.popleft()
+
+            if len(path) >= max_distance:
+                continue
+
+            for dir in xrange(1, 5):  # Cardinal directions only
+                neighbor = self.mc.neighbours[current_tile][dir]
+
+                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
+                    neighbor not in visited):
+
+                    new_path = path + [neighbor]
+
+                    if self.em.plotTypes[neighbor] == self.mc.PLOT_OCEAN:
+                        return new_path
+
+                    visited.add(neighbor)
+                    queue.append((neighbor, new_path))
+
+        return None
+
+    def place_validated_river_segment(self, from_node, to_node):
+        """
+        Place a river segment with proper directional validation.
+        Fixed the southward flow bug.
+        """
+        from_x, from_y = self.mc.get_node_coords(from_node)
+        to_x, to_y = self.mc.get_node_coords(to_node)
+
+        # Calculate flow direction
+        dx = to_x - from_x
+        dy = to_y - from_y
+
+        # Handle wrapping
+        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
+            dx = dx - int(math.copysign(self.mc.iNumPlotsX, dx))
+        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
+            dy = dy - int(math.copysign(self.mc.iNumPlotsY, dy))
+
+        # Place river on appropriate tile edge with proper validation
+        if abs(dx) > abs(dy):  # Primarily horizontal flow
+            if dx > 0:  # Eastward flow: place north_of_rivers on to_tile
+                tile_x = to_x
+                tile_y = to_y
+                if self.is_valid_north_river_placement(tile_x, tile_y):
+                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+                    if tile_i < len(self.north_of_rivers):
+                        self.north_of_rivers[tile_i] = True
+                        return True
+            else:  # Westward flow: place north_of_rivers on from_tile
+                tile_x = from_x
+                tile_y = from_y
+                if self.is_valid_north_river_placement(tile_x, tile_y):
+                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+                    if tile_i < len(self.north_of_rivers):
+                        self.north_of_rivers[tile_i] = True
+                        return True
+        else:  # Primarily vertical flow
+            if dy > 0:  # Northward flow: place west_of_rivers on from_tile
+                tile_x = from_x
+                tile_y = from_y
+                if self.is_valid_west_river_placement(tile_x, tile_y):
+                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+                    if tile_i < len(self.west_of_rivers):
+                        self.west_of_rivers[tile_i] = True
+                        return True
+            else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
+                tile_x = from_x  # Fixed: was to_y in original code
+                tile_y = to_y
+                if self.is_valid_west_river_placement(tile_x, tile_y):
+                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+                    if tile_i < len(self.west_of_rivers):
+                        self.west_of_rivers[tile_i] = True
+                        return True
+
+        return False
+
+    def is_valid_west_river_placement(self, tile_x, tile_y):
+        """
+        Check if a west_of_rivers (vertical river) can be placed at the specified tile.
+        For west rivers: eastern tile cannot be ocean, and only one of NE/SE can be ocean.
+        """
+        # Check bounds
+        if (tile_x < 0 or tile_x >= self.mc.iNumPlotsX or
+            tile_y < 0 or tile_y >= self.mc.iNumPlotsY):
+            return False
+
+        tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+
+        # Don't place rivers on water tiles
+        if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+            return False
+
+        # Check eastern tile (critical constraint)
+        east_neighbor = self.mc.neighbours[tile_i][self.mc.E]
+        if (east_neighbor != -1 and east_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[east_neighbor] == self.mc.PLOT_OCEAN):
+            return False
+
+        # Check NE and SE tiles - only one can be ocean
+        ne_neighbor = self.mc.neighbours[tile_i][self.mc.NE]
+        se_neighbor = self.mc.neighbours[tile_i][self.mc.SE]
+
+        ocean_count = 0
+
+        if (ne_neighbor != -1 and ne_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[ne_neighbor] == self.mc.PLOT_OCEAN):
+            ocean_count += 1
+
+        if (se_neighbor != -1 and se_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[se_neighbor] == self.mc.PLOT_OCEAN):
+            ocean_count += 1
+
+        # Allow at most one ocean neighbor in NE/SE
+        return ocean_count <= 1
+
+    def is_valid_north_river_placement(self, tile_x, tile_y):
+        """
+        Check if a north_of_rivers (horizontal river) can be placed at the specified tile.
+        For north rivers: southern tile cannot be ocean, and only one of SE/SW can be ocean.
+        """
+        # Check bounds
+        if (tile_x < 0 or tile_x >= self.mc.iNumPlotsX or
+            tile_y < 0 or tile_y >= self.mc.iNumPlotsY):
+            return False
+
+        tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+
+        # Don't place rivers on water tiles
+        if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+            return False
+
+        # Check southern tile (critical constraint)
+        south_neighbor = self.mc.neighbours[tile_i][self.mc.S]
+        if (south_neighbor != -1 and south_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[south_neighbor] == self.mc.PLOT_OCEAN):
+            return False
+
+        # Check SE and SW tiles - only one can be ocean
+        se_neighbor = self.mc.neighbours[tile_i][self.mc.SE]
+        sw_neighbor = self.mc.neighbours[tile_i][self.mc.SW]
+
+        ocean_count = 0
+
+        if (se_neighbor != -1 and se_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[se_neighbor] == self.mc.PLOT_OCEAN):
+            ocean_count += 1
+
+        if (sw_neighbor != -1 and sw_neighbor < self.mc.iNumPlots and
+            self.em.plotTypes[sw_neighbor] == self.mc.PLOT_OCEAN):
+            ocean_count += 1
+
+        # Allow at most one ocean neighbor in SE/SW
+        return ocean_count <= 1
+
+    def scale_river_targets_for_map_size(self, standard_rivers):
+        """Scale river and glacier targets based on actual map size vs standard."""
+        standard_land_tiles = 144 * 96 * 0.38  # Standard map land area
+        actual_land_tiles = sum(1 for i in xrange(self.mc.iNumPlots)
+                            if self.em.plotTypes[i] != self.mc.PLOT_OCEAN)
+
+        if actual_land_tiles == 0:
+            return standard_rivers
+
+        scale_factor = float(actual_land_tiles) / standard_land_tiles
+
+        # Scale with square root to prevent excessive rivers on huge maps
+        scale_factor = math.sqrt(scale_factor)
+
+        scaled_rivers = max(5, int(standard_rivers * scale_factor))
+
+        return scaled_rivers
+
+    def add_lake_moisture(self):
+        """
+        Add moisture effects from newly created lakes.
+        Placeholder method for next discussion.
+        """
+        # TODO: Implement lake moisture effects
+        # Could use the watershed database to identify new lake locations
+        # and their surrounding tiles for moisture distribution
         pass

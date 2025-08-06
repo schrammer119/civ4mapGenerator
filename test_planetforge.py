@@ -51,7 +51,7 @@ if True:
         ## Plots
 
         # Create visualizations
-        Z = np.array(em.continentID).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+        Z = np.array(em.plateID).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
         U = np.array(em.continentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
         V = np.array(em.continentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
@@ -124,7 +124,7 @@ if True:
         plt.tight_layout()
 
         # Create land-only elevation map with sea level applied
-        elev = [-1000.0 if em.plotTypes[i]==mc.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
+        elev = [-2000.0 if em.plotTypes[i]==mc.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
 
         Z = np.array(elev).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
         iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
@@ -136,7 +136,28 @@ if True:
                 i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
         ax.plot([i % mc.iNumPlotsX for i in iHills], [
                 i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='none', ms=8)
-        ax.set_title('Final Map with Plot Types')
+
+        # Add river visualization
+        north_of_rivers = cm.north_of_rivers
+        west_of_rivers = cm.west_of_rivers
+
+        # Draw E/W rivers (horizontal lines on south edges of tiles)
+        for tile_i in range(mc.iNumPlots):
+                if north_of_rivers[tile_i]:
+                        x = tile_i % mc.iNumPlotsX
+                        y = tile_i // mc.iNumPlotsX
+                        # Horizontal line on south edge of tile
+                        ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5], 'blue', linewidth=2, alpha=0.8)
+
+        # Draw N/S rivers (vertical lines on east edges of tiles)
+        for tile_i in range(mc.iNumPlots):
+                if west_of_rivers[tile_i]:
+                        x = tile_i % mc.iNumPlotsX
+                        y = tile_i // mc.iNumPlotsX
+                        # Vertical line on east edge of tile
+                        ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5], 'blue', linewidth=2, alpha=0.8)
+
+        ax.set_title('Final Map with Plot Types and Rivers')
         fig.colorbar(p)
 
         # Create landform background data
@@ -209,8 +230,8 @@ if True:
         q3 = ax3.streamplot(X, Y, U_wind, V_wind,
                         color=wind_magnitude,           # Color by speed
                         cmap='plasma',        # Colormap
-                        density=3,             # Density of streamlines
-                        # linewidth=2,           # Line thickness
+                        density=4,             # Density of streamlines
+                        linewidth=0.5,           # Line thickness
                         # arrowsize=1.5,         # Arrow size
                         arrowstyle='->')       # Arrow style
 
@@ -233,5 +254,52 @@ if True:
         fig.colorbar(p4, ax=ax4, label='Rainfall')
 
         plt.tight_layout()
+
+        # node_elevations
+        Z = np.array(cm.node_elevations).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
+        ax.set_title('node_elevations')
+        fig.colorbar(p)
+
+        # flow_directions
+        Z = np.array(cm.flow_directions).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
+        ax.set_title('flow_directions')
+        fig.colorbar(p)
+
+        ids = []
+        for id in cm.watershed_ids:
+                if id == -1 or cm.watershed_database[id]['selected']:
+                        ids.append(id)
+                else:
+                        ids.append(mc.iNumPlots + 1)
+
+        # watershed_ids
+        Z = np.array(ids).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
+        ax.set_title('watershed_ids')
+        fig.colorbar(p)
+
+        # initial_node_flows
+        Z = np.array(cm.initial_node_flows).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
+        ax.set_title('initial_node_flows')
+        fig.colorbar(p)
+
+        # enhanced_flows
+        Z = np.array(cm.enhanced_flows).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+        fig, ax = plt.subplots()
+        p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
+        ax.set_title('enhanced_flows')
+        fig.colorbar(p)
 
         plt.show()

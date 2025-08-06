@@ -26,8 +26,9 @@ This project creates a Civilization IV map generator (`PlanetForge.py`) that use
 
 ## TODO list:
 
-    - Fix rainfall
-    - add river/lake generation
+    - Fix above sea level map
+    - rain from dried up lakes first?
+    - fix river/lake generation
     - terrain map generation (ALL)
     - there is some sort of intermitent infinite loop in the rainfall generation (maybe, but somewhere)
 
