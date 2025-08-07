@@ -1324,12 +1324,15 @@ class ClimateMap:
         # Start with base node elevations
 
         for node_i in xrange(self.mc.iNumPlots):
+            if self.em.plotTypes[node_i] == self.mc.PLOT_OCEAN:
+                # quick exit for NW ocean tiles (leave elev at 0.0)
+                continue
             node_x, node_y = self.mc.get_node_coords(node_i)
 
             # Node (x,y) is intersection of tiles (x,y), (x+1,y), (x+1,y-1), (x,y-1)
-            tile_coords = [(0, 0), (1, 0), (1, -1), (0, -1)]
-            total_elevation = 0.0
-            count = 0
+            tile_coords = [(1, 0), (1, -1), (0, -1)]
+            total_elevation = self.em.aboveSeaLevelMap[node_i]
+            count = 1
 
             for dx, dy in tile_coords:
                 tx = node_x + dx
@@ -1383,7 +1386,7 @@ class ClimateMap:
             intersecting_tiles = self.mc.get_node_intersecting_tiles(node_x, node_y)
             is_outlet = False
             for tile_i in intersecting_tiles:
-                if (tile_i >= 0 and tile_i < self.mc.iNumPlots and
+                if (0 <= tile_i < self.mc.iNumPlots and
                     self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN):
                     is_outlet = True
                     break
@@ -1438,10 +1441,9 @@ class ClimateMap:
             path = []
             current_node = start_node
 
-            while (current_node != -1 and
-                current_node < len(self.flow_directions) and
-                self.watershed_ids[current_node] == -1 and
-                current_node not in path):
+            while (0 <= current_node < len(self.flow_directions) and
+                   self.watershed_ids[current_node] == -1 and
+                   current_node not in path):
 
                 path.append(current_node)
                 current_node = self.flow_directions[current_node]
@@ -1499,19 +1501,27 @@ class ClimateMap:
         for tile_i in xrange(self.mc.iNumPlots):
             if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
                 continue
+            ocean_neighbour = False
+            for dir in range(1,9):
+                neighbour_i = self.mc.neighbours[tile_i][dir]
+                if 0 <= neighbour_i < self.mc.iNumPlots and self.em.plotTypes[neighbour_i] == self.mc.PLOT_OCEAN:
+                    ocean_neighbour = True
+                    break
+            if ocean_neighbour:
+                continue
 
             tile_x = tile_i % self.mc.iNumPlotsX
             tile_y = tile_i // self.mc.iNumPlotsX
 
             # Find lowest neighboring node
-            surrounding_nodes = self.mc.get_node_intersecting_tiles(tile_x, tile_y)
+            surrounding_nodes = self.mc.get_tile_surrounding_nodes(tile_x, tile_y)
 
             if surrounding_nodes:
                 lowest_node = min(surrounding_nodes,
-                                key=lambda n: self.node_elevations[n] if n < len(self.node_elevations) else float('inf'))
+                                key=lambda n: self.node_elevations[n] if 0 <= n < len(self.node_elevations) else float('inf'))
 
                 # Assign watershed and update continent info
-                if lowest_node < len(self.watershed_ids):
+                if 0 <= lowest_node < len(self.watershed_ids):
                     watershed_id = self.watershed_ids[lowest_node]
                     self.tile_watershed_ids[tile_i] = watershed_id
 
@@ -1522,7 +1532,7 @@ class ClimateMap:
                             self.watershed_database[watershed_id]['continent_id'] = continent_id
 
                     # Add rainfall to node
-                    if lowest_node < len(self.initial_node_flows):
+                    if 0 <= lowest_node < len(self.initial_node_flows):
                         rainfall = self.RainfallMap[tile_i]
                         self.initial_node_flows[lowest_node] += rainfall * self.mc.RiverFlowAccumulationFactor
 
@@ -1534,7 +1544,7 @@ class ClimateMap:
 
         # Add distance-based bonuses to encourage longer rivers
         for node_i, distance in distances_from_outlets.items():
-            if distance > 0 and node_i < len(self.enhanced_flows):
+            if distance > 0 and 0 <= node_i < len(self.enhanced_flows):
                 distance_bonus = distance * self.mc.RiverDistanceFlowBonus
                 self.enhanced_flows[node_i] += distance_bonus
 
@@ -1563,7 +1573,7 @@ class ClimateMap:
 
         for elevation, node_i in sorted_nodes:
             downstream_node = self.flow_directions[node_i]
-            if downstream_node >= 0 and downstream_node < len(self.enhanced_flows):
+            if 0 <= downstream_node < len(self.enhanced_flows):
                 self.enhanced_flows[downstream_node] += self.enhanced_flows[node_i]
 
     @profile
@@ -1787,7 +1797,7 @@ class ClimateMap:
         # Find all qualifying nodes
         candidates = []
         for node_i in self.watershed_database[watershed_id]['nodes']:
-            if node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
+            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
                 candidates.append((self.enhanced_flows[node_i], node_i))
 
         candidates.sort(reverse=True)
@@ -1913,7 +1923,7 @@ class ClimateMap:
             segment_exists = any(seg[0] == from_node and seg[1] == to_node for seg in enhanced_segments)
 
             if not segment_exists:
-                flow = self.enhanced_flows[from_node] if from_node < len(self.enhanced_flows) else 1.0
+                flow = self.enhanced_flows[from_node] if 0 <= from_node < len(self.enhanced_flows) else 1.0
                 enhanced_segments.append((from_node, to_node, flow))
 
         return enhanced_segments
@@ -2174,7 +2184,7 @@ class ClimateMap:
     def get_distance_to_ocean(self, tile_i):
         """Get distance from tile to nearest ocean"""
 
-        if hasattr(self, 'oceanDistanceMap') and tile_i < len(self.oceanDistanceMap):
+        if hasattr(self, 'oceanDistanceMap') and 0 <= tile_i < len(self.oceanDistanceMap):
             return self.oceanDistanceMap[tile_i]
 
         # Simple BFS search
@@ -2283,7 +2293,7 @@ class ClimateMap:
                 tile_y = to_y
                 if self.is_valid_north_river_placement(tile_x, tile_y):
                     tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if tile_i < len(self.north_of_rivers):
+                    if 0 <= tile_i < len(self.north_of_rivers):
                         self.north_of_rivers[tile_i] = True
                         return True
             else:  # Westward flow: place north_of_rivers on from_tile
@@ -2291,7 +2301,7 @@ class ClimateMap:
                 tile_y = from_y
                 if self.is_valid_north_river_placement(tile_x, tile_y):
                     tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if tile_i < len(self.north_of_rivers):
+                    if 0 <= tile_i < len(self.north_of_rivers):
                         self.north_of_rivers[tile_i] = True
                         return True
         else:  # Primarily vertical flow
@@ -2300,7 +2310,7 @@ class ClimateMap:
                 tile_y = from_y
                 if self.is_valid_west_river_placement(tile_x, tile_y):
                     tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if tile_i < len(self.west_of_rivers):
+                    if 0 <= tile_i < len(self.west_of_rivers):
                         self.west_of_rivers[tile_i] = True
                         return True
             else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
@@ -2308,7 +2318,7 @@ class ClimateMap:
                 tile_y = to_y
                 if self.is_valid_west_river_placement(tile_x, tile_y):
                     tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if tile_i < len(self.west_of_rivers):
+                    if 0 <= tile_i < len(self.west_of_rivers):
                         self.west_of_rivers[tile_i] = True
                         return True
 

@@ -614,6 +614,33 @@ class MapConfig:
 
         return intersecting_tiles
 
+    def get_tile_surrounding_nodes(self, tile_x, tile_y):
+        """Get the 4 tiles that intersect at this node position"""
+        surrounding_nodes = []
+
+        # Tile (x,y) is surrounded by nodes (x,y), (x-1,y), (x-1,y+1), (x,y+1)
+        node_coords = [(0, 0), (-1, 0), (-1, 1), (0, 1)]
+
+        for dx, dy in node_coords:
+            nx = tile_x + dx
+            ny = tile_y + dy
+
+            # Handle wrapping and bounds
+            if self.wrapX:
+                nx = nx % self.iNumPlotsX
+            elif nx < 0 or nx >= self.iNumPlotsX:
+                continue
+
+            if self.wrapY:
+                ny = ny % self.iNumPlotsY
+            elif ny < 0 or ny >= self.iNumPlotsY:
+                continue
+
+            node_index = ny * self.iNumPlotsX + nx
+            surrounding_nodes.append(node_index)
+
+        return surrounding_nodes
+
     def get_node_intersecting_tiles_from_index(self, node_index):
         """Get intersecting tiles from node index"""
         node_x, node_y = self.get_node_coords(node_index)
