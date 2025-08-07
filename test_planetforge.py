@@ -274,7 +274,7 @@ if True:
         if id == -1 or cm.watershed_database[id]['selected']:
             tile_ids.append(id)
         else:
-            tile_ids.append(mc.iNumPlots + 1)
+            tile_ids.append(mc.iNumPlots + 2000)
 
     # watershed_ids with flow direction vectors
     Z = np.array(tile_ids).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
@@ -311,7 +311,7 @@ if True:
             if watershed_id == -1 or (watershed_id in cm.watershed_database and cm.watershed_database[watershed_id]['selected']):
                 arrow_colors[y_i, x_i] = watershed_id
             else:
-                arrow_colors[y_i, x_i] = mc.iNumPlots + 1
+                arrow_colors[y_i, x_i] = mc.iNumPlots + 2000
 
     # Add flow direction quiver plot
     # Scale=1 with scale_units='xy' makes arrow length equal to 1 tile width

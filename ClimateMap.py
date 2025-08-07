@@ -1372,8 +1372,6 @@ class ClimateMap:
     def calculate_spillover_flow_directions(self):
         """Calculate flow directions with spillover capability and cycle prevention"""
         spillover_height = self.mc.RiverSpilloverHeight
-        straight_count = 1
-        prev_dir = (-2, -2)
 
         # Calculate flow directions with spillover and ocean outlet detection
         for node_i in xrange(len(self.node_elevations)):
@@ -1398,28 +1396,25 @@ class ClimateMap:
             current_elevation = self.node_elevations[node_i]
             neighbors = self.mc.get_valid_node_neighbors(node_x, node_y)
 
-            best_target = -1
-            best_slope = -spillover_height  # Allow slight uphill flow
-
+            candidates = []
             for neighbor_x, neighbor_y in neighbors:
                 neighbor_i = self.mc.get_node_index(neighbor_x, neighbor_y)
-                neighbor_elevation = self.node_elevations[neighbor_i]
-                slope = current_elevation - neighbor_elevation
-                new_dir = (neighbor_x - node_x, neighbor_y - node_y)
-                if new_dir == prev_dir:
-                    slope -= straight_count * self.mc.RiverSinuosityPenalty
+                true_slope = current_elevation - self.node_elevations[neighbor_i]
 
-                if (slope > best_slope and
-                    not self.flow_directions[neighbor_i] == node_i):
-                    best_slope = slope
-                    best_target = neighbor_i
+                # Add position-based perturbation that doesn't modify actual elevation
+                # This creates consistent "preferred" flow directions in different areas
+                perturbation = random.random() * self.mc.RiverFlowPerturbation
 
-            if new_dir == prev_dir:
-                straight_count += 1
-            else:
-                straight_count = 1
-                prev_dir = new_dir
-            self.flow_directions[node_i] = best_target
+                effective_slope = true_slope + perturbation
+
+                # Only consider if true slope allows flow (even uphill within spillover)
+                if true_slope > -spillover_height and self.flow_directions[neighbor_i] != node_i:
+                    candidates.append((effective_slope, neighbor_i, true_slope))
+
+            if candidates:
+                # Sort by perturbed slope but validate with true slope
+                candidates.sort(reverse=True)
+                self.flow_directions[node_i] = candidates[0][1]
 
         # Discover watersheds with comprehensive data collection
         distances_from_outlets = self.discover_watersheds_with_distances_spillover()

@@ -243,7 +243,7 @@ class MapConfig:
         self.RiverElevationSourceBonus = 0.08  # Flow bonus for high elevation sources (mountains)
         self.RiverPeakSourceBonus = 0.25  # Additional flow bonus for nodes near peaks
         self.RiverHillSourceBonus = 0.12  # Additional flow bonus for nodes near hills
-        self.RiverSinuosityPenalty = 10.0  # Penalty for straight-line flow to encourage winding rivers
+        self.RiverFlowPerturbation = 50.0  # Penalty for straight-line flow to encourage winding rivers
 
         # Strategic river selection parameters
         self.RiverGlacialCategoryWeight = 0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
