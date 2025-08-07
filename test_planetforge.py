@@ -271,15 +271,15 @@ if True:
         ax.set_title('flow_directions')
         fig.colorbar(p)
 
-        ids = []
-        for id in cm.watershed_ids:
+        tile_ids = []
+        for id in cm.tile_watershed_ids:
                 if id == -1 or cm.watershed_database[id]['selected']:
-                        ids.append(id)
+                        tile_ids.append(id)
                 else:
-                        ids.append(mc.iNumPlots + 1)
+                        tile_ids.append(mc.iNumPlots + 1)
 
         # watershed_ids
-        Z = np.array(ids).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+        Z = np.array(tile_ids).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
         fig, ax = plt.subplots()
         p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)

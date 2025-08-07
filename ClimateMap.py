@@ -66,6 +66,7 @@ class ClimateMap:
         self.node_elevations = [0.0] * self.mc.iNumPlots
         self.flow_directions = [-1] * self.mc.iNumPlots
         self.watershed_ids = [-1] * self.mc.iNumPlots
+        self.tile_watershed_ids = [-1] * self.mc.iNumPlots
         self.initial_node_flows = [0.0] * self.mc.iNumPlots
         self.north_of_rivers = [False] * self.mc.iNumPlots
         self.west_of_rivers = [False] * self.mc.iNumPlots
@@ -1512,6 +1513,7 @@ class ClimateMap:
                 # Assign watershed and update continent info
                 if lowest_node < len(self.watershed_ids):
                     watershed_id = self.watershed_ids[lowest_node]
+                    self.tile_watershed_ids[tile_i] = watershed_id
 
                     # Update watershed database with continent ID
                     if watershed_id in self.watershed_database:
