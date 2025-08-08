@@ -256,6 +256,10 @@ class MapConfig:
         self.LakeElevationWeight = 0.6  # Weight for elevation-based lake growth
         self.LakeOceanProximityWeight = 0.4  # Weight for ocean proximity in lake growth
         self.LakeOceanConnectionRange = 4  # Maximum distance to attempt ocean connections
+        self.lakeBasinSizeFactor = 60.0
+        self.lakeBasinLengthFactor = 12.0
+        self.lakeBasinReliefFactor = 420.0
+        self.lakeBasinRainFactor = 140.0
 
 
     # -------------------------------------------------------------------------

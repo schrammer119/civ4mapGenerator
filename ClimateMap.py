@@ -1290,11 +1290,16 @@ class ClimateMap:
 
         # Phase 4: Build optimized river systems
         print("Building optimized river networks...")
+        self.river_segments_placed = []  # Track placed segments for later cleanup
         self.build_optimized_river_systems(selected_watersheds)
 
-        # Phase 5: Advanced lake system
+        # Phase 5: Advanced lake system (MUST happen before river cleanup)
         print("Generating advanced lake system...")
         self.lake_data = self.generate_advanced_lake_system(selected_watersheds)
+
+        # Phase 6: Clean up rivers that conflict with lakes
+        print("Cleaning up river-lake conflicts...")
+        self.remove_river_lake_conflicts()
 
         self.add_lake_moisture()
 
@@ -1313,7 +1318,6 @@ class ClimateMap:
         avg_size = size_sum / count
         avg_dist = dist_sum / count
         print("Watershed Summary: count=%d  avg_size=%.2f  avg_dist=%.2f  ocean_count=%d" % (count, avg_size, avg_dist, ocean_count))
-
 
         print("Enhanced river and lake generation complete!")
 
@@ -1743,7 +1747,7 @@ class ClimateMap:
 
     @profile
     def build_optimized_river_systems(self, selected_watersheds):
-        """Build optimized river systems with pre-built networks and custom thresholds"""
+        """Build optimized river systems with main trunk preservation for ALL watersheds"""
 
         total_segments = 0
 
@@ -1768,17 +1772,19 @@ class ClimateMap:
             # Filter network to optimal threshold
             final_segments = [seg for seg in complete_network if seg[2] >= optimal_threshold]
 
-            # Handle glacial watersheds - ensure main trunk from glacier to outlet
-            if self.watershed_database[watershed_id]['glacial']:
-                final_segments = self.ensure_glacial_main_trunk(watershed_id, final_segments)
+            # ALWAYS ensure main trunk from highest source to outlet (not just glacial)
+            final_segments = self.ensure_main_trunk_for_watershed(watershed_id, final_segments)
 
-            # Apply parallelism filtering
-            filtered_segments = self.filter_parallel_river_segments(final_segments)
+            # Apply parallelism filtering (if enabled)
+            # filtered_segments = self.filter_parallel_river_segments(final_segments)
+            filtered_segments = final_segments  # Commented out as per user request
 
-            # Place river segments
+            # Place river segments and track them
             for from_node, to_node, flow in filtered_segments:
                 if self.place_validated_river_segment(from_node, to_node):
                     total_segments += 1
+                    # Track placed segments for later cleanup
+                    self.river_segments_placed.append((from_node, to_node))
 
         print("Placed %d optimized river segments across %d watersheds" % (total_segments, len(selected_watersheds)))
 
@@ -1878,34 +1884,42 @@ class ClimateMap:
 
         return main_trunk_length, max(1, total_splits)
 
-    def ensure_glacial_main_trunk(self, watershed_id, river_segments):
-        """Ensure glacial watersheds have main trunk from glacier to outlet"""
+    def ensure_main_trunk_for_watershed(self, watershed_id, river_segments):
+        """Ensure ALL watersheds have main trunk from highest source to outlet"""
 
-        # Find glacier tile in watershed
-        glacier_node = None
-        max_glacial_score = 0
+        outlet_node = self.watershed_database[watershed_id]['outlet_node']
+
+        # Find the highest/furthest source node in the watershed
+        source_node = None
+        max_score = 0
 
         for node_i in self.watershed_database[watershed_id]['nodes']:
-            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
-            glacial_score = 0
+            # Score based on elevation + distance from outlet
+            elevation_score = self.node_elevations[node_i] * 10
 
-            for tile_i in intersecting_tiles:
-                if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                    if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
-                        glacial_score += 10
-                    if self.TemperatureMap[tile_i] < 0.3:
-                        glacial_score += 5
+            # Calculate distance from outlet
+            distance = 0
+            current = node_i
+            visited = set()
+            while current != outlet_node and current not in visited and current >= 0:
+                visited.add(current)
+                if current < len(self.flow_directions):
+                    current = self.flow_directions[current]
+                    distance += 1
+                else:
+                    break
 
-            if glacial_score > max_glacial_score:
-                max_glacial_score = glacial_score
-                glacier_node = node_i
+            total_score = elevation_score + distance * 5
 
-        if glacier_node is None:
+            if total_score > max_score:
+                max_score = total_score
+                source_node = node_i
+
+        if source_node is None:
             return river_segments
 
-        # Trace path from glacier to outlet and ensure it's included
-        outlet_node = self.watershed_database[watershed_id]['outlet_node']
-        main_trunk_path = self.trace_path_between_nodes(glacier_node, outlet_node)
+        # Trace path from source to outlet and ensure it's included
+        main_trunk_path = self.trace_path_between_nodes(source_node, outlet_node)
 
         # Add main trunk segments to river system
         enhanced_segments = list(river_segments)
@@ -2005,24 +2019,45 @@ class ClimateMap:
 
     @profile
     def generate_advanced_lake_system(self, selected_watersheds):
-        """Generate lakes from basin scoring with automatic and strategic placement"""
+        """Generate lakes with MANDATORY placement for ALL endorheic river systems"""
 
         placed_lakes = []
 
-        # Phase 1: Automatic lakes for selected river watersheds (endorheic only)
+        # Phase 1: MANDATORY lakes for ALL selected endorheic river watersheds
         for watershed_id in selected_watersheds:
             if watershed_id in self.watershed_database:
                 data = self.watershed_database[watershed_id]
-                if not data['reaches_ocean']:  # Endorheic river watershed
-                    lake = self.create_watershed_lake(watershed_id, automatic=True)
+                if not data['reaches_ocean']:  # Endorheic river watershed - MUST have a lake
+                    lake = self.create_watershed_lake(watershed_id, automatic=True, mandatory=True)
                     if lake:
                         placed_lakes.append(lake)
+                    else:
+                        # If lake creation failed, force create a single-tile lake at outlet
+                        outlet_node = data['outlet_node']
+                        outlet_tiles = self.mc.get_node_intersecting_tiles_from_index(outlet_node)
 
-        # Phase 2: Strategic lakes from remaining endorheic basins
+                        # Find first valid land tile for lake placement
+                        for tile_i in outlet_tiles:
+                            if (0 <= tile_i < self.mc.iNumPlots and
+                                self.em.plotTypes[tile_i] != self.mc.PLOT_OCEAN):
+                                # Force single-tile lake
+                                self.em.plotTypes[tile_i] = self.mc.PLOT_OCEAN
+                                placed_lakes.append({
+                                    'watershed_id': watershed_id,
+                                    'center_tile': tile_i,
+                                    'final_tiles': [tile_i],
+                                    'final_size': 1,
+                                    'automatic': True,
+                                    'mandatory': True
+                                })
+                                print("Forced single-tile lake for endorheic watershed %d" % watershed_id)
+                                break
+
+        # Phase 2: Strategic lakes from remaining endorheic basins (non-river watersheds)
         endorheic_candidates = []
         for watershed_id, data in self.watershed_database.items():
             if (not data['reaches_ocean'] and
-                not data['selected'] and
+                not data['selected'] and  # Not already a river watershed
                 data['basin_size'] >= 3):  # Minimum size for strategic lakes
 
                 score = self.score_basin_for_lake(watershed_id, data)
@@ -2035,7 +2070,7 @@ class ClimateMap:
 
         for i in xrange(min(target_strategic, len(endorheic_candidates))):
             score, watershed_id = endorheic_candidates[i]
-            lake = self.create_watershed_lake(watershed_id, automatic=False)
+            lake = self.create_watershed_lake(watershed_id, automatic=False, mandatory=False)
             if lake:
                 placed_lakes.append(lake)
 
@@ -2044,9 +2079,10 @@ class ClimateMap:
             if lake['final_size'] >= 4:  # Only try connecting larger lakes
                 self.attempt_ocean_connection(lake)
 
-        print("Generated %d lakes (%d automatic, %d strategic)" %
+        print("Generated %d lakes (%d mandatory, %d automatic, %d strategic)" %
             (len(placed_lakes),
-            sum(1 for lake in placed_lakes if lake.get('automatic', False)),
+            sum(1 for lake in placed_lakes if lake.get('mandatory', False)),
+            sum(1 for lake in placed_lakes if lake.get('automatic', False) and not lake.get('mandatory', False)),
             sum(1 for lake in placed_lakes if not lake.get('automatic', False))))
 
         return {'count': len(placed_lakes), 'lakes': placed_lakes}
@@ -2057,14 +2093,14 @@ class ClimateMap:
         score = 0
 
         # Base score from basin size
-        score += watershed_data['basin_size'] * 3
+        score += watershed_data['basin_size'] / self.mc.lakeBasinSizeFactor
 
         # Distance score (longer basins = better lakes)
-        score += watershed_data['max_distance'] * 2
+        score += watershed_data['max_distance'] / self.mc.lakeBasinLengthFactor
 
         # Elevation relief (deeper basins = better lakes)
         elevation_relief = watershed_data['max_elevation'] - watershed_data['min_elevation']
-        score += elevation_relief / 10.0  # Convert meters to reasonable scale
+        score += elevation_relief / self.mc.lakeBasinReliefFactor
 
         # Average rainfall in basin (check nodes)
         total_rainfall = 0
@@ -2079,15 +2115,12 @@ class ClimateMap:
 
         if valid_nodes > 0:
             avg_rainfall = total_rainfall / valid_nodes
-            if avg_rainfall >= self.mc.LakeRainfallRequirement:
-                score += avg_rainfall * 20
-            else:
-                return 0  # Insufficient rainfall
+            score += avg_rainfall * self.mc.lakeBasinRainFactor
 
         return score
 
-    def create_watershed_lake(self, watershed_id, automatic=False):
-        """Create a lake in the specified watershed"""
+    def create_watershed_lake(self, watershed_id, automatic=False, mandatory=False):
+        """Create a lake in the specified watershed (with mandatory flag for endorheic rivers)"""
 
         data = self.watershed_database[watershed_id]
 
@@ -2110,13 +2143,8 @@ class ClimateMap:
             return None
 
         # Calculate lake size based on basin characteristics
-        if automatic:
-            # Automatic lakes (river watersheds) - moderate size
-            target_size = min(6, max(1, int(data['basin_size'] / 12)))
-        else:
-            # Strategic lakes - size based on score
-            score = self.score_basin_for_lake(watershed_id, data)
-            target_size = min(9, max(1, int(score / 15)))
+        score = self.score_basin_for_lake(watershed_id, data)
+        target_size = min(self.mc.LakeMaxGrowthSize, max(1, int(score)))
 
         # Grow lake from center
         lake_tiles = self.grow_lake_from_center_basin(center_tile, target_size)
@@ -2126,7 +2154,8 @@ class ClimateMap:
             'center_tile': center_tile,
             'final_tiles': lake_tiles,
             'final_size': len(lake_tiles),
-            'automatic': automatic
+            'automatic': automatic,
+            'mandatory': mandatory
         }
 
     def grow_lake_from_center_basin(self, center_tile, target_size):
@@ -2140,7 +2169,7 @@ class ClimateMap:
             candidates = []
 
             for lake_tile in lake_tiles:
-                for dir in xrange(1, 9):  # All 8 directions
+                for dir in xrange(1, 5):  # All 8 directions
                     neighbor = self.mc.neighbours[lake_tile][dir]
 
                     if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
@@ -2414,6 +2443,90 @@ class ClimateMap:
         scaled_rivers = max(5, int(standard_rivers * scale_factor))
 
         return scaled_rivers
+
+    def remove_river_lake_conflicts(self):
+        """Remove river segments that conflict with newly placed lakes"""
+
+        if not hasattr(self, 'river_segments_placed'):
+            return
+
+        print("Checking %d river segments for lake conflicts..." % len(self.river_segments_placed))
+
+        removed_count = 0
+
+        # Check each placed river segment
+        for from_node, to_node in self.river_segments_placed:
+            from_x, from_y = self.mc.get_node_coords(from_node)
+            to_x, to_y = self.mc.get_node_coords(to_node)
+
+            # Calculate flow direction
+            dx = to_x - from_x
+            dy = to_y - from_y
+
+            # Handle wrapping
+            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
+                dx = dx - int(math.copysign(self.mc.iNumPlotsX, dx))
+            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
+                dy = dy - int(math.copysign(self.mc.iNumPlotsY, dy))
+
+            # Determine which tile edge the river is on
+            tile_x = -1
+            tile_y = -1
+            is_north_river = False
+            is_west_river = False
+
+            if abs(dx) > abs(dy):  # Primarily horizontal flow
+                if dx > 0:  # Eastward flow: north_of_rivers on to_tile
+                    tile_x = to_x
+                    tile_y = to_y
+                    is_north_river = True
+                else:  # Westward flow: north_of_rivers on from_tile
+                    tile_x = from_x
+                    tile_y = from_y
+                    is_north_river = True
+            else:  # Primarily vertical flow
+                if dy > 0:  # Northward flow: west_of_rivers on from_tile
+                    tile_x = from_x
+                    tile_y = from_y
+                    is_west_river = True
+                else:  # Southward flow: west_of_rivers on to_tile
+                    tile_x = from_x
+                    tile_y = to_y
+                    is_west_river = True
+
+            # Check if this river segment conflicts with water
+            if tile_x >= 0 and tile_y >= 0:
+                tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+
+                if 0 <= tile_i < self.mc.iNumPlots:
+                    # Check if the tile or relevant neighbors are now water
+                    should_remove = False
+
+                    if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+                        should_remove = True
+                    elif is_north_river:
+                        # Check if south neighbor is water (river would be on water edge)
+                        south_neighbor = self.mc.neighbours[tile_i][self.mc.S]
+                        if (south_neighbor >= 0 and south_neighbor < self.mc.iNumPlots and
+                            self.em.plotTypes[south_neighbor] == self.mc.PLOT_OCEAN):
+                            should_remove = True
+                    elif is_west_river:
+                        # Check if east neighbor is water (river would be on water edge)
+                        east_neighbor = self.mc.neighbours[tile_i][self.mc.E]
+                        if (east_neighbor >= 0 and east_neighbor < self.mc.iNumPlots and
+                            self.em.plotTypes[east_neighbor] == self.mc.PLOT_OCEAN):
+                            should_remove = True
+
+                    # Remove the river segment if it conflicts
+                    if should_remove:
+                        if is_north_river and 0 <= tile_i < len(self.north_of_rivers):
+                            self.north_of_rivers[tile_i] = False
+                            removed_count += 1
+                        elif is_west_river and 0 <= tile_i < len(self.west_of_rivers):
+                            self.west_of_rivers[tile_i] = False
+                            removed_count += 1
+
+        print("Removed %d river segments that conflicted with lakes" % removed_count)
 
     def add_lake_moisture(self):
         """
