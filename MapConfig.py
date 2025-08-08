@@ -239,10 +239,10 @@ class MapConfig:
 
         # Enhanced river generation parameters
         self.RiverSpilloverHeight = 100.0  # Allow slight uphill flow to prevent rigid drainage (elevation units, converts to meters)
-        self.RiverDistanceFlowBonus = 0.15  # Flow bonus per distance unit from outlet to encourage longer rivers
-        self.RiverElevationSourceBonus = 0.08  # Flow bonus for high elevation sources (mountains)
-        self.RiverPeakSourceBonus = 0.25  # Additional flow bonus for nodes near peaks
-        self.RiverHillSourceBonus = 0.12  # Additional flow bonus for nodes near hills
+        self.RiverDistanceFlowBonus = 2.5  # Flow bonus per distance unit from outlet to encourage longer rivers
+        self.RiverElevationSourceBonus = 0.02  # Flow bonus for high elevation sources (mountains)
+        self.RiverPeakSourceBonus = 15.0  # Additional flow bonus for nodes near peaks
+        self.RiverHillSourceBonus = 7.5  # Additional flow bonus for nodes near hills
         self.RiverFlowPerturbation = 50.0  # Penalty for straight-line flow to encourage winding rivers
 
         # Strategic river selection parameters
@@ -250,6 +250,8 @@ class MapConfig:
         self.RiverLengthCategoryWeight = 0.4
         self.RiverParallelismDistance = 3  # Maximum distance to consider segments parallel
         self.RiverCustomThresholdRange = [0.3, 0.4, 0.5, 0.6, 0.7]  # Test ratios for optimal threshold finding
+        self.glacialPeakCountScore = 10
+        self.riverOceanBonus = 25
 
         # Enhanced lake parameters
         self.LakeMaxGrowthSize = 9  # Maximum tiles for lakes (game constraint)

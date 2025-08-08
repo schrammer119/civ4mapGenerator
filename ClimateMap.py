@@ -1567,13 +1567,45 @@ class ClimateMap:
                             self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
 
         # Standard topological accumulation
-        sorted_nodes = [(self.node_elevations[i], i) for i in xrange(len(self.node_elevations))]
-        sorted_nodes.sort(reverse=True)
+        # Find source nodes
+        source_nodes = set()
+        for node_i in xrange(len(self.flow_directions)):
+            if node_i not in self.flow_directions:
+                source_nodes.add(node_i)
 
-        for elevation, node_i in sorted_nodes:
-            downstream_node = self.flow_directions[node_i]
-            if 0 <= downstream_node < len(self.enhanced_flows):
-                self.enhanced_flows[downstream_node] += self.enhanced_flows[node_i]
+        # Use sets to track what needs processing
+        to_process = set(source_nodes)
+        processed = set()
+
+        # Keep processing until no more nodes to process
+        iterations = 0
+        while to_process and iterations < self.mc.iNumPlots * 3:  # Safety limit
+            iterations += 1
+
+            # Get next node to process
+            current_node = to_process.pop()
+
+            # Skip if already processed or invalid
+            if (current_node in processed or
+                current_node < 0 or
+                current_node >= len(self.flow_directions)):
+                continue
+
+            downstream = self.flow_directions[current_node]
+
+            # Process this node
+            if 0 <= downstream < len(self.enhanced_flows):
+                # Send flow downstream
+                self.enhanced_flows[downstream] += self.enhanced_flows[current_node]
+
+                # Add downstream to processing queue if not already processed
+                if downstream not in processed:
+                    to_process.add(downstream)
+
+            # Mark as processed
+            processed.add(current_node)
+
+        print("Set-based processing completed in %d iterations" % iterations)
 
     @profile
     def allocate_rivers_strategically(self, target_rivers):
@@ -1693,7 +1725,7 @@ class ClimateMap:
 
             if peak_count > 0 and cold_area > 0:
                 # Score: peaks + cold area + distance + basin size
-                glacial_score = peak_count * 10 + cold_area + data['max_distance'] + data['basin_size'] * 0.5
+                glacial_score = peak_count * self.mc.glacialPeakCountScore + cold_area
                 glacial_candidates.append((glacial_score, watershed_id))
 
         # Select best glacial watersheds
@@ -1718,7 +1750,7 @@ class ClimateMap:
         for watershed_id in continent_watersheds:
             data = self.watershed_database[watershed_id]
             # Score: max distance + basin size bonus
-            score = data['max_distance'] * 2 + data['basin_size'] * 0.3
+            score = data['max_distance']
             longest_candidates.append((score, watershed_id))
 
         # Select longest rivers
@@ -1736,9 +1768,8 @@ class ClimateMap:
         for watershed_id in continent_watersheds:
             data = self.watershed_database[watershed_id]
             # Score: basin size + ocean bonus + distance bonus
-            score = (data['basin_size'] * 2 +
-                    (15 if data['reaches_ocean'] else 0) +
-                    data['max_distance'] * 0.5)
+            score = (data['basin_size'] +
+                    (self.mc.riverOceanBonus if data['reaches_ocean'] else 0))
             flow_candidates.append((score, watershed_id))
 
         # Select highest flow potential
