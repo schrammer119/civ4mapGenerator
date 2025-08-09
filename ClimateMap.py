@@ -1550,81 +1550,97 @@ class ClimateMap:
                         elif self.em.plotTypes[tile_i] == self.mc.PLOT_HILLS:
                             self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
 
-        # Standard topological accumulation
-
-        # Step 1: Calculate distances for ALL nodes, not just watershed discovery nodes
-        complete_distances = self._calculate_complete_distances()
-
-        # Step 2: Create list of ALL (distance, node_index) pairs
-        distance_node_pairs = []
-        for node_i in xrange(len(self.flow_directions)):
-            distance = complete_distances.get(node_i, -1)
-            if distance >= 0:  # Valid distance
-                distance_node_pairs.append((distance, node_i))
-
-        # Step 3: Sort by distance (furthest from outlet first = sources first)
-        distance_node_pairs.sort(reverse=True)
-
-        print("Processing %d nodes in complete distance order..." % len(distance_node_pairs))
-
-        # Step 4: Process ALL nodes in distance order
-        for distance, node_i in distance_node_pairs:
-            downstream = self.flow_directions[node_i]
-
-            # Send flow downstream
-            if 0 <= downstream < len(self.enhanced_flows):
-                self.enhanced_flows[downstream] += self.enhanced_flows[node_i]
+        # Optimized flow accumulation for large watersheds only
+        self._process_large_watersheds_flow_accumulation(distances_from_outlets)
 
     @profile
-    def _calculate_complete_distances(self):
-        """Calculate distances from outlet for ALL nodes using BFS"""
+    def _process_large_watersheds_flow_accumulation(self, distances_from_outlets):
+        """Process flow accumulation only for watersheds larger than minimum size"""
 
-        complete_distances = {}
+        # Identify large watersheds
+        large_watersheds = []
+        for watershed_id, data in self.watershed_database.items():
+            if data['basin_size'] >= self.mc.RiverMinBasinSize:
+                large_watersheds.append(watershed_id)
 
-        # Find all outlets (nodes that flow to -1 or are terminal points)
-        outlets = []
-        for node_i in xrange(len(self.flow_directions)):
-            if self.flow_directions[node_i] == -1:
-                outlets.append(node_i)
+        print("Processing flow accumulation for %d large watersheds..." % len(large_watersheds))
 
-        # Also find internal sinks (nodes that no other node points to)
-        pointed_to = set()
-        for node_i in xrange(len(self.flow_directions)):
-            downstream = self.flow_directions[node_i]
-            if 0 <= downstream < len(self.flow_directions):
-                pointed_to.add(downstream)
+        total_nodes_processed = 0
 
-        for node_i in xrange(len(self.flow_directions)):
-            if (node_i not in pointed_to and
-                self.flow_directions[node_i] != -1 and
-                node_i not in outlets):
-                outlets.append(node_i)
+        # Process each large watershed independently
+        for watershed_id in large_watersheds:
+            watershed_data = self.watershed_database[watershed_id]
+            watershed_nodes = watershed_data['nodes']
 
-        print("Found %d outlets for distance calculation" % len(outlets))
+            if not watershed_nodes:
+                continue
 
-        for outlet in outlets:
-            if outlet in complete_distances:
-                continue  # Already processed
+            # Get distances for nodes in this watershed (most should already exist)
+            watershed_distances = {}
+            missing_nodes = []
 
-            # BFS upstream from this outlet
-            queue = deque([(outlet, 0)])
-            visited = {outlet}
-            complete_distances[outlet] = 0
+            for node_i in watershed_nodes:
+                if node_i in distances_from_outlets:
+                    watershed_distances[node_i] = distances_from_outlets[node_i]
+                else:
+                    missing_nodes.append(node_i)
 
-            while queue:
-                current_node, distance = queue.popleft()
+            # Calculate missing distances if any (should be rare)
+            if missing_nodes:
+                outlet_node = watershed_data['outlet_node']
+                missing_distances = self._calculate_distances_for_nodes(missing_nodes, outlet_node)
+                watershed_distances.update(missing_distances)
 
-                # Find all nodes that flow TO current_node
-                for node_i in xrange(len(self.flow_directions)):
-                    if (self.flow_directions[node_i] == current_node and
-                        node_i not in visited):
+            # Sort watershed nodes by distance (furthest first = topological order)
+            sorted_nodes = sorted(watershed_distances.items(), key=lambda x: x[1], reverse=True)
 
-                        complete_distances[node_i] = distance + 1
-                        visited.add(node_i)
-                        queue.append((node_i, distance + 1))
+            # Flow accumulation within this watershed
+            for node_i, distance in sorted_nodes:
+                downstream = self.flow_directions[node_i]
 
-        print("Calculated distances for %d nodes" % len(complete_distances))
-        return complete_distances
+                # Send flow downstream (only within same watershed)
+                if (0 <= downstream < len(self.enhanced_flows) and
+                    downstream in watershed_distances):
+                    self.enhanced_flows[downstream] += self.enhanced_flows[node_i]
+
+            total_nodes_processed += len(sorted_nodes)
+
+        print("Processed flow accumulation for %d nodes (vs %d total nodes)" %
+              (total_nodes_processed, len(self.flow_directions)))
+
+    @profile
+    def _calculate_distances_for_nodes(self, missing_nodes, outlet_node):
+        """Calculate distances for specific nodes using efficient upstream traversal"""
+
+        distances = {}
+
+        for node_i in missing_nodes:
+            # Trace path from node to outlet
+            current_node = node_i
+            distance = 0
+            visited = set()
+
+            while (current_node != outlet_node and
+                   current_node not in visited and
+                   current_node >= 0 and
+                   current_node < len(self.flow_directions)):
+
+                visited.add(current_node)
+                downstream = self.flow_directions[current_node]
+
+                if downstream == -1:  # Reached outlet
+                    break
+
+                current_node = downstream
+                distance += 1
+
+                # Limit search to prevent infinite loops
+                if distance > 1000:
+                    break
+
+            distances[node_i] = distance
+
+        return distances
 
     @profile
     def allocate_rivers_strategically(self, target_rivers):

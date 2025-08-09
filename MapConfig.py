@@ -227,7 +227,7 @@ class MapConfig:
         self.RiverTargetCountStandard = 30  # Target number of major rivers for standard map
         self.RiverFlowAccumulationFactor = 1000.0  # Base factor for flow accumulation calculations
         self.LakeRainfallRequirement = 0.4  # Minimum rainfall for lake formation (normalized 0-1)
-        self.LakeTargetCount = 8  # Target number of lakes for standard map
+        self.LakeTargetCount = 9  # Target number of lakes for standard map
 
         # Node-based Flow Parameters (D4 - Cardinal directions only)
         self.NodeFlowDirections = [
@@ -248,7 +248,6 @@ class MapConfig:
         # Strategic river selection parameters
         self.RiverGlacialCategoryWeight = 0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
         self.RiverLengthCategoryWeight = 0.4
-        self.RiverParallelismDistance = 3  # Maximum distance to consider segments parallel
         self.RiverCustomThresholdRange = [0.3, 0.4, 0.5, 0.6, 0.7]  # Test ratios for optimal threshold finding
         self.glacialPeakCountScore = 10
         self.riverOceanBonus = 25
