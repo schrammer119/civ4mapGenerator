@@ -93,7 +93,6 @@ class ClimateMap:
         self._apply_ocean_current_and_maritime_effects()
 
         print("Finishing Temperature Map")
-        # self._apply_polar_cooling()
         self._apply_temperature_smoothing()
 
     @profile
@@ -568,22 +567,6 @@ class ClimateMap:
             if total_weight > 0:
                 maritime_effect = (total_influence / total_weight) * self.mc.maritime_strength
                 self.TemperatureMap[land_tile] = original_temps[land_tile] + maritime_effect
-
-    def _apply_polar_cooling(self):
-        """Apply additional cooling to polar regions"""
-        # Cool northern polar region
-        for y in xrange(min(5, self.mc.iNumPlotsY)):
-            cooling_factor = float(y) / 5.0
-            for x in xrange(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                self.TemperatureMap[i] *= cooling_factor
-
-        # Cool southern polar region
-        for y in xrange(max(0, self.mc.iNumPlotsY - 5), self.mc.iNumPlotsY):
-            cooling_factor = float(self.mc.iNumPlotsY - 1 - y) / 5.0
-            for x in xrange(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                self.TemperatureMap[i] *= cooling_factor
 
     @profile
     def _apply_temperature_smoothing(self):
@@ -1275,32 +1258,27 @@ class ClimateMap:
         target_rivers = self.scale_river_targets_for_map_size(self.mc.RiverTargetCountStandard)
 
         # Phase 1: Enhanced elevation and flow modeling
-        print("Calculating enhanced node elevations with spillover flow...")
         self.calculate_enhanced_node_elevations()
         distances_from_outlets = self.calculate_spillover_flow_directions()
 
         # Phase 2: Process tiles and calculate enhanced flows
-        print("Processing tiles and calculating enhanced flows...")
         self.process_tiles_for_watersheds()
         self.calculate_enhanced_flow_accumulation(distances_from_outlets)
 
         # Phase 3: Strategic selection with glacial allocation
-        print("Selecting watersheds strategically with glacial allocation...")
         selected_watersheds = self.allocate_rivers_strategically(target_rivers)
 
         # Phase 4: Build optimized river systems
-        print("Building optimized river networks...")
         self.river_segments_placed = []  # Track placed segments for later cleanup
         self.build_optimized_river_systems(selected_watersheds)
 
         # Phase 5: Advanced lake system (MUST happen before river cleanup)
-        print("Generating advanced lake system...")
         self.lake_data = self.generate_advanced_lake_system(selected_watersheds)
 
         # Phase 6: Clean up rivers that conflict with lakes
-        print("Cleaning up river-lake conflicts...")
         self.remove_river_lake_conflicts()
 
+        # Phase 7: Add local rainfall from generated lakes
         self.add_lake_moisture()
 
         # watershed debug
@@ -1318,8 +1296,6 @@ class ClimateMap:
         avg_size = size_sum / count
         avg_dist = dist_sum / count
         print("Watershed Summary: count=%d  avg_size=%.2f  avg_dist=%.2f  ocean_count=%d" % (count, avg_size, avg_dist, ocean_count))
-
-        print("Enhanced river and lake generation complete!")
 
     @profile
     def calculate_enhanced_node_elevations(self):
@@ -1451,14 +1427,22 @@ class ClimateMap:
             if current_node in path or current_node == -1:
                 # New sink or cycle - create new watershed
                 outlet_node = path[-1] if path else start_node
+                self.flow_directions[outlet_node] = -1  # Break the cycle!
                 watershed_id = outlet_node  # Use outlet as ID
+
+                reaches_ocean = False
+                neighbours = self.mc.get_node_intersecting_tiles_from_index(outlet_node)
+                for n_i in neighbours:
+                    if self.em.plotTypes[n_i] == self.mc.PLOT_OCEAN:
+                        reaches_ocean = True
+                        break
 
                 # Initialize comprehensive database entry
                 self.watershed_database[watershed_id] = {
                     'outlet_node': outlet_node,
                     'basin_size': 0,
                     'max_distance': 0,
-                    'reaches_ocean': self.flow_directions[outlet_node] == -1,
+                    'reaches_ocean': reaches_ocean,
                     'continent_id': -1,  # Will be set when processing tiles
                     'min_elevation': float('inf'),
                     'max_elevation': float('-inf'),
@@ -1567,45 +1551,80 @@ class ClimateMap:
                             self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
 
         # Standard topological accumulation
-        # Find source nodes
-        source_nodes = set()
+
+        # Step 1: Calculate distances for ALL nodes, not just watershed discovery nodes
+        complete_distances = self._calculate_complete_distances()
+
+        # Step 2: Create list of ALL (distance, node_index) pairs
+        distance_node_pairs = []
         for node_i in xrange(len(self.flow_directions)):
-            if node_i not in self.flow_directions:
-                source_nodes.add(node_i)
+            distance = complete_distances.get(node_i, -1)
+            if distance >= 0:  # Valid distance
+                distance_node_pairs.append((distance, node_i))
 
-        # Use sets to track what needs processing
-        to_process = set(source_nodes)
-        processed = set()
+        # Step 3: Sort by distance (furthest from outlet first = sources first)
+        distance_node_pairs.sort(reverse=True)
 
-        # Keep processing until no more nodes to process
-        iterations = 0
-        while to_process and iterations < self.mc.iNumPlots * 3:  # Safety limit
-            iterations += 1
+        print("Processing %d nodes in complete distance order..." % len(distance_node_pairs))
 
-            # Get next node to process
-            current_node = to_process.pop()
+        # Step 4: Process ALL nodes in distance order
+        for distance, node_i in distance_node_pairs:
+            downstream = self.flow_directions[node_i]
 
-            # Skip if already processed or invalid
-            if (current_node in processed or
-                current_node < 0 or
-                current_node >= len(self.flow_directions)):
-                continue
-
-            downstream = self.flow_directions[current_node]
-
-            # Process this node
+            # Send flow downstream
             if 0 <= downstream < len(self.enhanced_flows):
-                # Send flow downstream
-                self.enhanced_flows[downstream] += self.enhanced_flows[current_node]
+                self.enhanced_flows[downstream] += self.enhanced_flows[node_i]
 
-                # Add downstream to processing queue if not already processed
-                if downstream not in processed:
-                    to_process.add(downstream)
+    @profile
+    def _calculate_complete_distances(self):
+        """Calculate distances from outlet for ALL nodes using BFS"""
 
-            # Mark as processed
-            processed.add(current_node)
+        complete_distances = {}
 
-        print("Set-based processing completed in %d iterations" % iterations)
+        # Find all outlets (nodes that flow to -1 or are terminal points)
+        outlets = []
+        for node_i in xrange(len(self.flow_directions)):
+            if self.flow_directions[node_i] == -1:
+                outlets.append(node_i)
+
+        # Also find internal sinks (nodes that no other node points to)
+        pointed_to = set()
+        for node_i in xrange(len(self.flow_directions)):
+            downstream = self.flow_directions[node_i]
+            if 0 <= downstream < len(self.flow_directions):
+                pointed_to.add(downstream)
+
+        for node_i in xrange(len(self.flow_directions)):
+            if (node_i not in pointed_to and
+                self.flow_directions[node_i] != -1 and
+                node_i not in outlets):
+                outlets.append(node_i)
+
+        print("Found %d outlets for distance calculation" % len(outlets))
+
+        for outlet in outlets:
+            if outlet in complete_distances:
+                continue  # Already processed
+
+            # BFS upstream from this outlet
+            queue = deque([(outlet, 0)])
+            visited = {outlet}
+            complete_distances[outlet] = 0
+
+            while queue:
+                current_node, distance = queue.popleft()
+
+                # Find all nodes that flow TO current_node
+                for node_i in xrange(len(self.flow_directions)):
+                    if (self.flow_directions[node_i] == current_node and
+                        node_i not in visited):
+
+                        complete_distances[node_i] = distance + 1
+                        visited.add(node_i)
+                        queue.append((node_i, distance + 1))
+
+        print("Calculated distances for %d nodes" % len(complete_distances))
+        return complete_distances
 
     @profile
     def allocate_rivers_strategically(self, target_rivers):
@@ -1806,12 +1825,8 @@ class ClimateMap:
             # ALWAYS ensure main trunk from highest source to outlet (not just glacial)
             final_segments = self.ensure_main_trunk_for_watershed(watershed_id, final_segments)
 
-            # Apply parallelism filtering (if enabled)
-            # filtered_segments = self.filter_parallel_river_segments(final_segments)
-            filtered_segments = final_segments  # Commented out as per user request
-
             # Place river segments and track them
-            for from_node, to_node, flow in filtered_segments:
+            for from_node, to_node, flow in final_segments:
                 if self.place_validated_river_segment(from_node, to_node):
                     total_segments += 1
                     # Track placed segments for later cleanup
@@ -1989,64 +2004,6 @@ class ClimateMap:
             current_node = next_node
 
         return path
-
-    def filter_parallel_river_segments(self, river_segments):
-        """Remove excessively parallel river segments"""
-
-        if len(river_segments) <= 2:
-            return river_segments
-
-        # Group segments by approximate direction and proximity
-        parallel_groups = []
-
-        for segment in river_segments:
-            from_node, to_node, flow = segment
-            from_x, from_y = self.mc.get_node_coords(from_node)
-            to_x, to_y = self.mc.get_node_coords(to_node)
-
-            # Calculate direction
-            dx = to_x - from_x
-            dy = to_y - from_y
-
-            # Handle wrapping
-            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
-                dx = dx - int(math.copysign(self.mc.iNumPlotsX, dx))
-            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
-                dy = dy - int(math.copysign(self.mc.iNumPlotsY, dy))
-
-            # Find matching group or create new one
-            placed = False
-            for group in parallel_groups:
-                group_segment = group[0]
-                group_from, group_to, _ = group_segment
-                group_from_x, group_from_y = self.mc.get_node_coords(group_from)
-                group_to_x, group_to_y = self.mc.get_node_coords(group_to)
-
-                group_dx = group_to_x - group_from_x
-                group_dy = group_to_y - group_from_y
-
-                # Check if directions match and segments are close
-                if (dx == group_dx and dy == group_dy and
-                    abs(from_x - group_from_x) <= self.mc.RiverParallelismDistance and
-                    abs(from_y - group_from_y) <= self.mc.RiverParallelismDistance):
-                    group.append(segment)
-                    placed = True
-                    break
-
-            if not placed:
-                parallel_groups.append([segment])
-
-        # Keep best segments from each parallel group
-        filtered_segments = []
-        for group in parallel_groups:
-            if len(group) <= 2:
-                filtered_segments.extend(group)
-            else:
-                # Keep two highest flow segments
-                group.sort(key=lambda x: x[2], reverse=True)
-                filtered_segments.extend(group[:2])
-
-        return filtered_segments
 
     @profile
     def generate_advanced_lake_system(self, selected_watersheds):
