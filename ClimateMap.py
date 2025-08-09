@@ -1823,9 +1823,8 @@ class ClimateMap:
 
             # Pre-build complete river network with guaranteed main trunk at low threshold
             max_flow = max(self.enhanced_flows[node_i] for node_i in self.watershed_database[watershed_id]['nodes'])
-            low_threshold = max_flow * 0.3
 
-            complete_network = self.build_complete_river_network(watershed_id, low_threshold, max_flow)
+            complete_network = self.build_complete_river_network(watershed_id, max_flow)
 
             if not complete_network:
                 continue
@@ -1836,7 +1835,7 @@ class ClimateMap:
             )
 
             # Filter network to optimal threshold (main trunk survives due to boosted flow)
-            final_segments = complete_network#[seg for seg in complete_network if seg[2] >= optimal_threshold]
+            final_segments = [seg for seg in complete_network if seg[2] >= optimal_threshold]
 
             # Place river segments and track them
             for from_node, to_node, flow in final_segments:
@@ -1847,7 +1846,7 @@ class ClimateMap:
 
         print("Placed %d optimized river segments across %d watersheds" % (total_segments, len(selected_watersheds)))
 
-    def build_complete_river_network(self, watershed_id, threshold, max_flow):
+    def build_complete_river_network(self, watershed_id, max_flow):
         """Build complete river network for watershed with guaranteed main trunk"""
 
         outlet_node = self.watershed_database[watershed_id]['outlet_node']
@@ -1887,14 +1886,6 @@ class ClimateMap:
                 if 0 <= node_i < len(self.enhanced_flows):
                     self.enhanced_flows[node_i] = max(self.enhanced_flows[node_i], max_flow)
 
-        # Find all qualifying nodes based on threshold (main trunk now guaranteed to qualify)
-        candidates = []
-        for node_i in self.watershed_database[watershed_id]['nodes']:
-            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
-                candidates.append((self.enhanced_flows[node_i], node_i))
-
-        candidates.sort(reverse=True)
-
         # Build connected tree from outlet upward
         # Phase 1: Build complete connectivity tree from outlet
         connected_nodes = {outlet_node}
@@ -1911,7 +1902,7 @@ class ClimateMap:
         # Phase 2: Filter by threshold and create segments
         river_segments = []
         for node_i in connected_nodes:
-            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
+            if 0 <= node_i < len(self.enhanced_flows):
                 downstream = self.flow_directions[node_i]
                 if downstream in connected_nodes and downstream != node_i:
                     river_segments.append((node_i, downstream, self.enhanced_flows[node_i]))
@@ -1921,11 +1912,12 @@ class ClimateMap:
     def find_optimal_threshold_efficient(self, complete_network, max_flow):
         """Find optimal threshold using pre-built network with guaranteed main trunk"""
 
-        best_threshold = max_flow * 0.5
-        best_ratio = 0
+        length_to_split_ratio = 0.0
+        ratio = 0.0
 
         # Test threshold ratios on pre-built network (main trunk already included)
-        for ratio in self.mc.RiverCustomThresholdRange:
+        while length_to_split_ratio < self.mc.RiverDesiredLengthToSplit and ratio < 1.0:
+            ratio += 0.1
             test_threshold = max_flow * ratio
             test_segments = [seg for seg in complete_network if seg[2] >= test_threshold]
 
@@ -1936,11 +1928,7 @@ class ClimateMap:
                 if total_splits > 0:
                     length_to_split_ratio = float(main_trunk_length) / total_splits
 
-                    if length_to_split_ratio > best_ratio:
-                        best_ratio = length_to_split_ratio
-                        best_threshold = test_threshold
-
-        return best_threshold
+        return test_threshold
 
     def calculate_trunk_split_ratio(self, river_segments):
         """Calculate main trunk length and total splits for networks with guaranteed main trunk"""

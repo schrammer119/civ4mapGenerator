@@ -249,6 +249,7 @@ class MapConfig:
         self.RiverGlacialCategoryWeight = 0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
         self.RiverLengthCategoryWeight = 0.4
         self.RiverCustomThresholdRange = [0.3, 0.4, 0.5, 0.6, 0.7]  # Test ratios for optimal threshold finding
+        self.RiverDesiredLengthToSplit = 8.0
         self.glacialPeakCountScore = 10
         self.riverOceanBonus = 25
 
