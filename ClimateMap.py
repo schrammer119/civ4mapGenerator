@@ -1821,11 +1821,11 @@ class ClimateMap:
             if watershed_id not in self.watershed_database:
                 continue
 
-            # Pre-build complete river network at low threshold
+            # Pre-build complete river network with guaranteed main trunk at low threshold
             max_flow = max(self.enhanced_flows[node_i] for node_i in self.watershed_database[watershed_id]['nodes'])
             low_threshold = max_flow * 0.3
 
-            complete_network = self.build_complete_river_network(watershed_id, low_threshold)
+            complete_network = self.build_complete_river_network(watershed_id, low_threshold, max_flow)
 
             if not complete_network:
                 continue
@@ -1835,11 +1835,8 @@ class ClimateMap:
                 complete_network, max_flow
             )
 
-            # Filter network to optimal threshold
+            # Filter network to optimal threshold (main trunk survives due to boosted flow)
             final_segments = [seg for seg in complete_network if seg[2] >= optimal_threshold]
-
-            # ALWAYS ensure main trunk from highest source to outlet (not just glacial)
-            final_segments = self.ensure_main_trunk_for_watershed(watershed_id, final_segments)
 
             # Place river segments and track them
             for from_node, to_node, flow in final_segments:
@@ -1850,108 +1847,14 @@ class ClimateMap:
 
         print("Placed %d optimized river segments across %d watersheds" % (total_segments, len(selected_watersheds)))
 
-    def build_complete_river_network(self, watershed_id, threshold):
-        """Build complete river network for watershed at given threshold"""
+    def build_complete_river_network(self, watershed_id, threshold, max_flow):
+        """Build complete river network for watershed with guaranteed main trunk"""
 
         outlet_node = self.watershed_database[watershed_id]['outlet_node']
         river_segments = []
         connected_nodes = {outlet_node}
 
-        # Find all qualifying nodes
-        candidates = []
-        for node_i in self.watershed_database[watershed_id]['nodes']:
-            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
-                candidates.append((self.enhanced_flows[node_i], node_i))
-
-        candidates.sort(reverse=True)
-
-        # Build connected tree from outlet upward
-        for flow, node_i in candidates:
-            downstream = self.flow_directions[node_i]
-            if downstream in connected_nodes and downstream != node_i:
-                river_segments.append((node_i, downstream, flow))
-                connected_nodes.add(node_i)
-
-        return river_segments
-
-    def find_optimal_threshold_efficient(self, complete_network, max_flow):
-        """Find optimal threshold using pre-built network"""
-
-        best_threshold = max_flow * 0.5
-        best_ratio = 0
-
-        # Test threshold ratios on pre-built network
-        for ratio in self.mc.RiverCustomThresholdRange:
-            test_threshold = max_flow * ratio
-            test_segments = [seg for seg in complete_network if seg[2] >= test_threshold]
-
-            if test_segments:
-                # Calculate main trunk length / total splits
-                main_trunk_length, total_splits = self.calculate_trunk_split_ratio(test_segments)
-
-                if total_splits > 0:
-                    length_to_split_ratio = float(main_trunk_length) / total_splits
-
-                    if length_to_split_ratio > best_ratio:
-                        best_ratio = length_to_split_ratio
-                        best_threshold = test_threshold
-
-        return best_threshold
-
-    def calculate_trunk_split_ratio(self, river_segments):
-        """Calculate main trunk length and total splits"""
-
-        if not river_segments:
-            return 0, 0
-
-        # Build connectivity map
-        downstream_map = {}
-        upstream_map = {}
-
-        for from_node, to_node, flow in river_segments:
-            downstream_map[from_node] = to_node
-            if to_node not in upstream_map:
-                upstream_map[to_node] = []
-            upstream_map[to_node].append(from_node)
-
-        # Find main trunk (highest flow path from any source to outlet)
-        outlet_node = None
-        for from_node, to_node, flow in river_segments:
-            if to_node not in downstream_map:  # This is the outlet
-                outlet_node = to_node
-                break
-
-        if outlet_node is None:
-            return 0, 0
-
-        # Trace main trunk backward from outlet
-        main_trunk_length = 0
-        current_node = outlet_node
-
-        while current_node in upstream_map:
-            upstream_nodes = upstream_map[current_node]
-            if not upstream_nodes:
-                break
-
-            # Choose highest flow upstream node
-            best_upstream = max(upstream_nodes,
-                            key=lambda n: next(flow for from_n, to_n, flow in river_segments
-                                                if from_n == n and to_n == current_node))
-
-            main_trunk_length += 1
-            current_node = best_upstream
-
-        # Count total splits (nodes with multiple upstream connections)
-        total_splits = sum(1 for upstream_list in upstream_map.values() if len(upstream_list) > 1)
-
-        return main_trunk_length, max(1, total_splits)
-
-    def ensure_main_trunk_for_watershed(self, watershed_id, river_segments):
-        """Ensure ALL watersheds have main trunk from highest source to outlet"""
-
-        outlet_node = self.watershed_database[watershed_id]['outlet_node']
-
-        # Find the highest/furthest source node in the watershed
+        # Find main trunk path and boost its flow to ensure survival
         source_node = None
         max_score = 0
 
@@ -1977,27 +1880,101 @@ class ClimateMap:
                 max_score = total_score
                 source_node = node_i
 
-        if source_node is None:
-            return river_segments
+        # Boost main trunk flow to guarantee survival through threshold filtering
+        if source_node is not None:
+            main_trunk_path = self.trace_path_between_nodes(source_node, outlet_node)
+            for node_i in main_trunk_path:
+                if 0 <= node_i < len(self.enhanced_flows):
+                    self.enhanced_flows[node_i] = max(self.enhanced_flows[node_i], max_flow)
 
-        # Trace path from source to outlet and ensure it's included
-        main_trunk_path = self.trace_path_between_nodes(source_node, outlet_node)
+        # Find all qualifying nodes based on threshold (main trunk now guaranteed to qualify)
+        candidates = []
+        for node_i in self.watershed_database[watershed_id]['nodes']:
+            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
+                candidates.append((self.enhanced_flows[node_i], node_i))
 
-        # Add main trunk segments to river system
-        enhanced_segments = list(river_segments)
+        candidates.sort(reverse=True)
 
-        for i in xrange(len(main_trunk_path) - 1):
-            from_node = main_trunk_path[i]
-            to_node = main_trunk_path[i + 1]
+        # Build connected tree from outlet upward
+        for flow, node_i in candidates:
+            downstream = self.flow_directions[node_i]
+            if downstream in connected_nodes and downstream != node_i:
+                river_segments.append((node_i, downstream, flow))
+                connected_nodes.add(node_i)
 
-            # Check if segment already exists
-            segment_exists = any(seg[0] == from_node and seg[1] == to_node for seg in enhanced_segments)
+        return river_segments
 
-            if not segment_exists:
-                flow = self.enhanced_flows[from_node] if 0 <= from_node < len(self.enhanced_flows) else 1.0
-                enhanced_segments.append((from_node, to_node, flow))
+    def find_optimal_threshold_efficient(self, complete_network, max_flow):
+        """Find optimal threshold using pre-built network with guaranteed main trunk"""
 
-        return enhanced_segments
+        best_threshold = max_flow * 0.5
+        best_ratio = 0
+
+        # Test threshold ratios on pre-built network (main trunk already included)
+        for ratio in self.mc.RiverCustomThresholdRange:
+            test_threshold = max_flow * ratio
+            test_segments = [seg for seg in complete_network if seg[2] >= test_threshold]
+
+            if test_segments:
+                # Calculate main trunk length / total splits
+                main_trunk_length, total_splits = self.calculate_trunk_split_ratio(test_segments)
+
+                if total_splits > 0:
+                    length_to_split_ratio = float(main_trunk_length) / total_splits
+
+                    if length_to_split_ratio > best_ratio:
+                        best_ratio = length_to_split_ratio
+                        best_threshold = test_threshold
+
+        return best_threshold
+
+    def calculate_trunk_split_ratio(self, river_segments):
+        """Calculate main trunk length and total splits for networks with guaranteed main trunk"""
+
+        if not river_segments:
+            return 0, 0
+
+        # Build connectivity map
+        downstream_map = {}
+        upstream_map = {}
+
+        for from_node, to_node, flow in river_segments:
+            downstream_map[from_node] = to_node
+            if to_node not in upstream_map:
+                upstream_map[to_node] = []
+            upstream_map[to_node].append(from_node)
+
+        # Find outlet node (no downstream connection)
+        outlet_node = None
+        for from_node, to_node, flow in river_segments:
+            if to_node not in downstream_map:
+                outlet_node = to_node
+                break
+
+        if outlet_node is None:
+            return 0, 0
+
+        # Trace main trunk backward from outlet (highest flow path)
+        main_trunk_length = 0
+        current_node = outlet_node
+
+        while current_node in upstream_map:
+            upstream_nodes = upstream_map[current_node]
+            if not upstream_nodes:
+                break
+
+            # Choose highest flow upstream node
+            best_upstream = max(upstream_nodes,
+                            key=lambda n: next(flow for from_n, to_n, flow in river_segments
+                                                if from_n == n and to_n == current_node))
+
+            main_trunk_length += 1
+            current_node = best_upstream
+
+        # Count total splits (nodes with multiple upstream connections)
+        total_splits = sum(1 for upstream_list in upstream_map.values() if len(upstream_list) > 1)
+
+        return main_trunk_length, max(1, total_splits)
 
     def trace_path_between_nodes(self, start_node, end_node):
         """Trace path from start to end node following flow directions"""
