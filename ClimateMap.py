@@ -1836,7 +1836,7 @@ class ClimateMap:
             )
 
             # Filter network to optimal threshold (main trunk survives due to boosted flow)
-            final_segments = [seg for seg in complete_network if seg[2] >= optimal_threshold]
+            final_segments = complete_network#[seg for seg in complete_network if seg[2] >= optimal_threshold]
 
             # Place river segments and track them
             for from_node, to_node, flow in final_segments:
@@ -1860,7 +1860,7 @@ class ClimateMap:
 
         for node_i in self.watershed_database[watershed_id]['nodes']:
             # Score based on elevation + distance from outlet
-            elevation_score = self.node_elevations[node_i] * 10
+            elevation_score = self.node_elevations[node_i] / self.mc.maxElev
 
             # Calculate distance from outlet
             distance = 0
@@ -1876,7 +1876,7 @@ class ClimateMap:
 
             total_score = elevation_score + distance * 5
 
-            if total_score > max_score:
+            if total_score > max_score and current == outlet_node:
                 max_score = total_score
                 source_node = node_i
 
@@ -1896,11 +1896,25 @@ class ClimateMap:
         candidates.sort(reverse=True)
 
         # Build connected tree from outlet upward
-        for flow, node_i in candidates:
-            downstream = self.flow_directions[node_i]
-            if downstream in connected_nodes and downstream != node_i:
-                river_segments.append((node_i, downstream, flow))
-                connected_nodes.add(node_i)
+        # Phase 1: Build complete connectivity tree from outlet
+        connected_nodes = {outlet_node}
+        changed = True
+        while changed:
+            changed = False
+            for node_i in self.watershed_database[watershed_id]['nodes']:
+                if node_i not in connected_nodes:
+                    downstream = self.flow_directions[node_i]
+                    if downstream in connected_nodes and downstream != node_i:
+                        connected_nodes.add(node_i)
+                        changed = True
+
+        # Phase 2: Filter by threshold and create segments
+        river_segments = []
+        for node_i in connected_nodes:
+            if 0 <= node_i < len(self.enhanced_flows) and self.enhanced_flows[node_i] >= threshold:
+                downstream = self.flow_directions[node_i]
+                if downstream in connected_nodes and downstream != node_i:
+                    river_segments.append((node_i, downstream, self.enhanced_flows[node_i]))
 
         return river_segments
 
