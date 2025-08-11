@@ -262,6 +262,10 @@ class MapConfig:
         self.lakeBasinLengthFactor = 12.0
         self.lakeBasinReliefFactor = 420.0
         self.lakeBasinRainFactor = 140.0
+        self.lakeCE = 2.4e-3                        # Lake evaporation coefficient
+        self.lakeMoistureDiffusionIterations = 12   # Diffusion iterations for lake moisture
+        self.largeLakeSizeThreshold = 4             # Minimum size for large lake bonus
+        self.largeLakeMoistureBonus = 1.1           # Moisture multiplier for large lakes
 
 
     # -------------------------------------------------------------------------
@@ -347,6 +351,22 @@ class MapConfig:
             return [0.0] * len(map_data)
         else:
             return [(float(val) - min_val) / range_val for val in map_data]
+
+    def normalize_map_max_only(self, map_data):
+        """
+        Normalizes a list by dividing by maximum value only (keeps natural minimum).
+        Returns both normalized map and the original maximum for scale tracking.
+        """
+        if not map_data:
+            return map_data, 0.0
+
+        max_val = float(max(map_data))
+
+        if max_val == 0.0:
+            return [0.0] * len(map_data), 0.0
+        else:
+            normalized = [float(val) / max_val for val in map_data]
+            return normalized, max_val
 
     def find_value_from_percent(self, data_list, percent, descending=True):
         """Finds the value in a list at a given percentile."""

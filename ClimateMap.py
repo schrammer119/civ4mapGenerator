@@ -1137,6 +1137,9 @@ class ClimateMap:
 
             self._moisture_grid[i] = moisture
 
+        # SAVE the original scale for lake moisture scaling
+        self.original_moisture_max = max_moisture
+
         # Normalize moisture grid
         if max_moisture > 0.0:
             inv_max = 1.0 / max_moisture
@@ -1243,8 +1246,12 @@ class ClimateMap:
             filter_func=lambda i: self.em.plotTypes[i] != ocean_plot_type
         )
 
-        # Normalize to 0-1 range
-        self.RainfallMap = self.mc.normalize_map(self.RainfallMap)
+        # SAVE the original scale before normalization
+        self.original_rainfall_max = max(self.RainfallMap) if self.RainfallMap else 0.0
+
+        # Use max-only normalization
+        if self.original_rainfall_max > 0.0:
+            self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
 
     @profile
     def GenerateRiverMap(self):
@@ -2553,10 +2560,183 @@ class ClimateMap:
 
     def add_lake_moisture(self):
         """
-        Add moisture effects from newly created lakes.
-        Placeholder method for next discussion.
+        Add moisture effects from newly created lakes using proper physical scaling.
+        Integrates seamlessly with existing rainfall by maintaining scale consistency.
         """
-        # TODO: Implement lake moisture effects
-        # Could use the watershed database to identify new lake locations
-        # and their surrounding tiles for moisture distribution
-        pass
+        if not hasattr(self, 'lake_data') or not self.lake_data.get('lakes'):
+            return
+
+        # Ensure we have the original scales from rainfall generation
+        if not hasattr(self, 'original_moisture_max') or not hasattr(self, 'original_rainfall_max'):
+            print("Warning: Lake moisture requires rainfall to be generated first")
+            return
+
+        # Calculate lake moisture in original physical units
+        lake_moisture_physical = self._calculate_lake_moisture_physical()
+
+        # Scale to normalized units using original moisture scale
+        lake_moisture_normalized = self._scale_lake_moisture_to_normalized(lake_moisture_physical)
+
+        # Run diffusion to get lake rainfall
+        lake_rainfall_from_diffusion = self._diffuse_lake_moisture(lake_moisture_normalized)
+
+        # Scale lake rainfall using original rainfall scale and add to existing map
+        self._add_scaled_lake_rainfall(lake_rainfall_from_diffusion)
+
+    def _calculate_lake_moisture_physical(self):
+        """Calculate lake moisture in original physical units (same as ocean/land moisture)"""
+
+        lake_moisture_physical = [0.0] * self.mc.iNumPlots
+
+        # Physical constants (same as original moisture calculation)
+        gas_constant = self.mc.gasConstant
+        lake_ce = self.mc.lakeCE
+
+        # Process each lake from the database
+        for lake in self.lake_data['lakes']:
+            lake_tiles = lake['final_tiles']
+            lake_size = lake['final_size']
+
+            # Size bonus for larger lakes (enhanced circulation effects)
+            size_multiplier = (self.mc.largeLakeMoistureBonus
+                            if lake_size >= self.mc.largeLakeSizeThreshold
+                            else 1.0)
+
+            # Calculate moisture for each lake tile using same physics as ocean
+            for tile_i in lake_tiles:
+                if 0 <= tile_i < self.mc.iNumPlots:
+                    # Use existing atmospheric data
+                    wind_speed = self._wind_speeds[tile_i]
+                    q_a = self._lat_factors[tile_i]
+                    e_s = self._saturation_vapor_pressures[tile_i]
+                    atm_pressure = self.atmospheric_pressure[tile_i]
+
+                    # Saturation mixing ratio (same calculation as original)
+                    q_s = 0.62198 * e_s / (atm_pressure - e_s)
+
+                    # Lake evaporation in physical units (higher coefficient than ocean)
+                    temp_kelvin = self.TemperatureMap[tile_i] + 273.15
+                    moisture = (lake_ce * atm_pressure / gas_constant / temp_kelvin *
+                            wind_speed * max(0.0, q_s - q_a) * size_multiplier)
+
+                    lake_moisture_physical[tile_i] = moisture
+
+        return lake_moisture_physical
+
+    def _scale_lake_moisture_to_normalized(self, lake_moisture_physical):
+        """Scale lake moisture to normalized units using original moisture scale"""
+
+        lake_moisture_normalized = [0.0] * self.mc.iNumPlots
+
+        if self.original_moisture_max > 0.0:
+            # Scale lake moisture to same normalized range as original moisture
+            scale_factor = 1.0 / self.original_moisture_max
+            for i in xrange(self.mc.iNumPlots):
+                lake_moisture_normalized[i] = lake_moisture_physical[i] * scale_factor
+
+        return lake_moisture_normalized
+
+    def _diffuse_lake_moisture(self, lake_moisture_normalized):
+        """
+        Diffuse lake moisture using existing transport system.
+        Returns rainfall in physical units (needs scaling by original_rainfall_max before adding to main map).
+        """
+
+        lake_rainfall = [0.0] * self.mc.iNumPlots
+        current_moisture = list(lake_moisture_normalized)
+
+        # Use shorter diffusion for lakes
+        max_iterations = self.mc.lakeMoistureDiffusionIterations
+        min_moisture_threshold = self.mc.rainfallMinimumPrecipitation * 0.01
+
+        # Pre-calculate temperature factors (same as original rainfall)
+        base_temp = self.rainfallConvectiveBaseTemp
+        max_temp = self.rainfallConvectiveMaxTemp
+        temp_range = max_temp - base_temp if max_temp > base_temp else 1.0
+        decline_rate = self.mc.rainfallConvectiveDeclineRate
+        min_factor = self.mc.rainfallConvectiveMinFactor
+        min_precip = self.mc.rainfallMinimumPrecipitation
+
+        # Main diffusion loop (identical physics to original rainfall)
+        for iteration in xrange(max_iterations):
+            new_moisture_grid = [0.0] * self.mc.iNumPlots
+            total_transported = 0.0
+
+            for i in xrange(self.mc.iNumPlots):
+                moisture = current_moisture[i]
+
+                if moisture <= min_moisture_threshold:
+                    lake_rainfall[i] += moisture
+                    continue
+
+                # Temperature-based precipitation (same calculation as original)
+                temp_celsius = self.TemperatureMap[i]
+                conv_rate = self._convective_rates[i]
+
+                if temp_celsius <= base_temp:
+                    base_precip = 0.0
+                elif temp_celsius <= max_temp:
+                    temp_factor = (temp_celsius - base_temp) / temp_range
+                    base_precip = moisture * conv_rate * temp_factor
+                else:
+                    temp_excess = temp_celsius - max_temp
+                    decline_factor = temp_excess * decline_rate
+                    temp_factor = max(min_factor, 1.0 - decline_factor)
+                    base_precip = moisture * conv_rate * temp_factor
+
+                local_precipitation = max(base_precip, min_precip)
+
+                if local_precipitation >= moisture:
+                    lake_rainfall[i] += moisture
+                    continue
+
+                lake_rainfall[i] += local_precipitation
+                remaining_moisture = moisture - local_precipitation
+
+                # Transport using existing weights (same physics as original)
+                transport_data = self._transport_weights[i]
+                if not transport_data:
+                    continue
+
+                for neighbor_id, transport_weight, precip_factor in transport_data:
+                    transported_amount = remaining_moisture * transport_weight
+                    transport_precipitation = transported_amount * precip_factor
+
+                    if transport_precipitation < transported_amount:
+                        lake_rainfall[i] += transport_precipitation
+                        final_transported = transported_amount - transport_precipitation
+                        new_moisture_grid[neighbor_id] += final_transported
+                        total_transported += final_transported
+                    else:
+                        lake_rainfall[i] += transported_amount
+
+            current_moisture = new_moisture_grid
+
+            if total_transported < min_moisture_threshold * self.mc.iNumPlots:
+                break
+
+        return lake_rainfall
+
+    def _add_scaled_lake_rainfall(self, lake_rainfall_from_diffusion):
+        """
+        Add properly scaled lake rainfall to existing rainfall map using original rainfall scale.
+
+        This preserves the physical relationship: if a lake produces the same amount of
+        physical rainfall as an ocean area, they get the same normalized value.
+        """
+
+        # Scale lake rainfall using the SAME original_rainfall_max that was used for main rainfall
+        # This preserves the physical relationship between lake and ocean rainfall effects
+        if self.original_rainfall_max <= 0.0:
+            return
+
+        scale_factor = 1.0 / self.original_rainfall_max
+
+        # Add scaled lake rainfall to existing normalized rainfall map
+        for i in xrange(self.mc.iNumPlots):
+            scaled_lake_rain = lake_rainfall_from_diffusion[i] * scale_factor
+            self.RainfallMap[i] += scaled_lake_rain
+
+        # Renormalize the combined result using max-only normalization
+        if max(self.RainfallMap) > 0.0:
+            self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
