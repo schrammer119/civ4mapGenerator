@@ -5,7 +5,7 @@ from ClimateMap import ClimateMap
 import random
 
 class TerrainMap:
-    def __init__(self, mapConfig, elevationMap, climateMap):
+    def __init__(self, mapConfig, elevationMap, climateMap, gc=None):
         """Initialize TerrainMap with required data sources"""
         if mapConfig is None:
             self.mc = MapConfig()
@@ -20,6 +20,12 @@ class TerrainMap:
         else:
             self.cm = climateMap
 
+        # Initialize game context for XML access
+        if gc is None:
+            self.gc = CyGlobalContext()
+        else:
+            self.gc = gc
+
         # Load XML constraints from game engine (handled by MapConfig)
         self.terrain_constraints = self.mc.terrain_constraints  # From XML TerrainInfos
         self.feature_constraints = self.mc.feature_constraints  # From XML FeatureInfos
@@ -29,10 +35,10 @@ class TerrainMap:
         self.BIOME_GRID_SIZE = 20
         self.biome_grid = {}
 
-        # Results arrays
-        self.terrain_map = [TerrainTypes.TERRAIN_GRASS] * self.mc.iNumPlots
-        self.feature_map = [FeatureTypes.NO_FEATURE] * self.mc.iNumPlots
-        self.resource_map = [BonusTypes.NO_BONUS] * self.mc.iNumPlots
+        # Results arrays - using -1 for NO_TERRAIN/NO_FEATURE/NO_BONUS
+        self.terrain_map = [-1] * self.mc.iNumPlots
+        self.feature_map = [-1] * self.mc.iNumPlots
+        self.resource_map = [-1] * self.mc.iNumPlots
         self.biome_assignments = [''] * self.mc.iNumPlots
 
         # Feature clustering tracking
@@ -41,6 +47,9 @@ class TerrainMap:
         self.placed_resources = {}  # Track placed resources by type
         self.resource_exclusion_zones = {}  # Track exclusion zones for iUnique
         self.continent_assignments = {}  # Track which continents get bArea resources
+
+        # Warning tracking (warn once per resource/feature)
+        self.logged_warnings = set()
 
         # Normalized scoring factors (0.0 to 1.0)
         self.scoring_factors = {
@@ -71,10 +80,13 @@ class TerrainMap:
         # Pass 3: Place secondary features (flood plains, oases, etc.)
         self._place_secondary_features()
 
-        # Pass 4: Place resources based on biome and terrain compatibility
+        # Pass 4: Place resources based on XML parameters and custom rules
         self._place_resources()
 
-        print("TerrainMap: Terrain generation complete")
+        # Pass 5: Apply final terrain assignments from biome data
+        self._apply_terrain_from_biomes()
+
+        print("TerrainMap: Terrain generation complete.")
 
     def _generate_biome_definitions(self):
         """
@@ -86,9 +98,9 @@ class TerrainMap:
 
         'biome_name': {
             # === REQUIRED FIELDS ===
-            'terrain': TERRAIN_TYPE_CONSTANT,           # Base terrain type for this biome
+            'terrain': 'TERRAIN_TYPE_CONSTANT',           # Base terrain type for this biome
             'feature': {                                # Primary feature definition
-                'type': FEATURE_TYPE_CONSTANT or None,  # Feature type, None for no feature
+                'type': 'FEATURE_TYPE_CONSTANT' or None,  # Feature type, None for no feature
                 'subtype': int,                         # Feature subtype (forests only):
                                                         #   0 = Broadleaf, 1 = Evergreen, 2 = Snowy Evergreen
                 'coverage': float (0.0-1.0),           # Fraction of biome tiles that get the feature
@@ -135,7 +147,7 @@ class TerrainMap:
         self.biome_definitions = {
             # === WATER BIOMES ===
             'tropical_ocean': {
-                'terrain': TERRAIN_OCEAN,
+                'terrain': 'TERRAIN_OCEAN',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -156,7 +168,7 @@ class TerrainMap:
             },
 
             'temperate_ocean': {
-                'terrain': TERRAIN_OCEAN,
+                'terrain': 'TERRAIN_OCEAN',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -177,9 +189,9 @@ class TerrainMap:
             },
 
             'polar_ocean': {
-                'terrain': TERRAIN_OCEAN,
+                'terrain': 'TERRAIN_OCEAN',
                 'feature': {
-                    'type': FEATURE_ICE,  # Ice features on polar ocean
+                    'type': 'FEATURE_ICE',  # Ice features on polar ocean
                     'coverage': 0.40,     # 40% ice coverage
                     'placement_rules': {
                         'cluster_factor': 0.8,
@@ -202,7 +214,7 @@ class TerrainMap:
             },
 
             'tropical_coast': {
-                'terrain': TERRAIN_COAST,
+                'terrain': 'TERRAIN_COAST',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -223,7 +235,7 @@ class TerrainMap:
             },
 
             'temperate_coast': {
-                'terrain': TERRAIN_COAST,
+                'terrain': 'TERRAIN_COAST',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -244,9 +256,9 @@ class TerrainMap:
             },
 
             'polar_coast': {
-                'terrain': TERRAIN_COAST,
+                'terrain': 'TERRAIN_COAST',
                 'feature': {
-                    'type': FEATURE_ICE,
+                    'type': 'FEATURE_ICE',
                     'coverage': 0.25,
                     'placement_rules': {
                         'cluster_factor': 0.6,
@@ -270,7 +282,7 @@ class TerrainMap:
 
             # === DESERT BIOMES ===
             'hot_desert': {
-                'terrain': TERRAIN_DESERT,
+                'terrain': 'TERRAIN_DESERT',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -292,7 +304,7 @@ class TerrainMap:
 
             # === PLAINS BIOMES ===
             'steppe': {
-                'terrain': TERRAIN_PLAINS,
+                'terrain': 'TERRAIN_PLAINS',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -313,7 +325,7 @@ class TerrainMap:
             },
 
             'savanna': {
-                'terrain': TERRAIN_PLAINS,
+                'terrain': 'TERRAIN_PLAINS',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -334,9 +346,9 @@ class TerrainMap:
             },
 
             'mediterranean': {
-                'terrain': TERRAIN_PLAINS,
+                'terrain': 'TERRAIN_PLAINS',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
                     'coverage': 0.30,  # Sparse mediterranean woodland
                     'placement_rules': {
@@ -361,9 +373,9 @@ class TerrainMap:
             },
 
             'dry_conifer_forest': {
-                'terrain': TERRAIN_PLAINS,
+                'terrain': 'TERRAIN_PLAINS',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
                     'coverage': 0.70,
                     'placement_rules': {
@@ -388,9 +400,9 @@ class TerrainMap:
             },
 
             'woodland_savanna': {
-                'terrain': TERRAIN_PLAINS,
+                'terrain': 'TERRAIN_PLAINS',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
                     'coverage': 0.40,
                     'placement_rules': {
@@ -416,7 +428,7 @@ class TerrainMap:
 
             # === GRASSLAND BIOMES ===
             'temperate_grassland': {
-                'terrain': TERRAIN_GRASS,
+                'terrain': 'TERRAIN_GRASS',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -437,9 +449,9 @@ class TerrainMap:
             },
 
             'temperate_forest': {
-                'terrain': TERRAIN_GRASS,
+                'terrain': 'TERRAIN_GRASS',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
                     'coverage': 0.85,
                     'placement_rules': {
@@ -464,9 +476,9 @@ class TerrainMap:
             },
 
             'coastal_rainforest': {
-                'terrain': TERRAIN_GRASS,
+                'terrain': 'TERRAIN_GRASS',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
                     'coverage': 0.95,
                     'placement_rules': {
@@ -491,9 +503,9 @@ class TerrainMap:
             },
 
             'tropical_jungle': {
-                'terrain': TERRAIN_GRASS,
+                'terrain': 'TERRAIN_GRASS',
                 'feature': {
-                    'type': FEATURE_JUNGLE,
+                    'type': 'FEATURE_JUNGLE',
                     'coverage': 0.90,
                     'placement_rules': {
                         'avoid_peaks': True,
@@ -518,7 +530,7 @@ class TerrainMap:
 
             # === TUNDRA BIOMES ===
             'tundra': {
-                'terrain': TERRAIN_TUNDRA,
+                'terrain': 'TERRAIN_TUNDRA',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -539,9 +551,9 @@ class TerrainMap:
             },
 
             'taiga': {
-                'terrain': TERRAIN_TUNDRA,
+                'terrain': 'TERRAIN_TUNDRA',
                 'feature': {
-                    'type': FEATURE_FOREST,
+                    'type': 'FEATURE_FOREST',
                     'subtype': 2,  # Snowy Evergreen
                     'coverage': 0.75,
                     'placement_rules': {
@@ -567,7 +579,7 @@ class TerrainMap:
 
             # === SNOW BIOMES ===
             'polar_desert': {
-                'terrain': TERRAIN_SNOW,
+                'terrain': 'TERRAIN_SNOW',
                 'feature': {
                     'type': None,
                     'coverage': 0.0,
@@ -601,7 +613,7 @@ class TerrainMap:
 
         'feature_name': {
             # === REQUIRED FIELDS ===
-            'base_feature': FEATURE_TYPE_CONSTANT,      # The feature to place
+            'base_feature': 'FEATURE_TYPE_CONSTANT',      # The feature to place
             'placement_rules': [                        # List of placement rule sets
                 {
                     # === CONDITION TYPES ===
@@ -616,7 +628,7 @@ class TerrainMap:
 
                     # === FILTERS AND REQUIREMENTS ===
                     'required': bool,                   # Must meet this condition (vs optional bonus)
-                    'terrain_filter': [TERRAIN_TYPES], # Only on these terrain types
+                    'terrain_filter': ['TERRAIN_TYPES'], # Only on these terrain types
                     'biome_filter': ['biome_names'],    # Only in these biomes
                     'plot_requirements': ['plot_types'], # Required plot types:
                     #   'plot_flat', 'plot_hills', 'plot_peaks'
@@ -651,18 +663,18 @@ class TerrainMap:
 
         self.secondary_features = {
             'flood_plains': {
-                'base_feature': FEATURE_FLOOD_PLAINS,
+                'base_feature': 'FEATURE_FLOOD_PLAINS',
                 'placement_rules': [
                     {
                         'condition': 'river_tile',
                         'required': True,
-                        'terrain_filter': [TERRAIN_DESERT],  # Game engine flaw - always on desert rivers
+                        'terrain_filter': ['TERRAIN_DESERT'],  # Game engine flaw - always on desert rivers
                         'placement_method': 'probability',
                         'probability': 1.0,
                     },
                     {
                         'condition': 'river_tile',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS'],
                         'climate_requirements': {
                             'temp_range': (0.40, 1.00),  # Warm climates
                             'precip_range': (0.30, 0.80),  # Moderate to high rainfall
@@ -675,11 +687,11 @@ class TerrainMap:
             },
 
             'oasis': {
-                'base_feature': FEATURE_OASIS,
+                'base_feature': 'FEATURE_OASIS',
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_DESERT],
+                        'terrain_filter': ['TERRAIN_DESERT'],
                         'required': True,
                         'placement_method': 'scattered',
                         'density': 0.05,  # 5% of desert tiles eligible
@@ -707,7 +719,7 @@ class TerrainMap:
 
         'resource_name': {
             # === REQUIRED FIELDS ===
-            'base_resource': BONUS_TYPE_CONSTANT,       # The resource/bonus to place
+            'base_resource': 'BONUS_TYPE_CONSTANT',       # The resource/bonus to place
 
             # === XML BONUSINFO PARAMETERS ===
             # These are loaded automatically from XML, but can be overridden here
@@ -742,7 +754,7 @@ class TerrainMap:
                     #   'always' - Always attempt placement
 
                     # === FILTERS AND REQUIREMENTS ===
-                    'terrain_filter': [TERRAIN_TYPES], # Only on these terrain types
+                    'terrain_filter': ['TERRAIN_TYPES'], # Only on these terrain types
                     'feature_filter': [FEATURE_TYPES], # Only on these feature types (None for no feature)
                     'biome_filter': ['biome_names'],    # Only in these biomes
 
@@ -768,7 +780,7 @@ class TerrainMap:
 
         # Example 1: Gold with XML overrides
         'gold': {
-            'base_resource': BONUS_GOLD,
+            'base_resource': 'BONUS_GOLD',
             'xml_overrides': {
                 'iPlacementOrder': 2,       # Place after food resources
                 'iPlayer': 100,             # ~1 per player
@@ -778,7 +790,7 @@ class TerrainMap:
             'placement_rules': [
                 {
                     'condition': 'terrain_match',
-                    'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS, TERRAIN_TUNDRA],
+                    'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_TUNDRA'],
                     'weight': 1.0,
                 }
             ]
@@ -786,7 +798,7 @@ class TerrainMap:
 
         # Example 2: Strategic resource with clustering
         'iron': {
-            'base_resource': BONUS_IRON,
+            'base_resource': 'BONUS_IRON',
             'xml_overrides': {
                 'iPlacementOrder': 1,       # High priority
                 'iPlayer': 120,             # ~1.2 per player
@@ -809,7 +821,7 @@ class TerrainMap:
         self.resource_definitions = {
             # === FOOD RESOURCES (Priority 0) ===
             'wheat': {
-                'base_resource': BONUS_WHEAT,
+                'base_resource': 'BONUS_WHEAT',
                 'xml_overrides': {
                     'iPlacementOrder': 0,       # Highest priority
                     'iConstAppearance': 90,     # 90% chance to appear
@@ -821,7 +833,7 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS'],
                         'feature_filter': [None],  # No features
                         'weight': 1.0,
                     }
@@ -829,7 +841,7 @@ class TerrainMap:
             },
 
             'corn': {
-                'base_resource': BONUS_CORN,
+                'base_resource': 'BONUS_CORN',
                 'xml_overrides': {
                     'iPlacementOrder': 0,
                     'iConstAppearance': 85,
@@ -841,14 +853,14 @@ class TerrainMap:
                     {
                         'condition': 'biome_match',
                         'biome_filter': ['temperate_grassland', 'temperate_forest'],
-                        'feature_filter': [None, FEATURE_FOREST],
+                        'feature_filter': [None, 'FEATURE_FOREST'],
                         'weight': 1.0,
                     }
                 ]
             },
 
             'rice': {
-                'base_resource': BONUS_RICE,
+                'base_resource': 'BONUS_RICE',
                 'xml_overrides': {
                     'iPlacementOrder': 0,
                     'iConstAppearance': 80,
@@ -860,7 +872,7 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS],
+                        'terrain_filter': ['TERRAIN_GRASS'],
                         'climate_requirements': {
                             'temp_range': (0.5, 1.0),    # Warm climates
                             'precip_range': (0.6, 1.0),  # High rainfall
@@ -872,7 +884,7 @@ class TerrainMap:
 
             # === STRATEGIC RESOURCES (Priority 1) ===
             'iron': {
-                'base_resource': BONUS_IRON,
+                'base_resource': 'BONUS_IRON',
                 'xml_overrides': {
                     'iPlacementOrder': 1,
                     'iConstAppearance': 95,     # Very likely to appear
@@ -885,14 +897,14 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS, TERRAIN_TUNDRA],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_TUNDRA'],
                         'weight': 1.0,
                     }
                 ]
             },
 
             'copper': {
-                'base_resource': BONUS_COPPER,
+                'base_resource': 'BONUS_COPPER',
                 'xml_overrides': {
                     'iPlacementOrder': 1,
                     'iConstAppearance': 90,
@@ -905,14 +917,14 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS, TERRAIN_DESERT, TERRAIN_TUNDRA],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_DESERT', 'TERRAIN_TUNDRA'],
                         'weight': 1.0,
                     }
                 ]
             },
 
             'horse': {
-                'base_resource': BONUS_HORSE,
+                'base_resource': 'BONUS_HORSE',
                 'xml_overrides': {
                     'iPlacementOrder': 1,
                     'iConstAppearance': 85,
@@ -924,7 +936,7 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS'],
                         'feature_filter': [None],  # Open terrain
                         'weight': 1.0,
                     }
@@ -933,7 +945,7 @@ class TerrainMap:
 
             # === LUXURY RESOURCES (Priority 2) ===
             'gold': {
-                'base_resource': BONUS_GOLD,
+                'base_resource': 'BONUS_GOLD',
                 'xml_overrides': {
                     'iPlacementOrder': 2,
                     'iConstAppearance': 75,
@@ -945,14 +957,14 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_GRASS, TERRAIN_PLAINS, TERRAIN_TUNDRA],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_TUNDRA'],
                         'weight': 1.0,
                     }
                 ]
             },
 
             'gems': {
-                'base_resource': BONUS_GEMS,
+                'base_resource': 'BONUS_GEMS',
                 'xml_overrides': {
                     'iPlacementOrder': 2,
                     'iConstAppearance': 70,
@@ -964,14 +976,14 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'condition': 'terrain_match',
-                        'terrain_filter': [TERRAIN_TUNDRA, TERRAIN_DESERT, TERRAIN_GRASS],
+                        'terrain_filter': ['TERRAIN_TUNDRA', 'TERRAIN_DESERT', 'TERRAIN_GRASS'],
                         'weight': 1.0,
                     }
                 ]
             },
 
             'spices': {
-                'base_resource': BONUS_SPICES,
+                'base_resource': 'BONUS_SPICES',
                 'xml_overrides': {
                     'iPlacementOrder': 2,
                     'iConstAppearance': 75,
@@ -985,7 +997,7 @@ class TerrainMap:
                     {
                         'condition': 'biome_match',
                         'biome_filter': ['tropical_jungle', 'woodland_savanna'],
-                        'feature_filter': [FEATURE_JUNGLE, FEATURE_FOREST],
+                        'feature_filter': ['FEATURE_JUNGLE', 'FEATURE_FOREST'],
                         'weight': 1.5,
                     }
                 ]
@@ -1604,60 +1616,129 @@ class TerrainMap:
         return self._tile_meets_rule_conditions(tile_index, rule)
 
     def _place_resources(self):
-        """Place resources based on XML parameters and custom rules"""
+        """Place resources using scoring-based system"""
         print("TerrainMap: Placing resources...")
-
-        # Initialize resource tracking
-        self.placed_resources = {}
-        self.resource_exclusion_zones = {}
-        self.continent_assignments = {}
 
         # Get resources sorted by placement order
         resources_by_order = self._get_resources_by_placement_order()
 
-        # Place resources in order of priority
-        for placement_order in sorted(resources_by_order.keys()):
-            print("TerrainMap: Placing resources with priority %d..." % placement_order)
+        for resource_def in resources_by_order:
+            self._place_single_resource(resource_def)
 
-            for resource_name in resources_by_order[placement_order]:
-                resource_def = self.resource_definitions[resource_name]
-                xml_params = self._get_xml_parameters(resource_def)
+    def _place_single_resource(self, resource_def):
+        """Place a single resource type using scoring system"""
+        bonus_id = self._get_bonus_id(resource_def['base_resource'])
+        if bonus_id == -1:
+            return  # Skip missing resources
 
-                # Check if resource should appear on this map
-                if not self._should_resource_appear(xml_params):
+        xml_constraints = self.bonus_constraints.get(bonus_id, {})
+
+        # Calculate target quantity
+        target_quantity = self._calculate_target_quantity(xml_constraints)
+
+        # Build scored candidate list
+        candidates = []
+        for tile_index in range(self.mc.iNumPlots):
+            if not self._meets_hard_constraints(tile_index, resource_def):
+                continue
+
+            if self.resource_map[tile_index] != -1:
+                continue  # Already has a resource
+
+            score = self._calculate_placement_score(tile_index, resource_def)
+            if score > 0.1:  # Minimum threshold
+                candidates.append((tile_index, score))
+
+        # Sort by score and place top candidates
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        placed_count = 0
+        for tile_index, score in candidates:
+            if placed_count >= target_quantity:
+                break
+
+            # Apply clustering and exclusion rules
+            if self._should_place_resource(tile_index, resource_def, xml_constraints):
+                self.resource_map[tile_index] = bonus_id
+                self._update_exclusion_zones(tile_index, xml_constraints)
+                placed_count += 1
+
+    def _calculate_target_quantity(self, xml_constraints):
+        """Calculate target resource quantity from XML parameters"""
+        base_quantity = 0
+
+        # Player-based quantity
+        player_percent = xml_constraints.get('player', 0)
+        if player_percent > 0:
+            base_quantity += (self.mc.iNumPlayers * player_percent) // 100
+
+        # Tile-based quantity
+        tiles_per = xml_constraints.get('tiles_per', 0)
+        if tiles_per > 0:
+            base_quantity += self.mc.iNumPlots // tiles_per
+
+        # Apply appearance probability
+        const_appearance = xml_constraints.get('const_appearance', 100)
+        if random.randint(1, 100) > const_appearance:
+            return 0
+
+        return max(1, base_quantity)  # At least one if we're placing
+
+    def _should_place_resource(self, tile_index, resource_def, xml_constraints):
+        """Check clustering and exclusion rules"""
+        # Check unique radius (exclusion zones)
+        unique_radius = xml_constraints.get('unique', 0)
+        if unique_radius > 0:
+            if self._has_resource_in_radius(tile_index, resource_def['base_resource'], unique_radius):
+                return False
+
+        return True
+
+    def _has_resource_in_radius(self, tile_index, resource_type, radius):
+        """Check if resource exists within radius"""
+        bonus_id = self._get_bonus_id(resource_type)
+        if bonus_id == -1:
+            return False
+
+        x, y = self.mc.get_coords_from_index(tile_index)
+
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx == 0 and dy == 0:
                     continue
 
-                # Calculate target placement count
-                target_count = self._calculate_target_resource_count(xml_params)
-                if target_count <= 0:
+                check_x, check_y = self.mc.wrap_coordinates(x + dx, y + dy)
+                if not self.mc.coordinates_in_bounds(check_x, check_y):
                     continue
 
-                # Find eligible tiles
-                eligible_tiles = self._find_eligible_resource_tiles(resource_name, resource_def, xml_params)
-                if not eligible_tiles:
-                    print("TerrainMap: No eligible tiles for resource %s" % resource_name)
-                    continue
+                check_index = self.mc.get_index_from_coords(check_x, check_y)
+                if self.resource_map[check_index] == bonus_id:
+                    return True
 
-                # Place the resource
-                placed_count = self._place_resource_with_constraints(
-                    resource_name, resource_def, xml_params, eligible_tiles, target_count
-                )
+        return False
 
-                print("TerrainMap: Placed %d instances of %s" % (placed_count, resource_name))
+    def _update_exclusion_zones(self, tile_index, xml_constraints):
+        """Update exclusion zones after placing resource"""
+        # TODO: Implementation for tracking exclusion zones
+        pass
 
     def _get_resources_by_placement_order(self):
-        """Group resources by their placement order priority"""
-        resources_by_order = {}
+        """Get resources sorted by XML placement order"""
+        resource_list = []
 
-        for resource_name, resource_def in self.resource_definitions.items():
-            xml_params = self._get_xml_parameters(resource_def)
-            placement_order = xml_params.get('iPlacementOrder', 99)  # Default to low priority
+        for resource_def in self.resource_definitions.values():
+            bonus_id = self._get_bonus_id(resource_def['base_resource'])
+            if bonus_id == -1:
+                continue
 
-            if placement_order not in resources_by_order:
-                resources_by_order[placement_order] = []
-            resources_by_order[placement_order].append(resource_name)
+            xml_constraints = self.bonus_constraints.get(bonus_id, {})
+            placement_order = xml_constraints.get('placement_order', 99)
 
-        return resources_by_order
+            resource_list.append((placement_order, resource_def))
+
+        # Sort by placement order (lower numbers first)
+        resource_list.sort(key=lambda x: x[0])
+        return [resource_def for _, resource_def in resource_list]
 
     def _get_xml_parameters(self, resource_def):
         """Get XML parameters for resource, with overrides applied"""
@@ -1936,6 +2017,220 @@ class TerrainMap:
                 return [t for t in eligible_tiles if self.em.continentID[t] == best_continent]
             else:
                 return eligible_tiles
+
+    def _log_warning(self, message):
+        """Log warning once per unique message"""
+        if message not in self.logged_warnings:
+            print(f"WARNING: {message}")
+            self.logged_warnings.add(message)
+
+    def _get_terrain_id(self, terrain_string):
+        """Convert terrain string to game ID, with error handling"""
+        if terrain_string is None:
+            return -1
+        terrain_id = self.gc.getInfoTypeForString(terrain_string)
+        if terrain_id == -1:
+            self._log_warning(f"Terrain type '{terrain_string}' not found in game XML")
+        return terrain_id
+
+    def _get_feature_id(self, feature_string):
+        """Convert feature string to game ID, with error handling"""
+        if feature_string is None:
+            return -1
+        feature_id = self.gc.getInfoTypeForString(feature_string)
+        if feature_id == -1:
+            self._log_warning(f"Feature type '{feature_string}' not found in game XML")
+        return feature_id
+
+    def _get_bonus_id(self, bonus_string):
+        """Convert bonus string to game ID, with error handling"""
+        if bonus_string is None:
+            return -1
+        bonus_id = self.gc.getInfoTypeForString(bonus_string)
+        if bonus_id == -1:
+            self._log_warning(f"Bonus type '{bonus_string}' not found in game XML")
+        return bonus_id
+
+    def _calculate_placement_score(self, tile_index, resource_def):
+        """Calculate placement score (0.0 to 1.0, higher = better)"""
+        score = 0.5  # Base score
+
+        # Apply soft constraint modifiers
+        score += self._score_xml_constraints(tile_index, resource_def)
+        score += self._score_custom_constraints(tile_index, resource_def)
+        score += self._score_climate_fit(tile_index, resource_def)
+        score += self._score_biome_fit(tile_index, resource_def)
+
+        return max(0.0, min(1.0, score))  # Clamp to [0,1]
+
+    def _score_xml_constraints(self, tile_index, resource_def):
+        """Score based on XML preferences (+/- 0.3 max)"""
+        score_modifier = 0.0
+
+        bonus_id = self._get_bonus_id(resource_def['base_resource'])
+        if bonus_id == -1:
+            return -0.5  # Heavy penalty for missing resources
+
+        xml_constraints = self.bonus_constraints.get(bonus_id, {})
+        x, y = self.mc.get_coords_from_index(tile_index)
+
+        # Latitude preference
+        latitude = abs(self.mc.get_latitude_for_y(y))
+        min_lat = xml_constraints.get('min_latitude', 0)
+        max_lat = xml_constraints.get('max_latitude', 90)
+
+        if min_lat <= latitude <= max_lat:
+            score_modifier += 0.15
+        else:
+            score_modifier -= 0.1  # Penalty but not elimination
+
+        # Terrain preference
+        terrain_id = self.terrain_map[tile_index]
+        terrain_booleans = xml_constraints.get('terrain_booleans', [])
+        if terrain_id in terrain_booleans:
+            score_modifier += 0.1
+        elif terrain_booleans:  # Has preferences but this isn't one
+            score_modifier -= 0.05
+
+        # Feature preference
+        feature_id = self.feature_map[tile_index]
+        feature_booleans = xml_constraints.get('feature_booleans', [])
+        if feature_id in feature_booleans:
+            score_modifier += 0.1
+
+        return score_modifier
+
+    def _score_custom_constraints(self, tile_index, resource_def):
+        """Score based on custom placement rules (+/- 0.3 max)"""
+        score_modifier = 0.0
+
+        # Evaluate each placement rule
+        for rule in resource_def.get('placement_rules', []):
+            rule_score = self._evaluate_placement_rule(tile_index, rule)
+            weight = rule.get('weight', 1.0)
+            score_modifier += rule_score * weight * 0.1  # Scale to reasonable range
+
+        return max(-0.3, min(0.3, score_modifier))
+
+    def _score_climate_fit(self, tile_index, resource_def):
+        """Score based on climate requirements (+/- 0.2 max)"""
+        score_modifier = 0.0
+
+        for rule in resource_def.get('placement_rules', []):
+            climate_reqs = rule.get('climate_requirements', {})
+            if not climate_reqs:
+                continue
+
+            # Temperature fit
+            temp_range = climate_reqs.get('temp_range')
+            if temp_range:
+                temp_percentile = self.cm.temperature_percentiles[tile_index]
+                if temp_range[0] <= temp_percentile <= temp_range[1]:
+                    score_modifier += 0.1
+                else:
+                    # Graduated penalty based on distance from range
+                    distance = min(abs(temp_percentile - temp_range[0]),
+                                 abs(temp_percentile - temp_range[1]))
+                    score_modifier -= distance * 0.1
+
+            # Rainfall fit
+            precip_range = climate_reqs.get('precip_range')
+            if precip_range:
+                precip_percentile = self.cm.rainfall_percentiles[tile_index]
+                if precip_range[0] <= precip_percentile <= precip_range[1]:
+                    score_modifier += 0.1
+                else:
+                    distance = min(abs(precip_percentile - precip_range[0]),
+                                 abs(precip_percentile - precip_range[1]))
+                    score_modifier -= distance * 0.1
+
+        return max(-0.2, min(0.2, score_modifier))
+
+    def _score_biome_fit(self, tile_index, resource_def):
+        """Score based on biome preferences (+/- 0.2 max)"""
+        score_modifier = 0.0
+        tile_biome = self.biome_assignments[tile_index]
+
+        for rule in resource_def.get('placement_rules', []):
+            biome_filter = rule.get('biome_filter', [])
+            if biome_filter:
+                if tile_biome in biome_filter:
+                    score_modifier += 0.15
+                else:
+                    score_modifier -= 0.1
+
+        return max(-0.2, min(0.2, score_modifier))
+
+    def _meets_hard_constraints(self, tile_index, resource_def):
+        """Check hard constraints that must be obeyed (boolean gates)"""
+        bonus_id = self._get_bonus_id(resource_def['base_resource'])
+        if bonus_id == -1:
+            return False  # Missing resource definition
+
+        xml_constraints = self.bonus_constraints.get(bonus_id, {})
+
+        # Water/Land compatibility
+        plot_type = self.em.plot_types[tile_index]
+        is_water_plot = plot_type == 3  # PLOT_OCEAN
+        resource_needs_water = xml_constraints.get('b_water', False)
+
+        if is_water_plot != resource_needs_water:
+            return False
+
+        # Exclusive plot requirements
+        if xml_constraints.get('b_hills', False) and plot_type != 1:  # PLOT_HILLS
+            return False
+        if xml_constraints.get('b_flatlands', False) and plot_type != 2:  # PLOT_LAND
+            return False
+
+        # River requirements for features
+        if xml_constraints.get('b_requires_river', False):
+            if not self.mc.is_river_tile(tile_index):
+                return False
+
+        return True
+
+    def _evaluate_placement_rule(self, tile_index, rule):
+        """Evaluate a single placement rule and return score modifier"""
+        condition = rule.get('condition', 'always')
+
+        if condition == 'terrain_match':
+            terrain_filter = rule.get('terrain_filter', [])
+            if terrain_filter:
+                terrain_id = self.terrain_map[tile_index]
+                terrain_string = self._get_terrain_string_from_id(terrain_id)
+                return 1.0 if terrain_string in terrain_filter else -0.5
+
+        elif condition == 'feature_match':
+            feature_filter = rule.get('feature_filter', [])
+            if feature_filter:
+                feature_id = self.feature_map[tile_index]
+                feature_string = self._get_feature_string_from_id(feature_id)
+                return 1.0 if feature_string in feature_filter else -0.5
+
+        elif condition == 'biome_match':
+            biome_filter = rule.get('biome_filter', [])
+            if biome_filter:
+                tile_biome = self.biome_assignments[tile_index]
+                return 1.0 if tile_biome in biome_filter else -0.5
+
+        elif condition == 'always':
+            return 0.0  # Neutral score for always-applicable rules
+
+        return 0.0
+
+    def _get_terrain_string_from_id(self, terrain_id):
+        """Convert terrain ID back to string for comparison"""
+        if terrain_id == -1:
+            return None
+        # This would need to be implemented in MapConfig with reverse lookup
+        return self.mc.get_terrain_string_from_id(terrain_id)
+
+    def _get_feature_string_from_id(self, feature_id):
+        """Convert feature ID back to string for comparison"""
+        if feature_id == -1:
+            return None
+        return self.mc.get_feature_string_from_id(feature_id)
 
     # Helper methods for data processing
     def _get_plot_flat_map(self):

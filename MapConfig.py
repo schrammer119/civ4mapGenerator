@@ -40,10 +40,21 @@ class MapConfig:
         self._initialize_elevation_parameters()
         self._initialize_climate_parameters()
 
+        # Load XML constraints from game files
+        self._load_xml_constraints()
+
+        # Pre-calculate highly used adjacency maps
+        self._precalculate_adjacency_maps()
+
         # --- Pre-calculate and Cache Utilities ---
         self._precalculate_neighbours()
         self._perlin_instance = self.Perlin2D(seed=random.randint(0, 10000))
 
+
+    @property
+    def iNumPlayers(self):
+        """Get number of players from game engine"""
+        return self.gc.getGame().countCivPlayersEverAlive()
 
     # -------------------------------------------------------------------------
     # Parameter Initialization
@@ -258,6 +269,85 @@ class MapConfig:
         self.lakeMoistureDiffusionIterations = 12   # Diffusion iterations for lake moisture
         self.largeLakeSizeThreshold = 4             # Minimum size for large lake bonus
         self.largeLakeMoistureBonus = 1.1           # Moisture multiplier for large lakes
+
+    def _load_xml_constraints(self):
+        """Load constraints from game XML files"""
+        print("MapConfig: Loading XML constraints from game files...")
+
+        self.terrain_constraints = self._load_terrain_constraints()
+        self.feature_constraints = self._load_feature_constraints()
+        self.bonus_constraints = self._load_bonus_constraints()
+
+        # Create reverse lookup dictionaries
+        self._build_reverse_lookups()
+
+    def _load_terrain_constraints(self):
+        """Load terrain constraints from XML TerrainInfos"""
+        constraints = {}
+
+        for i in range(self.gc.getNumTerrainInfos()):
+            terrain_info = self.gc.getTerrainInfo(i)
+            terrain_type = terrain_info.getType()
+
+            constraints[i] = {
+                'type_string': terrain_type,
+                'b_water': terrain_info.isWater()
+            }
+
+        return constraints
+
+    def _load_feature_constraints(self):
+        """Load feature constraints from XML FeatureInfos"""
+        constraints = {}
+
+        for i in range(self.gc.getNumFeatureInfos()):
+            feature_info = self.gc.getFeatureInfo(i)
+            feature_type = feature_info.getType()
+
+            constraints[i] = {
+                'type_string': feature_type,
+                'b_no_coast': feature_info.isNoCoast(),
+                'b_no_river': feature_info.isNoRiver(),
+                'b_no_adjacent': feature_info.isNoAdjacent(),
+                'b_requires_flatlands': feature_info.isRequiresFlatlands(),
+                'b_requires_river': feature_info.isRequiresRiver(),
+                'terrain_booleans': self._extract_terrain_booleans_feature(feature_info),
+            }
+
+        return constraints
+
+    def _load_bonus_constraints(self):
+        """Load bonus constraints from XML BonusInfos"""
+        constraints = {}
+
+        for i in range(self.gc.getNumBonusInfos()):
+            bonus_info = self.gc.getBonusInfo(i)
+            bonus_type = bonus_info.getType()
+
+            constraints[i] = {
+                'type_string': bonus_type,
+                'placement_order': bonus_info.getPlacementOrder(),
+                'const_appearance': bonus_info.getConstAppearance(),
+                'min_area_size': bonus_info.getMinAreaSize(),
+                'min_latitude': bonus_info.getMinLatitude(),
+                'max_latitude': bonus_info.getMaxLatitude(),
+                'player': bonus_info.getPlayer(),
+                'tiles_per': bonus_info.getTilesPer(),
+                'min_land_percent': bonus_info.getMinLandPercent(),
+                'unique': bonus_info.getUnique(),
+                'group_range': bonus_info.getGroupRange(),
+                'group_rand': bonus_info.getGroupRand(),
+                'b_area': bonus_info.isArea(),
+                'b_hills': bonus_info.isHills(),
+                'b_flatlands': bonus_info.isFlatlands(),
+                'b_no_river_side': bonus_info.isNoRiverSide(),
+                'b_normalize': bonus_info.isNormalize(),
+                'terrain_booleans': self._extract_terrain_booleans_bonus(bonus_info),
+                'feature_booleans': self._extract_feature_booleans_bonus(bonus_info),
+                'feature_terrain_booleans': self._extract_feature_terrain_booleans_bonus(bonus_info),
+            }
+
+        return constraints
 
 
     # -------------------------------------------------------------------------
@@ -663,3 +753,172 @@ class MapConfig:
         """Get intersecting tiles from node index"""
         node_x, node_y = self.get_node_coords(node_index)
         return self.get_node_intersecting_tiles(node_x, node_y)
+
+    def _extract_terrain_booleans_feature(self, feature_info):
+        """Extract terrain compatibility from FeatureInfo"""
+        terrain_list = []
+
+        for i in range(self.gc.getNumTerrainInfos()):
+            if feature_info.isTerrain(i):
+                terrain_list.append(i)
+
+        return terrain_list
+
+    def _extract_terrain_booleans_bonus(self, bonus_info):
+        """Extract terrain compatibility from BonusInfo"""
+        terrain_list = []
+
+        for i in range(self.gc.getNumTerrainInfos()):
+            if bonus_info.isTerrain(i):
+                terrain_list.append(i)
+
+        return terrain_list
+
+    def _extract_feature_booleans_bonus(self, bonus_info):
+        """Extract feature compatibility from BonusInfo"""
+        feature_list = []
+
+        for i in range(self.gc.getNumFeatureInfos()):
+            if bonus_info.isFeature(i):
+                feature_list.append(i)
+
+        return feature_list
+
+    def _extract_feature_terrain_booleans_bonus(self, bonus_info):
+        """Extract feature-terrain compatibility from BonusInfo"""
+        feature_terrain_list = []
+
+        for i in range(self.gc.getNumTerrainInfos()):
+            if bonus_info.isFeatureTerrain(i):
+                feature_terrain_list.append(i)
+
+        return feature_terrain_list
+
+    def _build_reverse_lookups(self):
+        """Build reverse lookup dictionaries for ID to string conversion"""
+        self.terrain_id_to_string = {}
+        self.feature_id_to_string = {}
+        self.bonus_id_to_string = {}
+
+        for terrain_id, data in self.terrain_constraints.items():
+            self.terrain_id_to_string[terrain_id] = data['type_string']
+
+        for feature_id, data in self.feature_constraints.items():
+            self.feature_id_to_string[feature_id] = data['type_string']
+
+        for bonus_id, data in self.bonus_constraints.items():
+            self.bonus_id_to_string[bonus_id] = data['type_string']
+
+    def _precalculate_adjacency_maps(self):
+        """Pre-calculate adjacency maps for frequently used checks"""
+        print("MapConfig: Pre-calculating adjacency maps...")
+
+        # Initialize adjacency maps
+        self.river_adjacency_map = [False] * self.iNumPlots
+        self.coast_adjacency_map = [False] * self.iNumPlots
+
+        # Calculate river adjacency
+        for i in range(self.iNumPlots):
+            x, y = self.get_coords_from_index(i)
+
+            # Check if tile itself has a river
+            if self.is_river_tile(i):
+                self.river_adjacency_map[i] = True
+                continue
+
+            # Check adjacent tiles for rivers
+            for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
+                adj_index = self.neighbours[i][direction]
+                if adj_index != -1 and self.is_river_tile(adj_index):
+                    self.river_adjacency_map[i] = True
+                    break
+
+        # Calculate coast adjacency
+        for i in range(self.iNumPlots):
+            if self.plot_types[i] == 3:  # PLOT_OCEAN
+                self.coast_adjacency_map[i] = True
+                continue
+
+            # Check adjacent tiles for ocean
+            for direction in range(1, 9):
+                adj_index = self.neighbours[i][direction]
+                if adj_index != -1 and self.plot_types[adj_index] == 3:  # PLOT_OCEAN
+                    self.coast_adjacency_map[i] = True
+                    break
+
+    # Utility functions for XML integration
+    def get_terrain_id(self, terrain_string):
+        """Convert terrain string to game ID, with error handling"""
+        if terrain_string is None:
+            return -1
+        return self.gc.getInfoTypeForString(terrain_string)
+
+    def get_feature_id(self, feature_string):
+        """Convert feature string to game ID, with error handling"""
+        if feature_string is None:
+            return -1
+        return self.gc.getInfoTypeForString(feature_string)
+
+    def get_bonus_id(self, bonus_string):
+        """Convert bonus string to game ID, with error handling"""
+        if bonus_string is None:
+            return -1
+        return self.gc.getInfoTypeForString(bonus_string)
+
+    def get_terrain_string_from_id(self, terrain_id):
+        """Convert terrain ID back to string for comparison"""
+        return self.terrain_id_to_string.get(terrain_id, None)
+
+    def get_feature_string_from_id(self, feature_id):
+        """Convert feature ID back to string for comparison"""
+        return self.feature_id_to_string.get(feature_id, None)
+
+    def get_bonus_string_from_id(self, bonus_id):
+        """Convert bonus ID back to string for comparison"""
+        return self.bonus_id_to_string.get(bonus_id, None)
+
+    # Adjacency checking functions
+    def is_adjacent_to_river(self, tile_index):
+        """Check if tile is adjacent to a river (pre-calculated)"""
+        if tile_index < 0 or tile_index >= len(self.river_adjacency_map):
+            return False
+        return self.river_adjacency_map[tile_index]
+
+    def is_adjacent_to_coast(self, tile_index):
+        """Check if tile is adjacent to coast (pre-calculated)"""
+        if tile_index < 0 or tile_index >= len(self.coast_adjacency_map):
+            return False
+        return self.coast_adjacency_map[tile_index]
+
+    def is_adjacent_to_feature(self, tile_index, feature_type):
+        """Check if tile is adjacent to specific feature (calculated on-demand)"""
+        feature_id = self.get_feature_id(feature_type)
+        if feature_id == -1:
+            return False
+
+        x, y = self.get_coords_from_index(tile_index)
+
+        for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
+            adj_index = self.neighbours[tile_index][direction]
+            if adj_index != -1:
+                # TODO: This would need access to the feature map from TerrainMap
+                # Implementation depends on how we structure data flow
+                pass
+
+        return False
+
+    def is_river_tile(self, tile_index):
+        """Check if tile has a river"""
+        # TODO: This needs to be implemented based on how river data is stored
+        # Placeholder for now
+        return False
+
+    def get_coords_from_index(self, index):
+        """Convert flat index to x,y coordinates"""
+        y = index // self.iNumPlotsX
+        x = index % self.iNumPlotsX
+        return x, y
+
+    def get_index_from_coords(self, x, y):
+        """Convert x,y coordinates to flat index"""
+        return y * self.iNumPlotsX + x

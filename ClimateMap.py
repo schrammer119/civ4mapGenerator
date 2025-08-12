@@ -80,6 +80,9 @@ class ClimateMap:
         self.GenerateRainfallMap()
         self.GenerateRiverMap()
 
+        # Calculate percentiles for terrain system (do this once at the end)
+        self._calculate_percentiles()
+
     @profile
     def GenerateTemperatureMap(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
@@ -2740,3 +2743,50 @@ class ClimateMap:
         # Renormalize the combined result using max-only normalization
         if max(self.RainfallMap) > 0.0:
             self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
+
+    def _calculate_percentiles(self):
+        """Calculate and store percentiles for terrain system"""
+        print("ClimateMap: Calculating climate percentiles...")
+
+        self.temperature_percentiles = self._build_percentile_map(self.temperature_map)
+        self.rainfall_percentiles = self._build_percentile_map(self.rainfall_map)
+
+        # Optional: Calculate percentiles for other climate variables
+        if hasattr(self, 'WindSpeeds') and self.WindSpeeds:
+            self.wind_speed_percentiles = self._build_percentile_map(self.WindSpeeds)
+
+        if hasattr(self, 'atmospheric_pressure') and self.atmospheric_pressure:
+            self.pressure_percentiles = self._build_percentile_map(self.atmospheric_pressure)
+
+    def _build_percentile_map(self, data_map):
+        """Convert a data map to percentile rankings (0.0 to 1.0)"""
+        if not data_map or len(data_map) == 0:
+            return [0.0] * len(data_map) if data_map else []
+
+        # Create list of (value, original_index) pairs
+        indexed_values = [(data_map[i], i) for i in range(len(data_map))]
+
+        # Sort by value
+        indexed_values.sort(key=lambda x: x[0])
+
+        # Create percentile map
+        percentile_map = [0.0] * len(data_map)
+
+        for rank, (value, original_index) in enumerate(indexed_values):
+            # Calculate percentile (0.0 to 1.0)
+            percentile = float(rank) / float(len(indexed_values) - 1) if len(indexed_values) > 1 else 0.0
+            percentile_map[original_index] = percentile
+
+        return percentile_map
+
+    def get_temperature_percentile(self, tile_index):
+        """Get temperature percentile for a specific tile"""
+        if not hasattr(self, 'temperature_percentiles') or tile_index >= len(self.temperature_percentiles):
+            return 0.0
+        return self.temperature_percentiles[tile_index]
+
+    def get_rainfall_percentile(self, tile_index):
+        """Get rainfall percentile for a specific tile"""
+        if not hasattr(self, 'rainfall_percentiles') or tile_index >= len(self.rainfall_percentiles):
+            return 0.0
+        return self.rainfall_percentiles[tile_index]
