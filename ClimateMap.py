@@ -51,6 +51,7 @@ class ClimateMap:
         self.streamfunction = [0.0] * self.mc.iNumPlots
         self.WindU = [0.0] * self.mc.iNumPlots
         self.WindV = [0.0] * self.mc.iNumPlots
+        self.WindSpeeds = [0.0] * self.mc.iNumPlots
         self.atmospheric_pressure = [0.0] * self.mc.iNumPlots
 
         # Rainfall maps
@@ -106,7 +107,7 @@ class ClimateMap:
 
             for x in xrange(self.mc.iNumPlotsX):
                 i = y * self.mc.iNumPlotsX + x
-                if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+                if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                     # Ocean temperature with thermal inertia
                     base_ocean_temp = (solar_factor * (self.mc.maxWaterTempC - self.mc.minWaterTempC) +
                                      self.mc.minWaterTempC)
@@ -151,7 +152,7 @@ class ClimateMap:
         sign = lambda a: (a > 0) - (a < 0)
 
         for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 y = i // self.mc.iNumPlotsX
                 latitude = self.mc.get_latitude_for_y(y)
                 latitude_rad = math.radians(latitude)
@@ -181,7 +182,7 @@ class ClimateMap:
         for dir in xrange(1,9):
             neighbour_i = self.mc.neighbours[i][dir]
             if neighbour_i >= 0:
-                if self.em.plotTypes[neighbour_i] == self.mc.PLOT_OCEAN:
+                if self.em.plotTypes[neighbour_i] == PlotTypes.PLOT_OCEAN:
                     x_j = neighbour_i % self.mc.iNumPlotsX
                     y_j = neighbour_i // self.mc.iNumPlotsX
 
@@ -214,7 +215,7 @@ class ClimateMap:
         sumK = [0.0] * self.mc.iNumPlots
 
         for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 continue
 
             # Calculate depth for this tile
@@ -225,7 +226,7 @@ class ClimateMap:
                 j = self.mc.neighbours[i][dir]
                 if j < 0:
                     continue
-                if self.em.plotTypes[j] != self.mc.PLOT_OCEAN:
+                if self.em.plotTypes[j] != PlotTypes.PLOT_OCEAN:
                     continue
 
                 # Calculate depth for neighbour
@@ -262,11 +263,11 @@ class ClimateMap:
             if not is_below_sea_level(i) or sumK[i] == 0:
                 continue
 
-            neighbors_data = []
-            neighbors_i = neighbours[i]
+            neighbours_data = []
+            neighbours_i = neighbours[i]
             conduct_i = conduct[i]
 
-            for idx, j in enumerate(neighbors_i):
+            for idx, j in enumerate(neighbours_i):
                 # Pre-calculate direction vector
                 dx, dy = self.mc.calculate_direction_vector(i, j)
 
@@ -275,9 +276,9 @@ class ClimateMap:
                 force_V_avg = (force_V[i] + force_V[j]) * 0.5
                 F_base = force_U_avg * dx + force_V_avg * dy
 
-                neighbors_data.append((conduct_i[idx], j, F_base))
+                neighbours_data.append((conduct_i[idx], j, F_base))
 
-            plot_data.append((i, neighbors_data, sumK[i]))
+            plot_data.append((i, neighbours_data, sumK[i]))
 
         # Main iteration loop - now extremely streamlined
         residual = float('inf')
@@ -286,9 +287,9 @@ class ClimateMap:
             residual_sum = 0.0
             residual_count = len(plot_data)
 
-            for i, neighbors_data, sumK_i in plot_data:
+            for i, neighbours_data, sumK_i in plot_data:
                 acc = 0.0
-                for conduct_val, j, F_base in neighbors_data:
+                for conduct_val, j, F_base in neighbours_data:
                     acc += conduct_val * pressure[j] - F_base
 
                 pressure_new[i] = acc / sumK_i
@@ -321,7 +322,7 @@ class ClimateMap:
         pressure_flux_y = [0.0] * self.mc.iNumPlots
 
         for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 continue
 
             depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
@@ -345,7 +346,7 @@ class ClimateMap:
 
         # Step 2: Apply Coriolis rotation to fluxes
         for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 self.OceanCurrentU[i] = 0.0
                 self.OceanCurrentV[i] = 0.0
                 continue
@@ -399,13 +400,13 @@ class ClimateMap:
         """
 
         # Initialize distance map: 0 for ocean, infinity for land
-        self.oceanDistanceMap = [0 if self.em.plotTypes[i] == self.mc.PLOT_OCEAN
+        self.oceanDistanceMap = [0 if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN
                                 else self.mc.iNumPlots for i in range(self.mc.iNumPlots)]
 
         # Flood fill to identify connected ocean basins
         initial_ocean_tiles = []
         for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 if self.em.basinSizes[self.em.oceanBasinMap[i]] >= self.mc.min_basin_size:
                     initial_ocean_tiles.append((i, 0))
 
@@ -454,7 +455,7 @@ class ClimateMap:
         # Process each ocean tile as a thermal source
         for source_tile in xrange(self.mc.iNumPlots):
             # Skip non-ocean tiles
-            if self.em.plotTypes[source_tile] != self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[source_tile] != PlotTypes.PLOT_OCEAN:
                 continue
 
             # Skip small basins
@@ -484,7 +485,7 @@ class ClimateMap:
 
                 # Terminate if invalid neighbour or hit land
                 if (next_neighbour < 0 or
-                    self.em.plotTypes[next_neighbour] != self.mc.PLOT_OCEAN):
+                    self.em.plotTypes[next_neighbour] != PlotTypes.PLOT_OCEAN):
                     break
 
                 # Move to next position
@@ -516,7 +517,7 @@ class ClimateMap:
         self.TemperatureMap = self.mc.gaussian_blur(
             self.TemperatureMap,
             radius=self.mc.oceanDiffusionRadius,
-            filter_func=lambda i: self.em.plotTypes[i] == self.mc.PLOT_OCEAN
+            filter_func=lambda i: self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN
         )
 
     @profile
@@ -544,9 +545,9 @@ class ClimateMap:
                 if neighbour >= 0:
                     neighbour_distance = self.oceanDistanceMap[neighbour]
 
-                    # Only consider neighbors closer to ocean AND not blocked by peaks
+                    # Only consider neighbours closer to ocean AND not blocked by peaks
                     if (neighbour_distance < distance and
-                        self.em.plotTypes[neighbour] != self.mc.PLOT_PEAK):
+                        self.em.plotTypes[neighbour] != PlotTypes.PLOT_PEAK):
                         neighbour_temp = self.TemperatureMap[neighbour]  # Already has maritime effects
 
                         # For direct ocean neighbours, check basin size
@@ -571,7 +572,7 @@ class ClimateMap:
     @profile
     def _apply_temperature_smoothing(self):
         """Apply smoothing to temperature map"""
-        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: self.em.plotTypes[i] != self.mc.PLOT_OCEAN)
+        self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing, filter_func=lambda i: self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN)
         self.TemperatureMap = self.mc.gaussian_blur(self.TemperatureMap, self.mc.climateSmoothing)
 
     @profile
@@ -814,23 +815,23 @@ class ClimateMap:
         mean_layer_depth = self.mc.qgMeanLayerDepth
         beta_param = self.mc.qgBetaParameter
 
-        # Pre-compute all neighbor relationships to avoid repeated lookups
-        cardinal_neighbors = []
-        neighbor_weights = []
+        # Pre-compute all neighbour relationships to avoid repeated lookups
+        cardinal_neighbours = []
+        neighbour_weights = []
 
         for i in xrange(num_plots):
             card_neighs = []
             weights = 0.0
 
-            # Cardinal neighbors
+            # Cardinal neighbours
             for dir in xrange(1, 5):
-                neighbor_i = neighbours[i][dir]
-                if neighbor_i >= 0:
-                    card_neighs.append(neighbor_i)
+                neighbour_i = neighbours[i][dir]
+                if neighbour_i >= 0:
+                    card_neighs.append(neighbour_i)
                     weights += 1.0
 
-            cardinal_neighbors.append(card_neighs)
-            neighbor_weights.append(weights)
+            cardinal_neighbours.append(card_neighs)
+            neighbour_weights.append(weights)
 
         # Pre-compute latitude-dependent beta values to avoid repeated calculations
         beta_values = [0.0] * num_plots
@@ -864,12 +865,12 @@ class ClimateMap:
                 # 8-point stencil calculation
                 sum_w_psi = 0.0
 
-                # Cardinal neighbors (directions 1-4)
-                for neighbor_i in cardinal_neighbors[i]:
-                    sum_w_psi += streamfunction[neighbor_i]
+                # Cardinal neighbours (directions 1-4)
+                for neighbour_i in cardinal_neighbours[i]:
+                    sum_w_psi += streamfunction[neighbour_i]
 
                 # Jacobi update with friction
-                denominator = neighbor_weights[i] + dx2_alpha
+                denominator = neighbour_weights[i] + dx2_alpha
                 if denominator > 0:
                     new_psi = (sum_w_psi - dx_squared * pv_forcing[i]) / denominator
                 else:
@@ -991,13 +992,12 @@ class ClimateMap:
         num_plots = self.mc.iNumPlots
 
         # Pre-allocate all arrays
-        self._wind_speeds = [0.0] * num_plots
         self._wind_unit_x = [0.0] * num_plots
         self._wind_unit_y = [0.0] * num_plots
         self._lat_factors = [0.0] * num_plots
         self._saturation_vapor_pressures = [0.0] * num_plots
 
-        # Pre-calculate transport weights for each cell (eliminates runtime neighbor calculations)
+        # Pre-calculate transport weights for each cell (eliminates runtime neighbour calculations)
         self._transport_weights = [[] for _ in xrange(num_plots)]
         self._orographic_factors = [1.0] * num_plots
         self._convective_rates = [0.0] * num_plots
@@ -1011,7 +1011,7 @@ class ClimateMap:
             wind_u = self.WindU[i]
             wind_v = self.WindV[i]
             wind_speed = (wind_u * wind_u + wind_v * wind_v) ** 0.5
-            self._wind_speeds[i] = wind_speed
+            self.WindSpeeds[i] = wind_speed
 
             if wind_speed > 0.0:
                 self._wind_unit_x[i] = wind_u / wind_speed
@@ -1026,16 +1026,16 @@ class ClimateMap:
             self._saturation_vapor_pressures[i] = 610.94 * math.exp(17.625 * temp / (temp + 243.04))
 
             # Pre-calculate convective rates
-            if self.em.plotTypes[i] == self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 self._convective_rates[i] = ocean_conv_rate
             else:
                 self._convective_rates[i] = max_conv_rate
 
             # Pre-calculate orographic factors
             plot_type = self.em.plotTypes[i]
-            if plot_type == self.mc.PLOT_PEAK:
+            if plot_type == PlotTypes.PLOT_PEAK:
                 self._orographic_factors[i] = self.mc.rainPeakOrographicFactor
-            elif plot_type == self.mc.PLOT_HILLS:
+            elif plot_type == PlotTypes.PLOT_HILLS:
                 self._orographic_factors[i] = self.mc.rainHillOrographicFactor
 
             # Pre-calculate transport weights for this cell
@@ -1046,11 +1046,11 @@ class ClimateMap:
         """Pre-calculate transport weights and precipitation effects for a single cell"""
         wind_unit_x = self._wind_unit_x[location]
         wind_unit_y = self._wind_unit_y[location]
-        neighbors = self.mc.neighbours[location]
+        neighbours = self.mc.neighbours[location]
 
         transport_data = []
 
-        # Inline the neighbor weight calculation logic
+        # Inline the neighbour weight calculation logic
         abs_wind_x = abs(wind_unit_x)
         abs_wind_y = abs(wind_unit_y)
 
@@ -1066,35 +1066,35 @@ class ClimateMap:
                 (self.mc.E if wind_unit_x > 0 else self.mc.W, abs_wind_x)
             ]
 
-        # Pre-calculate orographic and temperature effects for each valid neighbor
+        # Pre-calculate orographic and temperature effects for each valid neighbour
         current_elevation = self.em.aboveSeaLevelMap[location]
         current_temp = self.TemperatureMap[location]
 
         for direction, weight in directions_and_weights:
-            neighbor_location = neighbors[direction]
-            if neighbor_location > 0:
+            neighbour_location = neighbours[direction]
+            if neighbour_location > 0:
                 # Pre-calculate orographic and frontal effects
-                target_elevation = self.em.aboveSeaLevelMap[neighbor_location]
-                target_temp = self.TemperatureMap[neighbor_location]
+                target_elevation = self.em.aboveSeaLevelMap[neighbour_location]
+                target_temp = self.TemperatureMap[neighbour_location]
 
                 elevation_factor = max(0.0, target_elevation - current_elevation)
                 temperature_factor = max(0.0, current_temp - target_temp)
 
                 orographic_effect = (elevation_factor * self.mc.rainfallOrographicFactor *
-                                   self._orographic_factors[neighbor_location])
+                                   self._orographic_factors[neighbour_location])
                 frontal_effect = temperature_factor * self.mc.rainfallFrontalFactor
 
                 total_precipitation_factor = orographic_effect + frontal_effect
 
-                # Store: (neighbor_id, transport_weight, precipitation_factor)
-                transport_data.append((neighbor_location, weight, total_precipitation_factor))
+                # Store: (neighbour_id, transport_weight, precipitation_factor)
+                transport_data.append((neighbour_location, weight, total_precipitation_factor))
 
         self._transport_weights[location] = transport_data
 
     def _set_dynamic_temperature_thresholds(self):
         """Set temperature thresholds - optimized with list comprehension"""
         land_temps = [self.TemperatureMap[i] for i in xrange(self.mc.iNumPlots)
-                     if self.em.plotTypes[i] != self.mc.PLOT_OCEAN]
+                     if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
 
         if not land_temps:
             return
@@ -1119,11 +1119,11 @@ class ClimateMap:
 
         # Calculate initial moisture from evaporation
         for i in xrange(num_plots):
-            wind_speed = self._wind_speeds[i]
+            wind_speed = self.WindSpeeds[i]
             q_a = self._lat_factors[i]
             e_s = self._saturation_vapor_pressures[i]
 
-            ce = ocean_ce if self.em.plotTypes[i] == self.mc.PLOT_OCEAN else land_ce
+            ce = ocean_ce if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN else land_ce
 
             atm_pressure = self.atmospheric_pressure[i]
             q_s = 0.62198 * e_s / (atm_pressure - e_s)
@@ -1207,8 +1207,8 @@ class ClimateMap:
                 if not transport_data:
                     continue
 
-                # Distribute moisture to neighbors
-                for neighbor_id, transport_weight, precip_factor in transport_data:
+                # Distribute moisture to neighbours
+                for neighbour_id, transport_weight, precip_factor in transport_data:
                     transported_amount = remaining_moisture * transport_weight
 
                     # Apply orographic/frontal precipitation during transport
@@ -1218,7 +1218,7 @@ class ClimateMap:
                         # Some moisture survives transport
                         self.RainfallMap[i] += transport_precipitation
                         final_transported = transported_amount - transport_precipitation
-                        new_moisture_grid[neighbor_id] += final_transported
+                        new_moisture_grid[neighbour_id] += final_transported
                         total_transported += final_transported
                     else:
                         # All moisture precipitates during transport
@@ -1234,7 +1234,7 @@ class ClimateMap:
     def _finalize_rainfall_map(self):
         """Final processing of rainfall map"""
         # Set ocean tiles to zero rainfall
-        ocean_plot_type = self.mc.PLOT_OCEAN
+        ocean_plot_type = PlotTypes.PLOT_OCEAN
         for i in xrange(self.mc.iNumPlots):
             if self.em.plotTypes[i] == ocean_plot_type:
                 self.RainfallMap[i] = 0.0
@@ -1296,7 +1296,7 @@ class ClimateMap:
         # Start with base node elevations
 
         for node_i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[node_i] == self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[node_i] == PlotTypes.PLOT_OCEAN:
                 # quick exit for NW ocean tiles (leave elev at 0.0)
                 continue
             node_x, node_y = self.mc.get_node_coords(node_i)
@@ -1322,7 +1322,7 @@ class ClimateMap:
                     continue
 
                 tile_index = ty * self.mc.iNumPlotsX + tx
-                if self.em.plotTypes[tile_index] == self.mc.PLOT_OCEAN:
+                if self.em.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN:
                     total_elevation = 0.0
                     count = 1
                     break
@@ -1357,7 +1357,7 @@ class ClimateMap:
             is_outlet = False
             for tile_i in intersecting_tiles:
                 if (0 <= tile_i < self.mc.iNumPlots and
-                    self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN):
+                    self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN):
                     is_outlet = True
                     break
 
@@ -1366,12 +1366,12 @@ class ClimateMap:
                 continue
 
             current_elevation = self.node_elevations[node_i]
-            neighbors = self.mc.get_valid_node_neighbors(node_x, node_y)
+            neighbours = self.mc.get_valid_node_neighbours(node_x, node_y)
 
             candidates = []
-            for neighbor_x, neighbor_y in neighbors:
-                neighbor_i = self.mc.get_node_index(neighbor_x, neighbor_y)
-                true_slope = current_elevation - self.node_elevations[neighbor_i]
+            for neighbour_x, neighbour_y in neighbours:
+                neighbour_i = self.mc.get_node_index(neighbour_x, neighbour_y)
+                true_slope = current_elevation - self.node_elevations[neighbour_i]
 
                 # Add position-based perturbation that doesn't modify actual elevation
                 # This creates consistent "preferred" flow directions in different areas
@@ -1380,8 +1380,8 @@ class ClimateMap:
                 effective_slope = true_slope + perturbation
 
                 # Only consider if true slope allows flow (even uphill within spillover)
-                if true_slope > -spillover_height and self.flow_directions[neighbor_i] != node_i:
-                    candidates.append((effective_slope, neighbor_i, true_slope))
+                if true_slope > -spillover_height and self.flow_directions[neighbour_i] != node_i:
+                    candidates.append((effective_slope, neighbour_i, true_slope))
 
             if candidates:
                 # Sort by perturbed slope but validate with true slope
@@ -1425,7 +1425,7 @@ class ClimateMap:
                 reaches_ocean = False
                 neighbours = self.mc.get_node_intersecting_tiles_from_index(outlet_node)
                 for n_i in neighbours:
-                    if self.em.plotTypes[n_i] == self.mc.PLOT_OCEAN:
+                    if self.em.plotTypes[n_i] == PlotTypes.PLOT_OCEAN:
                         reaches_ocean = True
                         break
 
@@ -1474,12 +1474,12 @@ class ClimateMap:
         """Process tiles to assign watersheds, set continent IDs, and initialize flows"""
 
         for tile_i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+            if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
                 continue
             ocean_neighbour = False
             for dir in range(1,9):
                 neighbour_i = self.mc.neighbours[tile_i][dir]
-                if 0 <= neighbour_i < self.mc.iNumPlots and self.em.plotTypes[neighbour_i] == self.mc.PLOT_OCEAN:
+                if 0 <= neighbour_i < self.mc.iNumPlots and self.em.plotTypes[neighbour_i] == PlotTypes.PLOT_OCEAN:
                     ocean_neighbour = True
                     break
             if ocean_neighbour:
@@ -1488,7 +1488,7 @@ class ClimateMap:
             tile_x = tile_i % self.mc.iNumPlotsX
             tile_y = tile_i // self.mc.iNumPlotsX
 
-            # Find lowest neighboring node
+            # Find lowest neighbouring node
             surrounding_nodes = self.mc.get_tile_surrounding_nodes(tile_x, tile_y)
 
             if surrounding_nodes:
@@ -1537,9 +1537,9 @@ class ClimateMap:
                 intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
                 for tile_i in intersecting_tiles:
                     if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                        if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
+                        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_PEAK:
                             self.enhanced_flows[node_i] += self.mc.RiverPeakSourceBonus
-                        elif self.em.plotTypes[tile_i] == self.mc.PLOT_HILLS:
+                        elif self.em.plotTypes[tile_i] == PlotTypes.PLOT_HILLS:
                             self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
 
         # Optimized flow accumulation for large watersheds only
@@ -1736,7 +1736,7 @@ class ClimateMap:
                 intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
                 for tile_i in intersecting_tiles:
                     if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                        if self.em.plotTypes[tile_i] == self.mc.PLOT_PEAK:
+                        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_PEAK:
                             peak_count += 1
                         if self.TemperatureMap[tile_i] < 0.3:  # Cold threshold
                             cold_area += 1
@@ -1999,9 +1999,9 @@ class ClimateMap:
                         # Find first valid land tile for lake placement
                         for tile_i in outlet_tiles:
                             if (0 <= tile_i < self.mc.iNumPlots and
-                                self.em.plotTypes[tile_i] != self.mc.PLOT_OCEAN):
+                                self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN):
                                 # Force single-tile lake
-                                self.em.plotTypes[tile_i] = self.mc.PLOT_OCEAN
+                                self.em.plotTypes[tile_i] = PlotTypes.PLOT_OCEAN
                                 placed_lakes.append({
                                     'watershed_id': watershed_id,
                                     'center_tile': tile_i,
@@ -2088,7 +2088,7 @@ class ClimateMap:
             # Find lowest of the 4 tiles around outlet node
             for tile_i in intersecting_tiles:
                 if (tile_i >= 0 and tile_i < self.mc.iNumPlots and
-                    self.em.plotTypes[tile_i] != self.mc.PLOT_OCEAN):
+                    self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN):
 
                     elevation = self.em.aboveSeaLevelMap[tile_i]
                     if elevation < lowest_elevation:
@@ -2103,7 +2103,7 @@ class ClimateMap:
                 intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
                 for tile_i in intersecting_tiles:
                     if (tile_i >= 0 and tile_i < self.mc.iNumPlots and
-                        self.em.plotTypes[tile_i] != self.mc.PLOT_OCEAN):
+                        self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN):
 
                         elevation = self.em.aboveSeaLevelMap[tile_i]
                         if elevation < lowest_elevation:
@@ -2133,22 +2133,22 @@ class ClimateMap:
         """Grow a lake outward from center tile using elevation preference"""
 
         lake_tiles = [center_tile]
-        self.em.plotTypes[center_tile] = self.mc.PLOT_OCEAN
+        self.em.plotTypes[center_tile] = PlotTypes.PLOT_OCEAN
 
         while len(lake_tiles) < target_size:
-            # Find candidates for expansion (neighbors of existing lake tiles)
+            # Find candidates for expansion (neighbours of existing lake tiles)
             candidates = []
 
             for lake_tile in lake_tiles:
                 for dir in xrange(1, 5):  # All 8 directions
-                    neighbor = self.mc.neighbours[lake_tile][dir]
+                    neighbour = self.mc.neighbours[lake_tile][dir]
 
-                    if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
-                        neighbor not in lake_tiles and
-                        self.em.plotTypes[neighbor] != self.mc.PLOT_OCEAN):
+                    if (neighbour >= 0 and neighbour < self.mc.iNumPlots and
+                        neighbour not in lake_tiles and
+                        self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN):
 
                         # Score expansion candidate
-                        elevation = self.em.aboveSeaLevelMap[neighbor]
+                        elevation = self.em.aboveSeaLevelMap[neighbour]
 
                         # Always grow to higher elevation (lakes fill up)
                         # Prefer next lowest elevation
@@ -2156,13 +2156,13 @@ class ClimateMap:
                         elevation_score = 1000 - (elevation - min_lake_elevation)  # Lower is better
 
                         # Ocean proximity bonus
-                        ocean_distance = self.get_distance_to_ocean(neighbor)
+                        ocean_distance = self.get_distance_to_ocean(neighbour)
                         ocean_score = max(0, self.mc.LakeOceanConnectionRange - ocean_distance)
 
                         total_score = (elevation_score * self.mc.LakeElevationWeight +
                                     ocean_score * self.mc.LakeOceanProximityWeight)
 
-                        candidates.append((total_score, neighbor))
+                        candidates.append((total_score, neighbour))
 
             if not candidates:
                 break
@@ -2172,7 +2172,7 @@ class ClimateMap:
             best_candidate = candidates[0][1]
 
             lake_tiles.append(best_candidate)
-            self.em.plotTypes[best_candidate] = self.mc.PLOT_OCEAN
+            self.em.plotTypes[best_candidate] = PlotTypes.PLOT_OCEAN
 
         return lake_tiles
 
@@ -2193,16 +2193,16 @@ class ClimateMap:
                 break
 
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbor = self.mc.neighbours[current_tile][dir]
+                neighbour = self.mc.neighbours[current_tile][dir]
 
-                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
-                    neighbor not in visited):
+                if (neighbour >= 0 and neighbour < self.mc.iNumPlots and
+                    neighbour not in visited):
 
-                    if self.em.plotTypes[neighbor] == self.mc.PLOT_OCEAN:
+                    if self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN:
                         return distance + 1
 
-                    visited.add(neighbor)
-                    queue.append((neighbor, distance + 1))
+                    visited.add(neighbour)
+                    queue.append((neighbour, distance + 1))
 
         return self.mc.LakeOceanConnectionRange + 1
 
@@ -2215,12 +2215,12 @@ class ClimateMap:
 
         for lake_tile in lake['final_tiles']:
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbor = self.mc.neighbours[lake_tile][dir]
+                neighbour = self.mc.neighbours[lake_tile][dir]
 
-                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
-                    self.em.plotTypes[neighbor] != self.mc.PLOT_OCEAN):
+                if (neighbour >= 0 and neighbour < self.mc.iNumPlots and
+                    self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN):
 
-                    path = self.find_path_to_ocean(neighbor, 3)  # Short connections only
+                    path = self.find_path_to_ocean(neighbour, 3)  # Short connections only
 
                     if path and len(path) < min_distance:
                         min_distance = len(path)
@@ -2230,8 +2230,8 @@ class ClimateMap:
         if best_path and len(best_path) <= 2:
             for tile_i in best_path:
                 # Don't remove peaks for connections
-                if self.em.plotTypes[tile_i] != self.mc.PLOT_PEAK:
-                    self.em.plotTypes[tile_i] = self.mc.PLOT_OCEAN
+                if self.em.plotTypes[tile_i] != PlotTypes.PLOT_PEAK:
+                    self.em.plotTypes[tile_i] = PlotTypes.PLOT_OCEAN
 
             lake['connected_to_ocean'] = True
 
@@ -2248,18 +2248,18 @@ class ClimateMap:
                 continue
 
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbor = self.mc.neighbours[current_tile][dir]
+                neighbour = self.mc.neighbours[current_tile][dir]
 
-                if (neighbor >= 0 and neighbor < self.mc.iNumPlots and
-                    neighbor not in visited):
+                if (neighbour >= 0 and neighbour < self.mc.iNumPlots and
+                    neighbour not in visited):
 
-                    new_path = path + [neighbor]
+                    new_path = path + [neighbour]
 
-                    if self.em.plotTypes[neighbor] == self.mc.PLOT_OCEAN:
+                    if self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN:
                         return new_path
 
-                    visited.add(neighbor)
-                    queue.append((neighbor, new_path))
+                    visited.add(neighbour)
+                    queue.append((neighbour, new_path))
 
         return None
 
@@ -2332,30 +2332,30 @@ class ClimateMap:
         tile_i = tile_y * self.mc.iNumPlotsX + tile_x
 
         # Don't place rivers on water tiles
-        if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
             return False
 
         # Check eastern tile (critical constraint)
-        east_neighbor = self.mc.neighbours[tile_i][self.mc.E]
-        if (east_neighbor != -1 and east_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[east_neighbor] == self.mc.PLOT_OCEAN):
+        east_neighbour = self.mc.neighbours[tile_i][self.mc.E]
+        if (east_neighbour != -1 and east_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[east_neighbour] == PlotTypes.PLOT_OCEAN):
             return False
 
         # Check NE and SE tiles - only one can be ocean
-        ne_neighbor = self.mc.neighbours[tile_i][self.mc.NE]
-        se_neighbor = self.mc.neighbours[tile_i][self.mc.SE]
+        ne_neighbour = self.mc.neighbours[tile_i][self.mc.NE]
+        se_neighbour = self.mc.neighbours[tile_i][self.mc.SE]
 
         ocean_count = 0
 
-        if (ne_neighbor != -1 and ne_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[ne_neighbor] == self.mc.PLOT_OCEAN):
+        if (ne_neighbour != -1 and ne_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[ne_neighbour] == PlotTypes.PLOT_OCEAN):
             ocean_count += 1
 
-        if (se_neighbor != -1 and se_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[se_neighbor] == self.mc.PLOT_OCEAN):
+        if (se_neighbour != -1 and se_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[se_neighbour] == PlotTypes.PLOT_OCEAN):
             ocean_count += 1
 
-        # Allow at most one ocean neighbor in NE/SE
+        # Allow at most one ocean neighbour in NE/SE
         return ocean_count <= 1
 
     def is_valid_north_river_placement(self, tile_x, tile_y):
@@ -2371,37 +2371,37 @@ class ClimateMap:
         tile_i = tile_y * self.mc.iNumPlotsX + tile_x
 
         # Don't place rivers on water tiles
-        if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
             return False
 
         # Check southern tile (critical constraint)
-        south_neighbor = self.mc.neighbours[tile_i][self.mc.S]
-        if (south_neighbor != -1 and south_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[south_neighbor] == self.mc.PLOT_OCEAN):
+        south_neighbour = self.mc.neighbours[tile_i][self.mc.S]
+        if (south_neighbour != -1 and south_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[south_neighbour] == PlotTypes.PLOT_OCEAN):
             return False
 
         # Check SE and SW tiles - only one can be ocean
-        se_neighbor = self.mc.neighbours[tile_i][self.mc.SE]
-        sw_neighbor = self.mc.neighbours[tile_i][self.mc.SW]
+        se_neighbour = self.mc.neighbours[tile_i][self.mc.SE]
+        sw_neighbour = self.mc.neighbours[tile_i][self.mc.SW]
 
         ocean_count = 0
 
-        if (se_neighbor != -1 and se_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[se_neighbor] == self.mc.PLOT_OCEAN):
+        if (se_neighbour != -1 and se_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[se_neighbour] == PlotTypes.PLOT_OCEAN):
             ocean_count += 1
 
-        if (sw_neighbor != -1 and sw_neighbor < self.mc.iNumPlots and
-            self.em.plotTypes[sw_neighbor] == self.mc.PLOT_OCEAN):
+        if (sw_neighbour != -1 and sw_neighbour < self.mc.iNumPlots and
+            self.em.plotTypes[sw_neighbour] == PlotTypes.PLOT_OCEAN):
             ocean_count += 1
 
-        # Allow at most one ocean neighbor in SE/SW
+        # Allow at most one ocean neighbour in SE/SW
         return ocean_count <= 1
 
     def scale_river_targets_for_map_size(self, standard_rivers):
         """Scale river and glacier targets based on actual map size vs standard."""
         standard_land_tiles = 144 * 96 * 0.38  # Standard map land area
         actual_land_tiles = sum(1 for i in xrange(self.mc.iNumPlots)
-                            if self.em.plotTypes[i] != self.mc.PLOT_OCEAN)
+                            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN)
 
         if actual_land_tiles == 0:
             return standard_rivers
@@ -2491,22 +2491,22 @@ class ClimateMap:
                 tile_i = tile_y * self.mc.iNumPlotsX + tile_x
 
                 if 0 <= tile_i < self.mc.iNumPlots:
-                    # Check if the tile or relevant neighbors are now water
+                    # Check if the tile or relevant neighbours are now water
                     should_remove = False
 
-                    if self.em.plotTypes[tile_i] == self.mc.PLOT_OCEAN:
+                    if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
                         should_remove = True
                     elif is_north_river:
-                        # Check if south neighbor is water (river would be on water edge)
-                        south_neighbor = self.mc.neighbours[tile_i][self.mc.S]
-                        if (south_neighbor >= 0 and south_neighbor < self.mc.iNumPlots and
-                            self.em.plotTypes[south_neighbor] == self.mc.PLOT_OCEAN):
+                        # Check if south neighbour is water (river would be on water edge)
+                        south_neighbour = self.mc.neighbours[tile_i][self.mc.S]
+                        if (south_neighbour >= 0 and south_neighbour < self.mc.iNumPlots and
+                            self.em.plotTypes[south_neighbour] == PlotTypes.PLOT_OCEAN):
                             should_remove = True
                     elif is_west_river:
-                        # Check if east neighbor is water (river would be on water edge)
-                        east_neighbor = self.mc.neighbours[tile_i][self.mc.E]
-                        if (east_neighbor >= 0 and east_neighbor < self.mc.iNumPlots and
-                            self.em.plotTypes[east_neighbor] == self.mc.PLOT_OCEAN):
+                        # Check if east neighbour is water (river would be on water edge)
+                        east_neighbour = self.mc.neighbours[tile_i][self.mc.E]
+                        if (east_neighbour >= 0 and east_neighbour < self.mc.iNumPlots and
+                            self.em.plotTypes[east_neighbour] == PlotTypes.PLOT_OCEAN):
                             should_remove = True
 
                     # Remove the river segment if it conflicts
@@ -2606,7 +2606,7 @@ class ClimateMap:
             for tile_i in lake_tiles:
                 if 0 <= tile_i < self.mc.iNumPlots:
                     # Use existing atmospheric data
-                    wind_speed = self._wind_speeds[tile_i]
+                    wind_speed = self.WindSpeeds[tile_i]
                     q_a = self._lat_factors[tile_i]
                     e_s = self._saturation_vapor_pressures[tile_i]
                     atm_pressure = self.atmospheric_pressure[tile_i]
@@ -2698,14 +2698,14 @@ class ClimateMap:
                 if not transport_data:
                     continue
 
-                for neighbor_id, transport_weight, precip_factor in transport_data:
+                for neighbour_id, transport_weight, precip_factor in transport_data:
                     transported_amount = remaining_moisture * transport_weight
                     transport_precipitation = transported_amount * precip_factor
 
                     if transport_precipitation < transported_amount:
                         lake_rainfall[i] += transport_precipitation
                         final_transported = transported_amount - transport_precipitation
-                        new_moisture_grid[neighbor_id] += final_transported
+                        new_moisture_grid[neighbour_id] += final_transported
                         total_transported += final_transported
                     else:
                         lake_rainfall[i] += transported_amount

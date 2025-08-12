@@ -1,21 +1,24 @@
-"""
-TerrainMap.py
-
-Generates biomes, terrain types, and features for Civilization IV maps using
-scientific climate classification and procedural placement rules.
-
-Author: PlanetForge Development Team
-Python 2.4 Compatible - Standard Library Only
-"""
-
+from CvPythonExtensions import *
+from MapConfig import MapConfig
+from ElevationMap import ElevationMap
+from ClimateMap import ClimateMap
 import random
 
 class TerrainMap:
     def __init__(self, mapConfig, elevationMap, climateMap):
         """Initialize TerrainMap with required data sources"""
-        self.mc = mapConfig
-        self.em = elevationMap
-        self.cm = climateMap
+        if mapConfig is None:
+            self.mc = MapConfig()
+        else:
+            self.mc = mapConfig
+        if elevationMap is None:
+            self.em = ElevationMap()
+        else:
+            self.em = elevationMap
+        if climateMap is None:
+            self.cm = ClimateMap()
+        else:
+            self.cm = climateMap
 
         # Load XML constraints from game engine (handled by MapConfig)
         self.terrain_constraints = self.mc.terrain_constraints  # From XML TerrainInfos
@@ -27,10 +30,10 @@ class TerrainMap:
         self.biome_grid = {}
 
         # Results arrays
-        self.terrain_map = [TERRAIN_GRASS] * self.mc.iNumPlotsX * self.mc.iNumPlotsY
-        self.feature_map = [NO_FEATURE] * self.mc.iNumPlotsX * self.mc.iNumPlotsY
-        self.resource_map = [NO_BONUS] * self.mc.iNumPlotsX * self.mc.iNumPlotsY
-        self.biome_assignments = [''] * self.mc.iNumPlotsX * self.mc.iNumPlotsY
+        self.terrain_map = [TerrainTypes.TERRAIN_GRASS] * self.mc.iNumPlots
+        self.feature_map = [FeatureTypes.NO_FEATURE] * self.mc.iNumPlots
+        self.resource_map = [BonusTypes.NO_BONUS] * self.mc.iNumPlots
+        self.biome_assignments = [''] * self.mc.iNumPlots
 
         # Feature clustering tracking
         self.feature_patches = {}  # Track feature patches for clustering
@@ -41,13 +44,13 @@ class TerrainMap:
 
         # Normalized scoring factors (0.0 to 1.0)
         self.scoring_factors = {
-            'plot_flat': self._normalize_plot_data(self._get_plot_flat_map()),
-            'plot_hills': self._normalize_plot_data(self._get_plot_hills_map()),
-            'plot_peaks': self._normalize_plot_data(self._get_plot_peaks_map()),
-            'elevation': self._normalize_data(self.em.elevation_map),
-            'wind_speed': self._normalize_data(self.cm.wind_speed_map),
-            'pressure': self._normalize_data(self.cm.pressure_map),
-            'neighbors': None  # Calculated during selection
+            'plot_flat': self._get_plot_flat_map(),
+            'plot_hills': self._get_plot_hills_map(),
+            'plot_peaks': self._get_plot_peaks_map(),
+            'elevation': self.mc.normalize_map(self.em.aboveSeaLevelMap),
+            'wind_speed': self.mc.normalize_map(self.cm.WindSpeeds),
+            'pressure': self.mc.normalize_map(self.cm.atmospheric_pressure),
+            'neighbours': None  # Calculated during selection
         }
 
         self._generate_biome_definitions()
@@ -124,7 +127,7 @@ class TerrainMap:
                 'elevation': float,                     # Preference for high/low elevation
                 'wind_speed': float,                    # Preference for windy/calm areas
                 'pressure': float,                      # Preference for high/low pressure
-                'neighbors': float,                     # Clustering bonus weight
+                'neighbours': float,                     # Clustering bonus weight
             }
         },
         """
@@ -148,7 +151,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.2,
+                    'neighbours': 0.2,
                 }
             },
 
@@ -169,7 +172,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.2,
+                    'neighbours': 0.2,
                 }
             },
 
@@ -194,7 +197,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.3,
+                    'neighbours': 0.3,
                 }
             },
 
@@ -215,7 +218,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.1,
+                    'neighbours': 0.1,
                 }
             },
 
@@ -236,7 +239,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.1,
+                    'neighbours': 0.1,
                 }
             },
 
@@ -261,7 +264,7 @@ class TerrainMap:
                     'elevation': 0.0,
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.2,
+                    'neighbours': 0.2,
                 }
             },
 
@@ -283,7 +286,7 @@ class TerrainMap:
                     'elevation': -0.1,  # Prefer lower elevations
                     'wind_speed': 0.2,
                     'pressure': 0.1,
-                    'neighbors': 0.3,
+                    'neighbours': 0.3,
                 }
             },
 
@@ -305,7 +308,7 @@ class TerrainMap:
                     'elevation': -0.2,  # Prefer lower elevations
                     'wind_speed': 0.3,
                     'pressure': 0.0,
-                    'neighbors': 0.4,
+                    'neighbours': 0.4,
                 }
             },
 
@@ -326,7 +329,7 @@ class TerrainMap:
                     'elevation': -0.2,  # Prefer lower elevations
                     'wind_speed': 0.1,
                     'pressure': 0.0,
-                    'neighbors': 0.3,
+                    'neighbours': 0.3,
                 }
             },
 
@@ -353,7 +356,7 @@ class TerrainMap:
                     'elevation': 0.0,   # Neutral on elevation
                     'wind_speed': 0.1,
                     'pressure': 0.0,
-                    'neighbors': 0.3,
+                    'neighbours': 0.3,
                 }
             },
 
@@ -380,7 +383,7 @@ class TerrainMap:
                     'elevation': 0.1,   # Prefer mid elevations
                     'wind_speed': -0.2,
                     'pressure': 0.0,
-                    'neighbors': 0.5,
+                    'neighbours': 0.5,
                 }
             },
 
@@ -407,7 +410,7 @@ class TerrainMap:
                     'elevation': -0.1,  # Prefer lower elevations
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.4,
+                    'neighbours': 0.4,
                 }
             },
 
@@ -429,7 +432,7 @@ class TerrainMap:
                     'elevation': -0.3,  # Strongly prefer lower elevations
                     'wind_speed': 0.2,
                     'pressure': 0.0,
-                    'neighbors': 0.2,
+                    'neighbours': 0.2,
                 }
             },
 
@@ -456,7 +459,7 @@ class TerrainMap:
                     'elevation': 0.0,   # Neutral on elevation
                     'wind_speed': -0.3,
                     'pressure': 0.0,
-                    'neighbors': 0.4,
+                    'neighbours': 0.4,
                 }
             },
 
@@ -483,7 +486,7 @@ class TerrainMap:
                     'elevation': -0.2,  # Prefer near sea level
                     'wind_speed': -0.4,
                     'pressure': 0.0,
-                    'neighbors': 0.6,
+                    'neighbours': 0.6,
                 }
             },
 
@@ -509,7 +512,7 @@ class TerrainMap:
                     'elevation': -0.2,  # Prefer lower elevations
                     'wind_speed': -0.2,
                     'pressure': 0.0,
-                    'neighbors': 0.5,
+                    'neighbours': 0.5,
                 }
             },
 
@@ -531,7 +534,7 @@ class TerrainMap:
                     'elevation': 0.2,   # Prefer higher elevations
                     'wind_speed': 0.1,
                     'pressure': 0.0,
-                    'neighbors': 0.3,
+                    'neighbours': 0.3,
                 }
             },
 
@@ -558,7 +561,7 @@ class TerrainMap:
                     'elevation': 0.1,   # Prefer mid to high elevations
                     'wind_speed': -0.3,
                     'pressure': 0.0,
-                    'neighbors': 0.5,
+                    'neighbours': 0.5,
                 }
             },
 
@@ -580,7 +583,7 @@ class TerrainMap:
                     'elevation': 0.4,   # Strong preference for high elevations
                     'wind_speed': 0.0,
                     'pressure': 0.0,
-                    'neighbors': 0.2,
+                    'neighbours': 0.2,
                 }
             },
 
@@ -689,106 +692,6 @@ class TerrainMap:
             # === MODDERS: ADD YOUR SECONDARY FEATURES BELOW THIS LINE ===
             # Copy the schema above and modify for your features
         }
-
-    def _generate_resource_definitions(self):
-        """
-        MODDERS: Add your custom resources here!
-
-        ===========================================
-        COMPLETE RESOURCE DEFINITION SCHEMA
-        ===========================================
-
-        'resource_name': {
-            # === REQUIRED FIELDS ===
-            'base_resource': BONUS_TYPE_CONSTANT,       # The resource/bonus to place
-            'placement_rules': [                        # List of placement rule sets
-                {
-                    # === CONDITION TYPES ===
-                    'condition': 'string',              # Rule trigger condition:
-                    #   'terrain_match' - Must be on specific terrain
-                    #   'feature_match' - Must be on specific feature
-                    #   'biome_match' - Must be in specific biome
-                    #   'climate_match' - Must meet climate requirements
-                    #   'plot_match' - Must be on specific plot type
-                    #   'river_nearby' - Must be near river
-                    #   'coast_nearby' - Must be near coast
-                    #   'elevation_range' - Must be in elevation range
-                    #   'always' - Always attempt placement
-
-                    # === FILTERS AND REQUIREMENTS ===
-                    'required': bool,                   # Must meet this condition (vs optional bonus)
-                    'terrain_filter': [TERRAIN_TYPES], # Only on these terrain types
-                    'feature_filter': [FEATURE_TYPES], # Only on these feature types (None for no feature)
-                    'biome_filter': ['biome_names'],    # Only in these biomes
-                    'plot_requirements': ['plot_types'], # Required plot types:
-                    #   'plot_flat', 'plot_hills', 'plot_peaks'
-
-                    # === CLIMATE REQUIREMENTS ===
-                    'climate_requirements': {
-                        'temp_range': (float, float),   # Temperature percentile requirements
-                        'precip_range': (float, float), # Precipitation percentile requirements
-                        'wind_range': (float, float),   # Wind speed requirements (optional)
-                        'pressure_range': (float, float), # Pressure requirements (optional)
-                        'elevation_range': (float, float), # Elevation percentile requirements (optional)
-                    },
-
-                    # === PLACEMENT METHODS ===
-                    'placement_method': 'string',       # How to place resources:
-                    #   'probability' - Random chance per eligible tile
-                    #   'scattered' - Random scattered placement with constraints
-                    #   'clustered' - Group placement in patches
-                    #   'balanced' - Distribute evenly across map
-                    #   'luxury_spacing' - Special spacing for luxury resources
-                    #   'strategic_clustering' - Cluster strategic resources
-
-                    # === PLACEMENT PARAMETERS ===
-                    'probability': float (0.0-1.0),    # Chance per eligible tile
-                    'density': float (0.0-1.0),        # Fraction of eligible tiles to target
-                    'cluster_size': int,               # Average size of resource clusters
-                    'min_distance': int,               # Minimum distance between resources
-                    'max_distance': int,               # Maximum distance between resources
-                    'rarity': float (0.0-1.0),        # Overall rarity modifier (0=common, 1=very rare)
-                    'balance_factor': float (0.0-1.0), # How much to balance across players
-                }
-            ]
-        },
-
-        ===========================================
-        USAGE EXAMPLES
-        ===========================================
-
-        # Example 1: Gold in hills and peaks
-        'gold': {
-            'base_resource': BONUS_GOLD,
-            'placement_rules': [
-                {
-                    'condition': 'plot_match',
-                    'plot_requirements': ['plot_hills', 'plot_peaks'],
-                    'placement_method': 'scattered',
-                    'density': 0.03,
-                    'min_distance': 4,
-                    'rarity': 0.7,
-                }
-            ]
-        },
-
-        # Example 2: Wheat in grasslands
-        'wheat': {
-            'base_resource': BONUS_WHEAT,
-            'placement_rules': [
-                {
-                    'condition': 'terrain_match',
-                    'terrain_filter': [TERRAIN_GRASS],
-                    'feature_filter': [None],  # No features
-                    'placement_method': 'probability',
-                    'probability': 0.15,
-                    'rarity': 0.2,
-                }
-            ]
-        },
-
-        ===========================================
-        """
 
     def _generate_resource_definitions(self):
         """
@@ -1138,7 +1041,7 @@ class TerrainMap:
 
     def _assign_biomes(self):
         """Assign biomes to all tiles (land and water) using fuzzy logic + secondary factors"""
-        # Store temporary assignments for neighbor calculation
+        # Store temporary assignments for neighbour calculation
         self._temp_biome_assignments = {}
 
         for tile_index in range(len(self.terrain_map)):
@@ -1158,7 +1061,7 @@ class TerrainMap:
 
         # Determine if water or land biome
         plot_type = self.em.plot_types[tile_index]
-        is_water = plot_type == PLOT_OCEAN
+        is_water = plot_type == PlotTypes.PLOT_OCEAN
         is_coast = self._is_coastal_water(tile_index) if is_water else False
 
         # Filter biomes by water/land/coast type
@@ -1166,11 +1069,11 @@ class TerrainMap:
         for biome_name, biome_def in self.biome_definitions.items():
             terrain = biome_def['terrain']
 
-            if is_water and not is_coast and terrain == TERRAIN_OCEAN:
+            if is_water and not is_coast and terrain == TerrainTypes.TERRAIN_OCEAN:
                 eligible_biomes[biome_name] = biome_def
-            elif is_water and is_coast and terrain == TERRAIN_COAST:
+            elif is_water and is_coast and terrain == TerrainTypes.TERRAIN_COAST:
                 eligible_biomes[biome_name] = biome_def
-            elif not is_water and terrain not in [TERRAIN_OCEAN, TERRAIN_COAST]:
+            elif not is_water and terrain not in [TerrainTypes.TERRAIN_OCEAN, TerrainTypes.TERRAIN_COAST]:
                 eligible_biomes[biome_name] = biome_def
 
         # Find grid position
@@ -1203,10 +1106,10 @@ class TerrainMap:
     def _is_coastal_water(self, tile_index):
         """Check if water tile is adjacent to land (coastal water)"""
         for direction in range(8):
-            neighbor_idx = self.mc.neighbours[tile_index][direction]
-            if neighbor_idx is not None:
-                neighbor_plot = self.em.plot_types[neighbor_idx]
-                if neighbor_plot != PLOT_OCEAN:  # Adjacent to land
+            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            if neighbour_idx is not None:
+                neighbour_plot = self.em.plot_types[neighbour_idx]
+                if neighbour_plot != PlotTypes.PLOT_OCEAN:  # Adjacent to land
                     return True
         return False
 
@@ -1216,8 +1119,8 @@ class TerrainMap:
         score = 0.0
 
         for factor_name, weight in biome_def['scoring_factors'].items():
-            if factor_name == 'neighbors':
-                factor_value = self._calculate_neighbor_score(biome_name, tile_index)
+            if factor_name == 'neighbours':
+                factor_value = self._calculate_neighbour_score(biome_name, tile_index)
             else:
                 factor_value = self.scoring_factors[factor_name][tile_index]
 
@@ -1225,23 +1128,23 @@ class TerrainMap:
 
         return score  # Can be positive or negative
 
-    def _calculate_neighbor_score(self, biome_name, tile_index):
-        """Calculate clustering bonus based on neighboring tiles"""
-        same_biome_neighbors = 0
-        total_neighbors = 0
+    def _calculate_neighbour_score(self, biome_name, tile_index):
+        """Calculate clustering bonus based on neighbouring tiles"""
+        same_biome_neighbours = 0
+        total_neighbours = 0
 
         for direction in range(8):  # All 8 directions
-            neighbor_idx = self.mc.neighbours[tile_index][direction]
-            if neighbor_idx is not None and neighbor_idx < len(self._temp_biome_assignments):
-                neighbor_biome = self._temp_biome_assignments.get(neighbor_idx, None)
-                if neighbor_biome == biome_name:
-                    same_biome_neighbors += 1
-                total_neighbors += 1
+            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            if neighbour_idx is not None and neighbour_idx < len(self._temp_biome_assignments):
+                neighbour_biome = self._temp_biome_assignments.get(neighbour_idx, None)
+                if neighbour_biome == biome_name:
+                    same_biome_neighbours += 1
+                total_neighbours += 1
 
-        if total_neighbors == 0:
+        if total_neighbours == 0:
             return 0.0
 
-        clustering_factor = same_biome_neighbors / float(total_neighbors)
+        clustering_factor = same_biome_neighbours / float(total_neighbours)
         return clustering_factor  # 0.0 = no clustering, 1.0 = complete clustering
 
     def _get_backup_biome(self, temp_percentile, precip_percentile, is_water, is_coast):
@@ -1306,8 +1209,8 @@ class TerrainMap:
 
         # Modify probability based on clustering
         if cluster_factor > 0.0:
-            neighbor_bonus = self._calculate_cluster_bonus(tile_index, feature_def['type'], cluster_factor)
-            modified_prob = base_prob * (1.0 + neighbor_bonus * cluster_factor)
+            neighbour_bonus = self._calculate_cluster_bonus(tile_index, feature_def['type'], cluster_factor)
+            modified_prob = base_prob * (1.0 + neighbour_bonus * cluster_factor)
         else:
             modified_prob = base_prob
 
@@ -1319,20 +1222,20 @@ class TerrainMap:
 
     def _calculate_cluster_bonus(self, tile_index, feature_type, cluster_factor):
         """Calculate clustering bonus for feature placement"""
-        feature_neighbors = 0
-        total_neighbors = 0
+        feature_neighbours = 0
+        total_neighbours = 0
 
         for direction in range(8):
-            neighbor_idx = self.mc.neighbours[tile_index][direction]
-            if neighbor_idx is not None and neighbor_idx < len(self.feature_map):
-                if self.feature_map[neighbor_idx] == feature_type:
-                    feature_neighbors += 1
-                total_neighbors += 1
+            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            if neighbour_idx is not None and neighbour_idx < len(self.feature_map):
+                if self.feature_map[neighbour_idx] == feature_type:
+                    feature_neighbours += 1
+                total_neighbours += 1
 
-        if total_neighbors == 0:
+        if total_neighbours == 0:
             return 0.0
 
-        return feature_neighbors / float(total_neighbors)
+        return feature_neighbours / float(total_neighbours)
 
     def _check_patch_size_limits(self, tile_index, feature_def):
         """Check if placing feature would violate patch size limits"""
@@ -1361,13 +1264,13 @@ class TerrainMap:
         visited = set()
         to_visit = []
 
-        # Add neighboring tiles with the same feature
+        # Add neighbouring tiles with the same feature
         for direction in range(8):
-            neighbor_idx = self.mc.neighbours[tile_index][direction]
-            if (neighbor_idx is not None and
-                neighbor_idx < len(self.feature_map) and
-                self.feature_map[neighbor_idx] == feature_type):
-                to_visit.append(neighbor_idx)
+            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            if (neighbour_idx is not None and
+                neighbour_idx < len(self.feature_map) and
+                self.feature_map[neighbour_idx] == feature_type):
+                to_visit.append(neighbour_idx)
 
         # Flood fill to count patch size
         patch_size = 0
@@ -1379,14 +1282,14 @@ class TerrainMap:
             visited.add(current)
             patch_size += 1
 
-            # Add neighbors of current tile
+            # Add neighbours of current tile
             for direction in range(8):
-                neighbor_idx = self.mc.neighbours[current][direction]
-                if (neighbor_idx is not None and
-                    neighbor_idx not in visited and
-                    neighbor_idx < len(self.feature_map) and
-                    self.feature_map[neighbor_idx] == feature_type):
-                    to_visit.append(neighbor_idx)
+                neighbour_idx = self.mc.neighbours[current][direction]
+                if (neighbour_idx is not None and
+                    neighbour_idx not in visited and
+                    neighbour_idx < len(self.feature_map) and
+                    self.feature_map[neighbour_idx] == feature_type):
+                    to_visit.append(neighbour_idx)
 
         return patch_size
 
@@ -1407,14 +1310,14 @@ class TerrainMap:
         # Check procedural rules
         plot_type = self.em.plot_types[tile_index]
 
-        if rules.get('avoid_peaks', False) and plot_type == PLOT_PEAK:
+        if rules.get('avoid_peaks', False) and plot_type == PlotTypes.PLOT_PEAK:
             return False
-        if rules.get('avoid_hills', False) and plot_type == PLOT_HILLS:
+        if rules.get('avoid_hills', False) and plot_type == PlotTypes.PLOT_HILLS:
             return False
-        if rules.get('prefer_flat', False) and plot_type != PLOT_LAND:
+        if rules.get('prefer_flat', False) and plot_type != PlotTypes.PLOT_LAND:
             if random.random() > 0.3:  # 70% penalty for non-flat
                 return False
-        if rules.get('prefer_hills', False) and plot_type != PLOT_HILLS:
+        if rules.get('prefer_hills', False) and plot_type != PlotTypes.PLOT_HILLS:
             if random.random() > 0.4:  # 60% penalty for non-hills
                 return False
 
@@ -1435,7 +1338,7 @@ class TerrainMap:
 
         # Example constraints checking (MapConfig handles the details)
         if constraints.get('bRequiresFlatlands', False):
-            if self.em.plot_types[tile_index] != PLOT_LAND:
+            if self.em.plot_types[tile_index] != PlotTypes.PLOT_LAND:
                 return False
 
         if constraints.get('bNoCoast', False):
@@ -1514,11 +1417,11 @@ class TerrainMap:
             plot_type = self.em.plot_types[tile_index]
             meets_plot_req = False
             for req in plot_requirements:
-                if req == 'plot_flat' and plot_type == PLOT_LAND:
+                if req == 'plot_flat' and plot_type == PlotTypes.PLOT_LAND:
                     meets_plot_req = True
-                elif req == 'plot_hills' and plot_type == PLOT_HILLS:
+                elif req == 'plot_hills' and plot_type == PlotTypes.PLOT_HILLS:
                     meets_plot_req = True
-                elif req == 'plot_peaks' and plot_type == PLOT_PEAK:
+                elif req == 'plot_peaks' and plot_type == PlotTypes.PLOT_PEAK:
                     meets_plot_req = True
             if plot_requirements and not meets_plot_req:
                 return False
@@ -1586,7 +1489,7 @@ class TerrainMap:
                     too_close = True
                     break
 
-            if not too_close and self.feature_map[candidate] == NO_FEATURE:
+            if not too_close and self.feature_map[candidate] == FeatureTypes.NO_FEATURE:
                 self.feature_map[candidate] = feature_type
                 placed_features.append(candidate)
 
@@ -1603,7 +1506,7 @@ class TerrainMap:
         for _ in range(target_clusters):
             # Pick random center
             center = random.choice(eligible_tiles)
-            if self.feature_map[center] != NO_FEATURE:
+            if self.feature_map[center] != FeatureTypes.NO_FEATURE:
                 continue
 
             # Place cluster around center
@@ -1612,7 +1515,7 @@ class TerrainMap:
 
             for tile in cluster_tiles:
                 if (tile in eligible_tiles and
-                    self.feature_map[tile] == NO_FEATURE and
+                    self.feature_map[tile] == FeatureTypes.NO_FEATURE and
                     placed_in_cluster < cluster_size):
                     self.feature_map[tile] = feature_type
                     placed_in_cluster += 1
@@ -1634,7 +1537,7 @@ class TerrainMap:
         probability = rule.get('probability', 0.5)
 
         for tile_index in eligible_tiles:
-            if self.feature_map[tile_index] == NO_FEATURE:
+            if self.feature_map[tile_index] == FeatureTypes.NO_FEATURE:
                 if random.random() <= probability:
                     self.feature_map[tile_index] = feature_type
 
@@ -1666,10 +1569,10 @@ class TerrainMap:
         3. Assuming automatic placement on XML-compatible terrains, manual on others
         """
         # Get XML-compatible terrains for floodplains (from game engine)
-        xml_compatible_terrains = self.feature_constraints.get(FEATURE_FLOOD_PLAINS, {}).get('terrain_booleans', [])
+        xml_compatible_terrains = self.feature_constraints.get(FeatureTypes.FEATURE_FLOOD_PLAINS, {}).get('terrain_booleans', [])
 
         for tile_index in range(len(self.terrain_map)):
-            if self.em.plot_types[tile_index] != PLOT_LAND:  # Only flat tiles
+            if self.em.plot_types[tile_index] != PlotTypes.PLOT_LAND:  # Only flat tiles
                 continue
 
             if not self.mc.is_river_tile(tile_index):  # Only river tiles
@@ -1681,13 +1584,13 @@ class TerrainMap:
             if terrain in xml_compatible_terrains:
                 # Game engine will automatically place floodplains here
                 # We just mark it in our tracking but don't place manually
-                self.feature_map[tile_index] = FEATURE_FLOOD_PLAINS
+                self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
             else:
                 # Use our custom rules for non-XML terrains
                 for rule in feature_def['placement_rules']:
                     if self._tile_meets_floodplains_rule(tile_index, rule):
                         if random.random() <= rule.get('probability', 0.5):
-                            self.feature_map[tile_index] = FEATURE_FLOOD_PLAINS
+                            self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
                         break  # Only apply first matching rule
 
     def _tile_meets_floodplains_rule(self, tile_index, rule):
@@ -1797,7 +1700,7 @@ class TerrainMap:
         eligible = []
 
         for tile_index in range(len(self.terrain_map)):
-            if self.resource_map[tile_index] != NO_BONUS:  # Skip occupied tiles
+            if self.resource_map[tile_index] != BonusTypes.NO_BONUS:  # Skip occupied tiles
                 continue
 
             if not self._tile_meets_xml_constraints(tile_index, xml_params):
@@ -1819,9 +1722,9 @@ class TerrainMap:
         plot_type = self.em.plot_types[tile_index]
 
         # Check plot type constraints
-        if xml_params.get('bHills', False) and plot_type != PLOT_HILLS:
+        if xml_params.get('bHills', False) and plot_type != PlotTypes.PLOT_HILLS:
             return False
-        if xml_params.get('bFlatlands', False) and plot_type != PLOT_LAND:
+        if xml_params.get('bFlatlands', False) and plot_type != PlotTypes.PLOT_LAND:
             return False
 
         # Check river constraints
@@ -1833,21 +1736,21 @@ class TerrainMap:
         min_latitude = xml_params.get('iMinLatitude', 0)
         max_latitude = xml_params.get('iMaxLatitude', 90)
         if min_latitude > 0 or max_latitude < 90:
-            latitude = self._calculate_latitude(tile_index)
+            latitude = self.mc.get_latitude_for_y(tile_index // self.mc.iNumPlotsX)
             if not (min_latitude <= latitude <= max_latitude):
                 return False
 
         # Check minimum area size
         min_area_size = xml_params.get('iMinAreaSize', 0)
         if min_area_size > 0:
-            area_size = self._get_continent_size(tile_index)
+            area_size = self.em.continentSizes[self.em.continentID[tile_index]]
             if area_size < min_area_size:
                 return False
 
         # Check land/water percentage
         min_land_percent = xml_params.get('iMinLandPercent', 0)
         if min_land_percent > 0:
-            is_land = plot_type != PLOT_OCEAN
+            is_land = plot_type != PlotTypes.PLOT_OCEAN
             # TODO: Implement proper land/water distribution logic
             # For now, just check if it's land when land is required
             if min_land_percent > 50 and not is_land:
@@ -1997,7 +1900,7 @@ class TerrainMap:
 
                 for cluster_tile in cluster_tiles:
                     if (cluster_tile != primary_tile and
-                        self.resource_map[cluster_tile] == NO_BONUS and
+                        self.resource_map[cluster_tile] == BonusTypes.NO_BONUS and
                         random.randint(1, 100) <= group_rand):
 
                         # Check if cluster tile meets basic constraints
@@ -2019,78 +1922,30 @@ class TerrainMap:
         if resource_name in self.continent_assignments:
             # Already assigned to a continent
             assigned_continent = self.continent_assignments[resource_name]
-            return [t for t in eligible_tiles if self._get_continent_id(t) == assigned_continent]
+            return [t for t in eligible_tiles if self.em.continentID[t] == assigned_continent]
         else:
             # Choose a continent with most eligible tiles
             continent_counts = {}
             for tile in eligible_tiles:
-                continent_id = self._get_continent_id(tile)
+                continent_id = self.em.continentID[tile]
                 continent_counts[continent_id] = continent_counts.get(continent_id, 0) + 1
 
             if continent_counts:
                 best_continent = max(continent_counts.keys(), key=lambda c: continent_counts[c])
                 self.continent_assignments[resource_name] = best_continent
-                return [t for t in eligible_tiles if self._get_continent_id(t) == best_continent]
+                return [t for t in eligible_tiles if self.em.continentID[t] == best_continent]
             else:
                 return eligible_tiles
-
-    def _calculate_latitude(self, tile_index):
-        """Calculate latitude (distance from equator) for a tile"""
-        y = tile_index // self.mc.iNumPlotsX
-        map_height = self.mc.iNumPlotsY
-
-        # Calculate distance from equator (middle of map)
-        equator = map_height // 2
-        distance_from_equator = abs(y - equator)
-
-        # Convert to degrees (0-90)
-        max_distance = map_height // 2
-        latitude = (distance_from_equator * 90) // max_distance
-
-        return min(latitude, 90)
-
-    def _get_continent_size(self, tile_index):
-        """Get size of continent/island containing this tile"""
-        # TODO: Implement proper continent size calculation using flood-fill
-        # This requires analyzing connected land masses to determine continent boundaries
-        # For now, return a reasonable default that allows most resources
-        return 50  # Placeholder value
-
-    def _get_continent_id(self, tile_index):
-        """Get continent ID for a tile"""
-        # TODO: Implement proper continent identification using connected components
-        # This requires flood-fill analysis of land masses to assign continent IDs
-        # For now, use a simple x-coordinate based approach as placeholder
-        x = tile_index % self.mc.iNumPlotsX
-        return x // (self.mc.iNumPlotsX // 4)  # Divide map into 4 continents
 
     # Helper methods for data processing
     def _get_plot_flat_map(self):
         """Generate map of flat plot preferences"""
-        return [1.0 if plot == PLOT_LAND else 0.0 for plot in self.em.plot_types]
+        return [1.0 if plot == PlotTypes.PLOT_LAND else 0.0 for plot in self.em.plot_types]
 
     def _get_plot_hills_map(self):
         """Generate map of hills plot preferences"""
-        return [1.0 if plot == PLOT_HILLS else 0.0 for plot in self.em.plot_types]
+        return [1.0 if plot == PlotTypes.PLOT_HILLS else 0.0 for plot in self.em.plot_types]
 
     def _get_plot_peaks_map(self):
         """Generate map of peaks plot preferences"""
-        return [1.0 if plot == PLOT_PEAK else 0.0 for plot in self.em.plot_types]
-
-    def _normalize_data(self, data_list):
-        """Normalize data to 0.0-1.0 range"""
-        if not data_list:
-            return data_list
-
-        min_val = min(data_list)
-        max_val = max(data_list)
-
-        if max_val == min_val:
-            return [0.5] * len(data_list)
-
-        range_val = max_val - min_val
-        return [(val - min_val) / range_val for val in data_list]
-
-    def _normalize_plot_data(self, data_list):
-        """Normalize plot data (already 0.0-1.0)"""
-        return data_list
+        return [1.0 if plot == PlotTypes.PLOT_PEAK else 0.0 for plot in self.em.plot_types]

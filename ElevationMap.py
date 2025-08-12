@@ -65,7 +65,7 @@ class ElevationMap:
         self.d_centroid = [0.0] * self.mc.iNumPlots
 
         # Output map
-        self.plotTypes = [self.mc.NO_PLOT] * self.mc.iNumPlots
+        self.plotTypes = [PlotTypes.NO_PLOT] * self.mc.iNumPlots
 
     @profile
     def GenerateElevationMap(self):
@@ -136,15 +136,15 @@ class ElevationMap:
             # Calculate growth probability based on multiple geological factors
             growth_probability = self._calculate_growth_probability(continent, x, y)
 
-            # Get neighbors once and cache the check
+            # Get neighbours once and cache the check
             neighbours = self.mc.neighbours[plot_index]
             has_available = False
 
-            # Process neighbors in random order for organic growth
-            neighbor_dirs = list(range(1, 9))
-            random.shuffle(neighbor_dirs)
+            # Process neighbours in random order for organic growth
+            neighbour_dirs = list(range(1, 9))
+            random.shuffle(neighbour_dirs)
 
-            for dir_idx in neighbor_dirs:
+            for dir_idx in neighbour_dirs:
                 neighbour_index = neighbours[dir_idx]
                 if (neighbour_index >= 0 and
                     self.plateID[neighbour_index] > self.mc.plateCount):
@@ -159,11 +159,11 @@ class ElevationMap:
 
                         growth_queue.append((neighbour_index, continent_id))
                     else:
-                        # Only set has_available if we found a neighbor but didn't grow into it
+                        # Only set has_available if we found a neighbour but didn't grow into it
                         has_available = True
 
             # Re-queue if there are still available neighbours
-            # This maintains the original logic - we always re-queue if neighbors exist
+            # This maintains the original logic - we always re-queue if neighbours exist
             if has_available:
                 growth_queue.append((plot_index, continent_id))
 
@@ -914,17 +914,17 @@ class ElevationMap:
         """Calculate target elevation using properly scaled finite differences"""
         neighbours = self.mc.neighbours[tile_idx]
 
-        # Find valid neighbors on same continent
-        east_neighbor = neighbours[self.mc.E] if neighbours[self.mc.E] > 0 and self.plateID[neighbours[self.mc.E]] == continent_id else -1
-        west_neighbor = neighbours[self.mc.W] if neighbours[self.mc.W] > 0 and self.plateID[neighbours[self.mc.W]] == continent_id else -1
-        north_neighbor = neighbours[self.mc.N] if neighbours[self.mc.N] > 0 and self.plateID[neighbours[self.mc.N]] == continent_id else -1
-        south_neighbor = neighbours[self.mc.S] if neighbours[self.mc.S] > 0 and self.plateID[neighbours[self.mc.S]] == continent_id else -1
+        # Find valid neighbours on same continent
+        east_neighbour = neighbours[self.mc.E] if neighbours[self.mc.E] > 0 and self.plateID[neighbours[self.mc.E]] == continent_id else -1
+        west_neighbour = neighbours[self.mc.W] if neighbours[self.mc.W] > 0 and self.plateID[neighbours[self.mc.W]] == continent_id else -1
+        north_neighbour = neighbours[self.mc.N] if neighbours[self.mc.N] > 0 and self.plateID[neighbours[self.mc.N]] == continent_id else -1
+        south_neighbour = neighbours[self.mc.S] if neighbours[self.mc.S] > 0 and self.plateID[neighbours[self.mc.S]] == continent_id else -1
 
-        # Get neighbor elevations
-        east_elev = elevations[tile_to_local[east_neighbor]] if east_neighbor in tile_to_local else 0.0
-        west_elev = elevations[tile_to_local[west_neighbor]] if west_neighbor in tile_to_local else 0.0
-        north_elev = elevations[tile_to_local[north_neighbor]] if north_neighbor in tile_to_local else 0.0
-        south_elev = elevations[tile_to_local[south_neighbor]] if south_neighbor in tile_to_local else 0.0
+        # Get neighbour elevations
+        east_elev = elevations[tile_to_local[east_neighbour]] if east_neighbour in tile_to_local else 0.0
+        west_elev = elevations[tile_to_local[west_neighbour]] if west_neighbour in tile_to_local else 0.0
+        north_elev = elevations[tile_to_local[north_neighbour]] if north_neighbour in tile_to_local else 0.0
+        south_elev = elevations[tile_to_local[south_neighbour]] if south_neighbour in tile_to_local else 0.0
 
         # Scale target velocities for finite difference equations
         scaled_target_u = target_u / elev_scale
@@ -935,7 +935,7 @@ class ElevationMap:
         weighted_elevation = 0.0
 
         # Horizontal constraint: delevation/dx = scaled_target_u
-        if east_neighbor in tile_to_local and west_neighbor in tile_to_local:
+        if east_neighbour in tile_to_local and west_neighbour in tile_to_local:
             # Central difference: (east - west)/(2*dx) = scaled_target_u
             target_elevation = (east_elev + west_elev) * 0.5
             current_gradient = (east_elev - west_elev) / (2.0 * dx)
@@ -943,19 +943,19 @@ class ElevationMap:
             target_elevation += gradient_error * dx * 0.5
             weighted_elevation += target_elevation
             total_weight += 1.0
-        elif east_neighbor in tile_to_local:
+        elif east_neighbour in tile_to_local:
             # Forward difference: (east - current)/dx = scaled_target_u
             target_elevation = east_elev - scaled_target_u * dx
             weighted_elevation += target_elevation
             total_weight += 1.0
-        elif west_neighbor in tile_to_local:
+        elif west_neighbour in tile_to_local:
             # Backward difference: (current - west)/dx = scaled_target_u
             target_elevation = west_elev + scaled_target_u * dx
             weighted_elevation += target_elevation
             total_weight += 1.0
 
         # Vertical constraint: delevation/dy = scaled_target_v
-        if north_neighbor in tile_to_local and south_neighbor in tile_to_local:
+        if north_neighbour in tile_to_local and south_neighbour in tile_to_local:
             # Central difference: (north - south)/(2*dy) = scaled_target_v
             target_elevation = (north_elev + south_elev) * 0.5
             current_gradient = (north_elev - south_elev) / (2.0 * dy)
@@ -963,12 +963,12 @@ class ElevationMap:
             target_elevation += gradient_error * dy * 0.5
             weighted_elevation += target_elevation
             total_weight += 1.0
-        elif north_neighbor in tile_to_local:
+        elif north_neighbour in tile_to_local:
             # Forward difference: (north - current)/dy = scaled_target_v
             target_elevation = north_elev - scaled_target_v * dy
             weighted_elevation += target_elevation
             total_weight += 1.0
-        elif south_neighbor in tile_to_local:
+        elif south_neighbour in tile_to_local:
             # Backward difference: (current - south)/dy = scaled_target_v
             target_elevation = south_elev + scaled_target_v * dy
             weighted_elevation += target_elevation
@@ -1463,13 +1463,13 @@ class ElevationMap:
         # Convert elevation data to plot types
         for i in xrange(self.mc.iNumPlots):
             if self.elevationMap[i] <= self.seaLevelThreshold:
-                self.plotTypes[i] = self.mc.PLOT_OCEAN
+                self.plotTypes[i] = PlotTypes.PLOT_OCEAN
             elif self.prominenceMap[i] > self.peakHeight:
-                self.plotTypes[i] = self.mc.PLOT_PEAK
+                self.plotTypes[i] = PlotTypes.PLOT_PEAK
             elif self.prominenceMap[i] > self.hillHeight:
-                self.plotTypes[i] = self.mc.PLOT_HILLS
+                self.plotTypes[i] = PlotTypes.PLOT_HILLS
             else:
-                self.plotTypes[i] = self.mc.PLOT_LAND
+                self.plotTypes[i] = PlotTypes.PLOT_LAND
 
 
     @profile
@@ -1483,7 +1483,7 @@ class ElevationMap:
 
         # Flood fill to identify connected ocean basins
         for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
+            if self.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 if self.oceanBasinMap[i] == -1:
                     basin_size = self._floodFillBasin(i, basin_counter)
                     self.basinSizes[basin_counter] = basin_size
@@ -1491,9 +1491,9 @@ class ElevationMap:
 
         # fill in small basins
         for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] == self.mc.PLOT_OCEAN:
+            if self.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 if self.basinSizes[self.oceanBasinMap[i]] < self.mc.basinLakeSize:
-                    self.plotTypes[i] = self.mc.PLOT_LAND
+                    self.plotTypes[i] = PlotTypes.PLOT_LAND
 
     def _floodFillBasin(self, start_tile, basin_id):
         """
@@ -1510,7 +1510,7 @@ class ElevationMap:
 
             if (current < 0 or
                 self.oceanBasinMap[current] != -1 or
-                self.plotTypes[current] != self.mc.PLOT_OCEAN):
+                self.plotTypes[current] != PlotTypes.PLOT_OCEAN):
                 continue
 
             # Mark as part of this basin
@@ -1522,7 +1522,7 @@ class ElevationMap:
                 neighbour = self.mc.neighbours[current][dir]
                 if (neighbour >= 0 and
                     self.oceanBasinMap[neighbour] == -1 and
-                    self.plotTypes[neighbour] == self.mc.PLOT_OCEAN):
+                    self.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN):
                     stack.append(neighbour)
 
         return basin_size
@@ -1538,9 +1538,9 @@ class ElevationMap:
 
         # Flood fill to identify connected ocean basins
         for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] != self.mc.PLOT_OCEAN:
+            if self.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 if self.continentID[i] == -1:
-                    continent_size = self._floodFillBasin(i, continent_counter)
+                    continent_size = self._floodFillContinent(i, continent_counter)
                     self.continentSizes[continent_counter] = continent_size
                     continent_counter += 1
 
@@ -1559,7 +1559,7 @@ class ElevationMap:
 
             if (current < 0 or
                 self.continentID[current] != -1 or
-                self.plotTypes[current] == self.mc.PLOT_OCEAN):
+                self.plotTypes[current] == PlotTypes.PLOT_OCEAN):
                 continue
 
             # Mark as part of this basin
@@ -1571,7 +1571,7 @@ class ElevationMap:
                 neighbour = self.mc.neighbours[current][dir]
                 if (neighbour >= 0 and
                     self.continentID[neighbour] == -1 and
-                    self.plotTypes[neighbour] != self.mc.PLOT_OCEAN):
+                    self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN):
                     stack.append(neighbour)
 
         return continent_size
@@ -1605,7 +1605,7 @@ class ElevationMap:
             ocean_count = 0
             for y in xrange(self.mc.iNumPlotsY):
                 index = y * self.mc.iNumPlotsX + cut_x
-                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count == self.mc.iNumPlotsY:
@@ -1634,7 +1634,7 @@ class ElevationMap:
             ocean_count = 0
             for x in xrange(self.mc.iNumPlotsX):
                 index = cut_y * self.mc.iNumPlotsX + x
-                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count == self.mc.iNumPlotsX:
@@ -1821,7 +1821,7 @@ class ElevationMap:
             ocean_count = 0
             for y in xrange(self.mc.iNumPlotsY):
                 index = y * self.mc.iNumPlotsX + cut_x
-                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count > max_ocean_in_cut:
@@ -1839,7 +1839,7 @@ class ElevationMap:
             ocean_count = 0
             for x in xrange(self.mc.iNumPlotsX):
                 index = cut_y * self.mc.iNumPlotsX + x
-                if self.plotTypes[index] == self.mc.PLOT_OCEAN:
+                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count > max_ocean_in_cut:
@@ -1854,12 +1854,12 @@ class ElevationMap:
 
         max_elev = max(self.elevationMap)
         for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] != self.mc.PLOT_OCEAN:
+            if self.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 self.aboveSeaLevelMap[i] = self.mc.maxElev * (self.elevationMap[i] - self.seaLevelThreshold) / (max_elev - self.seaLevelThreshold)
 
-                if self.plotTypes[i] == self.mc.PLOT_PEAK:
+                if self.plotTypes[i] == PlotTypes.PLOT_PEAK:
                     self.aboveSeaLevelMap[i] += self.mc.peakElev
-                elif self.plotTypes[i] == self.mc.PLOT_HILLS:
+                elif self.plotTypes[i] == PlotTypes.PLOT_HILLS:
                     self.aboveSeaLevelMap[i] += self.mc.hillElev
 
     def _calculate_wrap_aware_centroid(self, coordinates):

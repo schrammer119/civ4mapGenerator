@@ -22,14 +22,6 @@ class MapConfig:
     NR = 0  # No river
     O = 9   # Ocean
 
-    # Plot Types from Civ IV
-    NO_PLOT = PlotTypes.NO_PLOT
-    PLOT_PEAK = PlotTypes.PLOT_PEAK
-    PLOT_HILLS = PlotTypes.PLOT_HILLS
-    PLOT_LAND = PlotTypes.PLOT_LAND
-    PLOT_OCEAN = PlotTypes.PLOT_OCEAN
-    NUM_PLOT_TYPES = PlotTypes.NUM_PLOT_TYPES
-
     def __init__(self):
         """Initializes map dimensions, game settings, and all tunable parameters."""
         # --- Core Map and Game Context ---
@@ -587,9 +579,9 @@ class MapConfig:
 
         return True
 
-    def get_valid_node_neighbors(self, node_x, node_y):
-        """Get valid neighboring nodes for D4 flow calculation."""
-        neighbors = []
+    def get_valid_node_neighbours(self, node_x, node_y):
+        """Get valid neighbouring nodes for D4 flow calculation."""
+        neighbours = []
 
         for dx, dy in self.NodeFlowDirections:
             nx = node_x + dx
@@ -609,9 +601,9 @@ class MapConfig:
             # Check if this flow direction is valid from source node
             if (self.is_node_valid_for_flow(node_x, node_y, (dx, dy)) and
                 self.is_node_valid_for_flow(nx, ny)):
-                neighbors.append((nx, ny))
+                neighbours.append((nx, ny))
 
-        return neighbors
+        return neighbours
 
     def get_node_intersecting_tiles(self, node_x, node_y):
         """Get the 4 tiles that intersect at this node position"""
