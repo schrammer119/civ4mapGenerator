@@ -139,7 +139,7 @@ if True:
     plt.tight_layout()
 
     # Create land-only elevation map with sea level applied
-    elev = [-2000.0 if em.plotTypes[i]==mc.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
+    elev = [-2000.0 if em.plotTypes[i]==PlotTypes.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
 
     Z = np.array(elev).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]

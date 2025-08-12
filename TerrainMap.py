@@ -66,6 +66,7 @@ class TerrainMap:
         self._generate_secondary_features()
         self._generate_resource_definitions()
         self._build_biome_grid()
+        self._precalculate_adjacency_maps()
 
     def GenerateTerrain(self):
         """Main method called by PlanetForge - generates all terrain and features"""
@@ -82,9 +83,6 @@ class TerrainMap:
 
         # Pass 4: Place resources based on XML parameters and custom rules
         self._place_resources()
-
-        # Pass 5: Apply final terrain assignments from biome data
-        self._apply_terrain_from_biomes()
 
         print("TerrainMap: Terrain generation complete.")
 
@@ -1007,6 +1005,79 @@ class TerrainMap:
             # Copy the schema above and modify for your resources
         }
 
+    def _precalculate_adjacency_maps(self):
+        """Pre-calculate adjacency maps for frequently used checks"""
+        print("TerrainMap: Pre-calculating adjacency maps...")
+
+        # Initialize adjacency maps
+        river_adjacency_map = [False] * self.mc.iNumPlots
+        coast_adjacency_map = [False] * self.mc.iNumPlots
+
+        # Calculate river adjacency
+        for i in range(self.mc.iNumPlots):
+            # Check if tile itself has a river
+            if self._is_river_tile(i):
+                river_adjacency_map[i] = True
+                continue
+
+            # Check adjacent tiles for rivers
+            for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
+                adj_index = self.mc.neighbours[i][direction]
+                if adj_index != -1 and self._is_river_tile(adj_index):
+                    river_adjacency_map[i] = True
+                    break
+
+        # Calculate coast adjacency
+        for i in range(self.mc.iNumPlots):
+            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+                coast_adjacency_map[i] = True
+                continue
+
+            # Check adjacent tiles for ocean
+            for direction in range(1, 9):
+                adj_index = self.mc.neighbours[i][direction]
+                if adj_index != -1 and self.em.plotTypes[adj_index] == PlotTypes.PLOT_OCEAN:
+                    coast_adjacency_map[i] = True
+                    break
+
+        # Set the calculated maps in MapConfig
+        self.mc.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
+
+    def _is_river_tile(self, tile_index):
+        """Check if tile has a river (helper for adjacency calculation)"""
+        # Check ClimateMap's directional river arrays
+        if not hasattr(self.cm, 'north_of_rivers') or not hasattr(self.cm, 'west_of_rivers'):
+            return False
+
+        if tile_index >= len(self.cm.north_of_rivers) or tile_index >= len(self.cm.west_of_rivers):
+            return False
+
+        # A tile "has a river" if there's a river on any of its edges
+        # Check north edge
+        if self.cm.north_of_rivers[tile_index]:
+            return True
+
+        # Check west edge
+        if self.cm.west_of_rivers[tile_index]:
+            return True
+
+        # Check south edge (north edge of tile to the south)
+        x, y = self.mc.get_coords_from_index(tile_index)
+        south_x, south_y = self.mc.wrap_coordinates(x, y - 1)
+        if self.mc.coordinates_in_bounds(south_x, south_y):
+            south_index = self.mc.get_index_from_coords(south_x, south_y)
+            if south_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[south_index]:
+                return True
+
+        # Check east edge (west edge of tile to the east)
+        east_x, east_y = self.mc.wrap_coordinates(x + 1, y)
+        if self.mc.coordinates_in_bounds(east_x, east_y):
+            east_index = self.mc.get_index_from_coords(east_x, east_y)
+            if east_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[east_index]:
+                return True
+
+        return False
+
     def _build_biome_grid(self):
         """Build the 20x20 fuzzy biome grid"""
         for temp_idx in range(self.BIOME_GRID_SIZE):
@@ -1072,7 +1143,7 @@ class TerrainMap:
         precip_percentile = self.cm.rainfall_percentiles[tile_index]
 
         # Determine if water or land biome
-        plot_type = self.em.plot_types[tile_index]
+        plot_type = self.em.plotTypes[tile_index]
         is_water = plot_type == PlotTypes.PLOT_OCEAN
         is_coast = self._is_coastal_water(tile_index) if is_water else False
 
@@ -1120,7 +1191,7 @@ class TerrainMap:
         for direction in range(8):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if neighbour_idx is not None:
-                neighbour_plot = self.em.plot_types[neighbour_idx]
+                neighbour_plot = self.em.plotTypes[neighbour_idx]
                 if neighbour_plot != PlotTypes.PLOT_OCEAN:  # Adjacent to land
                     return True
         return False
@@ -1320,7 +1391,7 @@ class TerrainMap:
             return False
 
         # Check procedural rules
-        plot_type = self.em.plot_types[tile_index]
+        plot_type = self.em.plotTypes[tile_index]
 
         if rules.get('avoid_peaks', False) and plot_type == PlotTypes.PLOT_PEAK:
             return False
@@ -1350,7 +1421,7 @@ class TerrainMap:
 
         # Example constraints checking (MapConfig handles the details)
         if constraints.get('bRequiresFlatlands', False):
-            if self.em.plot_types[tile_index] != PlotTypes.PLOT_LAND:
+            if self.em.plotTypes[tile_index] != PlotTypes.PLOT_LAND:
                 return False
 
         if constraints.get('bNoCoast', False):
@@ -1426,7 +1497,7 @@ class TerrainMap:
                 return False
         elif condition == 'plot_match':
             plot_requirements = rule.get('plot_requirements', [])
-            plot_type = self.em.plot_types[tile_index]
+            plot_type = self.em.plotTypes[tile_index]
             meets_plot_req = False
             for req in plot_requirements:
                 if req == 'plot_flat' and plot_type == PlotTypes.PLOT_LAND:
@@ -1584,10 +1655,10 @@ class TerrainMap:
         xml_compatible_terrains = self.feature_constraints.get(FeatureTypes.FEATURE_FLOOD_PLAINS, {}).get('terrain_booleans', [])
 
         for tile_index in range(len(self.terrain_map)):
-            if self.em.plot_types[tile_index] != PlotTypes.PLOT_LAND:  # Only flat tiles
+            if self.em.plotTypes[tile_index] != PlotTypes.PLOT_LAND:  # Only flat tiles
                 continue
 
-            if not self.mc.is_river_tile(tile_index):  # Only river tiles
+            if not self._is_river_tile(tile_index):  # Only river tiles
                 continue
 
             terrain = self.terrain_map[tile_index]
@@ -1668,17 +1739,17 @@ class TerrainMap:
         base_quantity = 0
 
         # Player-based quantity
-        player_percent = xml_constraints.get('player', 0)
+        player_percent = xml_constraints.get('iPlayer', 0)
         if player_percent > 0:
             base_quantity += (self.mc.iNumPlayers * player_percent) // 100
 
         # Tile-based quantity
-        tiles_per = xml_constraints.get('tiles_per', 0)
+        tiles_per = xml_constraints.get('iTilesPer', 0)
         if tiles_per > 0:
             base_quantity += self.mc.iNumPlots // tiles_per
 
         # Apply appearance probability
-        const_appearance = xml_constraints.get('const_appearance', 100)
+        const_appearance = xml_constraints.get('iConstAppearance', 100)
         if random.randint(1, 100) > const_appearance:
             return 0
 
@@ -1687,7 +1758,7 @@ class TerrainMap:
     def _should_place_resource(self, tile_index, resource_def, xml_constraints):
         """Check clustering and exclusion rules"""
         # Check unique radius (exclusion zones)
-        unique_radius = xml_constraints.get('unique', 0)
+        unique_radius = xml_constraints.get('iUnique', 0)
         if unique_radius > 0:
             if self._has_resource_in_radius(tile_index, resource_def['base_resource'], unique_radius):
                 return False
@@ -1732,7 +1803,7 @@ class TerrainMap:
                 continue
 
             xml_constraints = self.bonus_constraints.get(bonus_id, {})
-            placement_order = xml_constraints.get('placement_order', 99)
+            placement_order = xml_constraints.get('iPlacementOrder', 99)
 
             resource_list.append((placement_order, resource_def))
 
@@ -1800,7 +1871,7 @@ class TerrainMap:
 
     def _tile_meets_xml_constraints(self, tile_index, xml_params):
         """Check if tile meets XML-defined constraints"""
-        plot_type = self.em.plot_types[tile_index]
+        plot_type = self.em.plotTypes[tile_index]
 
         # Check plot type constraints
         if xml_params.get('bHills', False) and plot_type != PlotTypes.PLOT_HILLS:
@@ -2021,7 +2092,7 @@ class TerrainMap:
     def _log_warning(self, message):
         """Log warning once per unique message"""
         if message not in self.logged_warnings:
-            print(f"WARNING: {message}")
+            print("WARNING: " + str(message))
             self.logged_warnings.add(message)
 
     def _get_terrain_id(self, terrain_string):
@@ -2030,7 +2101,7 @@ class TerrainMap:
             return -1
         terrain_id = self.gc.getInfoTypeForString(terrain_string)
         if terrain_id == -1:
-            self._log_warning(f"Terrain type '{terrain_string}' not found in game XML")
+            self._log_warning("Terrain type '" + str(terrain_string) + "' not found in game XML")
         return terrain_id
 
     def _get_feature_id(self, feature_string):
@@ -2039,7 +2110,7 @@ class TerrainMap:
             return -1
         feature_id = self.gc.getInfoTypeForString(feature_string)
         if feature_id == -1:
-            self._log_warning(f"Feature type '{feature_string}' not found in game XML")
+            self._log_warning("Feature type '" + str(feature_string) + "' not found in game XML")
         return feature_id
 
     def _get_bonus_id(self, bonus_string):
@@ -2048,7 +2119,7 @@ class TerrainMap:
             return -1
         bonus_id = self.gc.getInfoTypeForString(bonus_string)
         if bonus_id == -1:
-            self._log_warning(f"Bonus type '{bonus_string}' not found in game XML")
+            self._log_warning("Bonus type '" + str(bonus_string) + "' not found in game XML")
         return bonus_id
 
     def _calculate_placement_score(self, tile_index, resource_def):
@@ -2076,8 +2147,8 @@ class TerrainMap:
 
         # Latitude preference
         latitude = abs(self.mc.get_latitude_for_y(y))
-        min_lat = xml_constraints.get('min_latitude', 0)
-        max_lat = xml_constraints.get('max_latitude', 90)
+        min_lat = xml_constraints.get('iMinLatitude', 0)
+        max_lat = xml_constraints.get('iMaxLatitude', 90)
 
         if min_lat <= latitude <= max_lat:
             score_modifier += 0.15
@@ -2086,7 +2157,7 @@ class TerrainMap:
 
         # Terrain preference
         terrain_id = self.terrain_map[tile_index]
-        terrain_booleans = xml_constraints.get('terrain_booleans', [])
+        terrain_booleans = xml_constraints.get('TerrainBooleans', [])
         if terrain_id in terrain_booleans:
             score_modifier += 0.1
         elif terrain_booleans:  # Has preferences but this isn't one
@@ -2094,7 +2165,7 @@ class TerrainMap:
 
         # Feature preference
         feature_id = self.feature_map[tile_index]
-        feature_booleans = xml_constraints.get('feature_booleans', [])
+        feature_booleans = xml_constraints.get('FeatureBooleans', [])
         if feature_id in feature_booleans:
             score_modifier += 0.1
 
@@ -2169,23 +2240,24 @@ class TerrainMap:
 
         xml_constraints = self.bonus_constraints.get(bonus_id, {})
 
-        # Water/Land compatibility
-        plot_type = self.em.plot_types[tile_index]
-        is_water_plot = plot_type == 3  # PLOT_OCEAN
-        resource_needs_water = xml_constraints.get('b_water', False)
+        # Water/Land compatibility - check terrain compatibility instead
+        plot_type = self.em.plotTypes[tile_index]
+        terrain_id = self.terrain_map[tile_index]
+        terrain_booleans = xml_constraints.get('TerrainBooleans', [])
 
-        if is_water_plot != resource_needs_water:
+        # If resource has terrain restrictions and current terrain isn't allowed
+        if terrain_booleans and terrain_id not in terrain_booleans:
             return False
 
         # Exclusive plot requirements
-        if xml_constraints.get('b_hills', False) and plot_type != 1:  # PLOT_HILLS
+        if xml_constraints.get('bHills', False) and plot_type != 1:  # PLOT_HILLS
             return False
-        if xml_constraints.get('b_flatlands', False) and plot_type != 2:  # PLOT_LAND
+        if xml_constraints.get('bFlatlands', False) and plot_type != 2:  # PLOT_LAND
             return False
 
-        # River requirements for features
-        if xml_constraints.get('b_requires_river', False):
-            if not self.mc.is_river_tile(tile_index):
+        # River requirements (this is for features, not usually bonuses)
+        if xml_constraints.get('bRequiresRiver', False):
+            if not self._is_river_tile(tile_index):
                 return False
 
         return True
@@ -2235,12 +2307,12 @@ class TerrainMap:
     # Helper methods for data processing
     def _get_plot_flat_map(self):
         """Generate map of flat plot preferences"""
-        return [1.0 if plot == PlotTypes.PLOT_LAND else 0.0 for plot in self.em.plot_types]
+        return [1.0 if plot == PlotTypes.PLOT_LAND else 0.0 for plot in self.em.plotTypes]
 
     def _get_plot_hills_map(self):
         """Generate map of hills plot preferences"""
-        return [1.0 if plot == PlotTypes.PLOT_HILLS else 0.0 for plot in self.em.plot_types]
+        return [1.0 if plot == PlotTypes.PLOT_HILLS else 0.0 for plot in self.em.plotTypes]
 
     def _get_plot_peaks_map(self):
         """Generate map of peaks plot preferences"""
-        return [1.0 if plot == PlotTypes.PLOT_PEAK else 0.0 for plot in self.em.plot_types]
+        return [1.0 if plot == PlotTypes.PLOT_PEAK else 0.0 for plot in self.em.plotTypes]

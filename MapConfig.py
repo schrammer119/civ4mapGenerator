@@ -40,15 +40,12 @@ class MapConfig:
         self._initialize_elevation_parameters()
         self._initialize_climate_parameters()
 
-        # Load XML constraints from game files
-        self._load_xml_constraints()
-
-        # Pre-calculate highly used adjacency maps
-        self._precalculate_adjacency_maps()
-
         # --- Pre-calculate and Cache Utilities ---
         self._precalculate_neighbours()
         self._perlin_instance = self.Perlin2D(seed=random.randint(0, 10000))
+
+        # Load XML constraints from game files
+        self._load_xml_constraints()
 
 
     @property
@@ -291,7 +288,7 @@ class MapConfig:
 
             constraints[i] = {
                 'type_string': terrain_type,
-                'b_water': terrain_info.isWater()
+                'bWater': terrain_info.isWater()
             }
 
         return constraints
@@ -306,12 +303,12 @@ class MapConfig:
 
             constraints[i] = {
                 'type_string': feature_type,
-                'b_no_coast': feature_info.isNoCoast(),
-                'b_no_river': feature_info.isNoRiver(),
-                'b_no_adjacent': feature_info.isNoAdjacent(),
-                'b_requires_flatlands': feature_info.isRequiresFlatlands(),
-                'b_requires_river': feature_info.isRequiresRiver(),
-                'terrain_booleans': self._extract_terrain_booleans_feature(feature_info),
+                'bNoCoast': feature_info.isNoCoast(),
+                'bNoRiver': feature_info.isNoRiver(),
+                'bNoAdjacent': feature_info.isNoAdjacent(),
+                'bRequiresFlatlands': feature_info.isRequiresFlatlands(),
+                'bRequiresRiver': feature_info.isRequiresRiver(),
+                'TerrainBooleans': self._extract_terrain_booleans_feature(feature_info),
             }
 
         return constraints
@@ -326,25 +323,25 @@ class MapConfig:
 
             constraints[i] = {
                 'type_string': bonus_type,
-                'placement_order': bonus_info.getPlacementOrder(),
-                'const_appearance': bonus_info.getConstAppearance(),
-                'min_area_size': bonus_info.getMinAreaSize(),
-                'min_latitude': bonus_info.getMinLatitude(),
-                'max_latitude': bonus_info.getMaxLatitude(),
-                'player': bonus_info.getPlayer(),
-                'tiles_per': bonus_info.getTilesPer(),
-                'min_land_percent': bonus_info.getMinLandPercent(),
-                'unique': bonus_info.getUnique(),
-                'group_range': bonus_info.getGroupRange(),
-                'group_rand': bonus_info.getGroupRand(),
-                'b_area': bonus_info.isArea(),
-                'b_hills': bonus_info.isHills(),
-                'b_flatlands': bonus_info.isFlatlands(),
-                'b_no_river_side': bonus_info.isNoRiverSide(),
-                'b_normalize': bonus_info.isNormalize(),
-                'terrain_booleans': self._extract_terrain_booleans_bonus(bonus_info),
-                'feature_booleans': self._extract_feature_booleans_bonus(bonus_info),
-                'feature_terrain_booleans': self._extract_feature_terrain_booleans_bonus(bonus_info),
+                'iPlacementOrder': bonus_info.getPlacementOrder(),
+                'iConstAppearance': bonus_info.getConstAppearance(),
+                'iMinAreaSize': bonus_info.getMinAreaSize(),
+                'iMinLatitude': bonus_info.getMinLatitude(),
+                'iMaxLatitude': bonus_info.getMaxLatitude(),
+                'iPlayer': bonus_info.getPercentPerPlayer(),  # XML name with correct API method
+                'iTilesPer': bonus_info.getTilesPer(),
+                'iMinLandPercent': bonus_info.getMinLandPercent(),
+                'iUnique': bonus_info.getUnique(),
+                'iGroupRange': bonus_info.getGroupRange(),
+                'iGroupRand': bonus_info.getGroupRand(),
+                'bArea': bonus_info.isArea(),
+                'bHills': bonus_info.isHills(),
+                'bFlatlands': bonus_info.isFlatlands(),
+                'bNoRiverSide': bonus_info.isNoRiverSide(),
+                'bNormalize': bonus_info.isNormalize(),
+                'TerrainBooleans': self._extract_terrain_booleans_bonus(bonus_info),
+                'FeatureBooleans': self._extract_feature_booleans_bonus(bonus_info),
+                'FeatureTerrainBooleans': self._extract_feature_terrain_booleans_bonus(bonus_info),
             }
 
         return constraints
@@ -878,6 +875,11 @@ class MapConfig:
         return self.bonus_id_to_string.get(bonus_id, None)
 
     # Adjacency checking functions
+    def set_adjacency_maps(self, river_adjacency_map, coast_adjacency_map):
+        """Set pre-calculated adjacency maps (called by TerrainMap)"""
+        self.river_adjacency_map = river_adjacency_map
+        self.coast_adjacency_map = coast_adjacency_map
+
     def is_adjacent_to_river(self, tile_index):
         """Check if tile is adjacent to a river (pre-calculated)"""
         if tile_index < 0 or tile_index >= len(self.river_adjacency_map):
@@ -905,12 +907,6 @@ class MapConfig:
                 # Implementation depends on how we structure data flow
                 pass
 
-        return False
-
-    def is_river_tile(self, tile_index):
-        """Check if tile has a river"""
-        # TODO: This needs to be implemented based on how river data is stored
-        # Placeholder for now
         return False
 
     def get_coords_from_index(self, index):

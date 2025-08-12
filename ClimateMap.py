@@ -2748,8 +2748,8 @@ class ClimateMap:
         """Calculate and store percentiles for terrain system"""
         print("ClimateMap: Calculating climate percentiles...")
 
-        self.temperature_percentiles = self._build_percentile_map(self.temperature_map)
-        self.rainfall_percentiles = self._build_percentile_map(self.rainfall_map)
+        self.temperature_percentiles = self._build_percentile_map(self.TemperatureMap)
+        self.rainfall_percentiles = self._build_percentile_map(self.RainfallMap)
 
         # Optional: Calculate percentiles for other climate variables
         if hasattr(self, 'WindSpeeds') and self.WindSpeeds:

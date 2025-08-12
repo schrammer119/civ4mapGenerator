@@ -243,6 +243,8 @@ class CyGame:
 
     def countCivPlayersEverAlive(self):
         return 4  # Default 4 players for testing
+
+
 class CyTerrainInfo:
     """Mock TerrainInfo for testing"""
     def __init__(self, terrain_type, terrain_id):
@@ -355,16 +357,16 @@ class CyBonusInfo:
         # Default values for testing
         self.placement_data = {
             'BONUS_WHEAT': {
-                'placement_order': 0, 'const_appearance': 90, 'player': 200,
-                'tiles_per': 60, 'b_flatlands': True, 'terrain_compat': [0, 1]
+                'iPlacementOrder': 0, 'iConstAppearance': 90, 'iPlayer': 200,
+                'iTilesPer': 60, 'bFlatlands': True, 'terrain_compat': [0, 1]
             },
             'BONUS_IRON': {
-                'placement_order': 1, 'const_appearance': 100, 'player': 120,
-                'b_hills': True, 'terrain_compat': [0, 1, 3]
+                'iPlacementOrder': 1, 'iConstAppearance': 100, 'iPlayer': 120,
+                'bHills': True, 'terrain_compat': [0, 1, 3]
             },
             'BONUS_GOLD': {
-                'placement_order': 2, 'const_appearance': 80, 'player': 100,
-                'unique': 4, 'b_hills': True, 'terrain_compat': [0, 1, 2, 3]
+                'iPlacementOrder': 2, 'iConstAppearance': 80, 'iPlayer': 100,
+                'iUnique': 4, 'bHills': True, 'terrain_compat': [0, 1, 2, 3]
             },
         }
 
@@ -372,10 +374,10 @@ class CyBonusInfo:
         return self.bonus_type
 
     def getPlacementOrder(self):
-        return self.placement_data.get(self.bonus_type, {}).get('placement_order', 5)
+        return self.placement_data.get(self.bonus_type, {}).get('iPlacementOrder', 5)
 
     def getConstAppearance(self):
-        return self.placement_data.get(self.bonus_type, {}).get('const_appearance', 50)
+        return self.placement_data.get(self.bonus_type, {}).get('iConstAppearance', 50)
 
     def getMinAreaSize(self):
         return 3
@@ -386,38 +388,38 @@ class CyBonusInfo:
     def getMaxLatitude(self):
         return 90
 
-    def getPlayer(self):
-        return self.placement_data.get(self.bonus_type, {}).get('player', 100)
+    def getPercentPerPlayer(self):
+        return self.placement_data.get(self.bonus_type, {}).get('iPlayer', 100)
 
     def getTilesPer(self):
-        return self.placement_data.get(self.bonus_type, {}).get('tiles_per', 0)
+        return self.placement_data.get(self.bonus_type, {}).get('iTilesPer', 0)
 
     def getMinLandPercent(self):
         return 0
 
     def getUnique(self):
-        return self.placement_data.get(self.bonus_type, {}).get('unique', 0)
+        return self.placement_data.get(self.bonus_type, {}).get('iUnique', 0)
 
     def getGroupRange(self):
-        return self.placement_data.get(self.bonus_type, {}).get('group_range', 0)
+        return self.placement_data.get(self.bonus_type, {}).get('iGroupRange', 0)
 
     def getGroupRand(self):
-        return self.placement_data.get(self.bonus_type, {}).get('group_rand', 0)
+        return self.placement_data.get(self.bonus_type, {}).get('iGroupRand', 0)
 
     def isArea(self):
-        return self.placement_data.get(self.bonus_type, {}).get('b_area', False)
+        return self.placement_data.get(self.bonus_type, {}).get('bArea', False)
 
     def isHills(self):
-        return self.placement_data.get(self.bonus_type, {}).get('b_hills', False)
+        return self.placement_data.get(self.bonus_type, {}).get('bHills', False)
 
     def isFlatlands(self):
-        return self.placement_data.get(self.bonus_type, {}).get('b_flatlands', False)
+        return self.placement_data.get(self.bonus_type, {}).get('bFlatlands', False)
 
     def isNoRiverSide(self):
-        return self.placement_data.get(self.bonus_type, {}).get('b_no_river_side', False)
+        return self.placement_data.get(self.bonus_type, {}).get('bNoRiverSide', False)
 
     def isNormalize(self):
-        return self.placement_data.get(self.bonus_type, {}).get('b_normalize', True)
+        return self.placement_data.get(self.bonus_type, {}).get('bNormalize', True)
 
     def isTerrain(self, terrain_id):
         """Mock terrain compatibility"""
