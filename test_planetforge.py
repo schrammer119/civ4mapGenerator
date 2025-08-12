@@ -5,9 +5,21 @@ import random
 
 from PlanetForge import *
 from MapConfig import MapConfig
+from ElevationMap import ElevationMap
 from ClimateMap import ClimateMap
+from TerrainMap import TerrainMap
 
-random.seed(542069)
+# random.seed(542069)
+
+# dark plots
+plt.style.use('dark_background')  # This sets up a good dark theme baseline
+mpl.rcParams['text.color'] = 'white'
+mpl.rcParams['axes.labelcolor'] = 'white'
+mpl.rcParams['xtick.color'] = 'white'
+mpl.rcParams['ytick.color'] = 'white'
+mpl.rcParams['axes.edgecolor'] = 'white'
+mpl.rcParams['figure.facecolor'] = '#2E2E2E'
+mpl.rcParams['axes.facecolor'] = '#2E2E2E'
 
 # Initialize shared MapConfig instance
 mc = MapConfig()
@@ -19,6 +31,9 @@ em.GenerateElevationMap()
 # Initialize climate map with shared constants and elevation data
 cm = ClimateMap(em, mc)
 cm.GenerateClimateMap()
+
+tm = TerrainMap(mc, em, cm)
+tm.GenerateTerrain()
 
 print("Map generation completed successfully!")
 print("Map size: %d x %d" % (mc.iNumPlotsX, mc.iNumPlotsY))
@@ -55,7 +70,7 @@ if True:
     U = np.array(em.continentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     V = np.array(em.continentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
+    fig, ax = plt.subplots()
     p = ax.imshow(Z, origin='lower', cmap=mpl.cm.tab20)
     ax.quiver(U, V)
     ax.plot([x["x_centroid"] for x in em.seedList], [x["y_centroid"]
@@ -66,7 +81,7 @@ if True:
     fig.colorbar(p)
 
     # Create a 2x2 subplot for elevation components
-    fig, axs = plt.subplots(2, 2, figsize=(12, 10), facecolor='#2E2E2E')
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
     # Base Elevation (Plate Density)
     Z1 = np.array(em.elevationBaseMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
@@ -95,7 +110,7 @@ if True:
     plt.tight_layout()
 
     # Create a 2x2 subplot for the next set of elevation maps
-    fig2, axs2 = plt.subplots(2, 2, figsize=(12, 10), facecolor='#2E2E2E')
+    fig2, axs2 = plt.subplots(2, 2, figsize=(12, 10))
 
     # Preliminary Elevation
     Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
@@ -130,7 +145,7 @@ if True:
     iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
     iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
 
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
+    fig, ax = plt.subplots()
     p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
     ax.plot([i % mc.iNumPlotsX for i in iPeaks], [i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
     ax.plot([i % mc.iNumPlotsX for i in iHills], [i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='none', ms=8)
@@ -180,7 +195,7 @@ if True:
     X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
 
     # Create 2x2 subplot grid
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), facecolor='#2E2E2E')
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     ax1, ax2, ax3, ax4 = axes[0,0], axes[0,1], axes[1,0], axes[1,1]
 
     # Plot 1: Ocean Currents with Landforms (top-left)
@@ -216,7 +231,7 @@ if True:
     # Plot 3: Wind Patterns with Topography (bottom-left)
     # Add contour lines to show major elevation features
     ax3.contour(elevation_background, levels=[em.seaLevelThreshold],
-    colors=['blue'], linewidths=[1], alpha=0.7)
+                colors=['cyan'], linewidths=[1], alpha=0.7)  # Changed to cyan
     ax3.plot([i % mc.iNumPlotsX for i in iPeaks], [
     i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
 
@@ -227,10 +242,9 @@ if True:
 
     q3 = ax3.streamplot(X, Y, U_wind, V_wind,
                         color=wind_magnitude,           # Color by speed
-                        cmap='plasma',        # Colormap
+                        cmap='Spectral',        # Colormap
                         density=4,             # Density of streamlines
                         linewidth=0.5,           # Line thickness
-                        # arrowsize=1.5,         # Arrow size
                         arrowstyle='->')       # Arrow style
 
     ax3.set_title('Wind Patterns with Topography')
@@ -252,22 +266,6 @@ if True:
     fig.colorbar(p4, ax=ax4, label='Rainfall')
 
     plt.tight_layout()
-
-    # node_elevations
-    Z = np.array(cm.node_elevations).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-    ax.set_title('node_elevations')
-    fig.colorbar(p)
-
-    # flow_directions
-    Z = np.array(cm.flow_directions).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
-    ax.set_title('flow_directions')
-    fig.colorbar(p)
 
     tile_ids = []
     for id in cm.tile_watershed_ids:
@@ -299,7 +297,7 @@ if True:
     # Create node coordinate meshgrid
     X_nodes, Y_nodes = np.meshgrid(np.arange(mc.iNumPlotsX) + 0.5, np.arange(mc.iNumPlotsY) - 0.5)
 
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
+    fig, ax = plt.subplots()
     p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
 
     # Create color array for arrows based on watershed IDs
@@ -338,22 +336,6 @@ if True:
         ax.scatter(outlet_x, outlet_y, c='black', s=30, marker='o', zorder=10, edgecolor='white', linewidth=1)
 
     ax.set_title('Watershed IDs with Flow Directions')
-    fig.colorbar(p)
-
-    # initial_node_flows
-    Z = np.array(cm.initial_node_flows).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
-    ax.set_title('initial_node_flows')
-    fig.colorbar(p)
-
-    # enhanced_flows
-    Z = np.array(cm.enhanced_flows).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-
-    fig, ax = plt.subplots(facecolor='#2E2E2E')
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
-    ax.set_title('enhanced_flows')
     fig.colorbar(p)
 
     plt.show()
