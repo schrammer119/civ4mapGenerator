@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 import numpy as np
 import random
 
@@ -156,6 +158,10 @@ if True:
     V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     Z_rain = np.array(cm.RainfallMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
+    # Add plot type overlays for peaks and hills
+    iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
+    iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
+
     # Create meshgrid for vector plots
     X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
 
@@ -302,5 +308,156 @@ if True:
 
     ax.set_title('Watershed IDs with Flow Directions')
     fig.colorbar(p)
+
+    # Get land tiles only (not ocean)
+    land_indices = [i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+
+    # Get temperature and rainfall percentiles for land tiles (already calculated in ClimateMap)
+    land_temp_percentiles = [cm.temperature_percentiles[i] * 100 for i in land_indices]  # Convert to 0-100
+    land_rain_percentiles = [cm.rainfall_percentiles[i] * 100 for i in land_indices]  # Convert to 0-100
+
+    # Get biome assignments for land tiles
+    land_biomes = [tm.biome_assignments[i] for i in land_indices]
+
+    # Create biome background grid using actual biome selection logic
+    grid_resolution = 200  # Higher resolution for smoother boundaries
+    temp_grid = np.linspace(0, 1, grid_resolution)  # Keep 0-1 for biome range comparisons
+    rain_grid = np.linspace(0, 1, grid_resolution)
+    Rain_grid, Temp_grid = np.meshgrid(rain_grid, temp_grid)
+
+    # Create biome classification grid using TerrainMap's actual logic
+    biome_color_grid = np.zeros_like(Rain_grid, dtype=int)
+
+    # Define colors for each biome type - matching your exact biome definitions
+    biome_color_map = {
+        # Water biomes
+        'tropical_ocean': '#191970',      # Midnight Blue
+        'temperate_ocean': '#4682B4',     # Steel Blue
+        'polar_ocean': '#708090',         # Slate Gray
+        'tropical_coast': '#87CEEB',      # Sky Blue
+        'temperate_coast': '#87CEFA',     # Light Sky Blue
+        'polar_coast': '#B0C4DE',         # Light Steel Blue
+
+        # Desert biomes
+        'hot_desert': '#F4A460',          # Sandy Brown
+
+        # Plains biomes
+        'steppe': '#DAA520',              # Goldenrod
+        'savanna': '#D2691E',             # Chocolate
+        'mediterranean': '#CD853F',       # Peru
+        'dry_conifer_forest': '#8FBC8F',  # Dark Sea Green
+        'woodland_savanna': '#DEB887',    # Burlywood
+
+        # Grassland biomes
+        'temperate_grassland': '#228B22', # Forest Green
+        'temperate_forest': '#006400',    # Dark Green
+        'coastal_rainforest': '#2E8B57',  # Sea Green
+        'tropical_jungle': '#006400',     # Dark Green
+
+        # Tundra biomes
+        'tundra': '#708090',              # Slate Gray
+        'taiga': '#556B2F',               # Dark Olive Green
+
+        # Snow biomes
+        'polar_desert': '#FFFAFA',        # Snow
+    }
+
+    # Create ordered list of biomes and assign IDs
+    biome_names = sorted(tm.biome_definitions.keys())
+    biome_to_id = {biome: i for i, biome in enumerate(biome_names)}
+
+    # Fill the grid based on actual TerrainMap biome selection logic
+    for i in range(grid_resolution):
+        for j in range(grid_resolution):
+            temp_pct = temp_grid[i]  # 0-1 scale
+            rain_pct = rain_grid[j]  # 0-1 scale
+
+            # Simulate biome selection for land tiles only
+            # Find eligible biomes (land biomes only for background)
+            eligible_biomes = {}
+            for biome_name, biome_def in tm.biome_definitions.items():
+                terrain = biome_def['terrain']
+                if terrain not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+                    eligible_biomes[biome_name] = biome_def
+
+            # Find climate-suitable biomes
+            candidates = []
+            for biome_name, biome_def in eligible_biomes.items():
+                temp_min, temp_max = biome_def['temp_range']
+                precip_min, precip_max = biome_def['precip_range']
+
+                # Check if point is within biome range
+                if temp_min <= temp_pct <= temp_max and precip_min <= rain_pct <= precip_max:
+                    # Calculate climate fitness
+                    temp_center = (temp_min + temp_max) / 2.0
+                    precip_center = (precip_min + precip_max) / 2.0
+                    temp_span = (temp_max - temp_min) / 2.0 if temp_max > temp_min else 0.1
+                    precip_span = (precip_max - precip_min) / 2.0 if precip_max > precip_min else 0.1
+
+                    temp_fitness = 1.0 - abs(temp_pct - temp_center) / temp_span
+                    precip_fitness = 1.0 - abs(rain_pct - precip_center) / precip_span
+
+                    climate_weight = biome_def['base_weight'] * temp_fitness * precip_fitness
+                    candidates.append((biome_name, climate_weight))
+
+            # Select highest scoring biome
+            if candidates:
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                selected_biome = candidates[0][0]
+                biome_color_grid[i, j] = biome_to_id[selected_biome]
+            else:
+                # No suitable biome - use default (first biome ID)
+                biome_color_grid[i, j] = 0
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(14, 10))
+
+    # Create colormap for background
+    colors_list = [biome_color_map.get(biome_name, '#808080') for biome_name in sorted(tm.biome_definitions.keys())]
+    background_cmap = mcolors.ListedColormap(colors_list)
+
+    # Plot biome regions as background
+    background = ax.imshow(biome_color_grid, extent=[0, 100, 0, 100],
+                        origin='lower', cmap=background_cmap, alpha=0.4, aspect='auto')
+
+    # Scatter plot of actual tiles colored by their assigned biome
+    scatter_colors = [biome_color_map.get(biome, '#000000') for biome in land_biomes]
+
+    scatter = ax.scatter(land_rain_percentiles, land_temp_percentiles,
+                        c=scatter_colors, s=12, alpha=0.8, edgecolors='black', linewidth=0.3)
+
+    # Labels and formatting
+    ax.set_xlabel('Rainfall Percentile (%)', fontsize=12)
+    ax.set_ylabel('Temperature Percentile (%)', fontsize=12)
+    ax.set_title('Biome Classification Debug Plot\n(Background: Actual Biome Selection Grid, Points: Assigned Tiles)', fontsize=14)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+
+    # Add grid
+    ax.grid(True, alpha=0.3)
+
+    # Create legend with actual biomes found in the map
+    legend_patches = []
+    biome_counts = {}
+    for biome in land_biomes:
+        biome_counts[biome] = biome_counts.get(biome, 0) + 1
+
+    # Sort by biome name for consistent ordering
+    for biome_name in sorted(biome_counts.keys()):
+        count = biome_counts[biome_name]
+        color = biome_color_map.get(biome_name, '#808080')
+        patch = mpatches.Patch(color=color, label="%s (%d tiles)" % (biome_name, count))
+        legend_patches.append(patch)
+
+    ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+
+    # Add statistics text
+    n_tiles = len(land_indices)
+    n_biomes = len(biome_counts)
+    ax.text(0.02, 0.98, "Total Land Tiles: %d\nUnique Biomes: %d" % (n_tiles, n_biomes),
+            transform=ax.transAxes, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    plt.tight_layout()
 
     plt.show()

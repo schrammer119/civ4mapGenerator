@@ -103,29 +103,32 @@ class CyGlobalContext:
         self.num_bonuses = 32  # Updated count
         self.num_players = 4
 
-        # Terrain types from CIV4TerrainInfos.xml
-        self.terrain_types = [
-            'TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_DESERT', 'TERRAIN_TUNDRA',
-            'TERRAIN_SNOW', 'TERRAIN_COAST', 'TERRAIN_OCEAN', 'TERRAIN_PEAK'
-        ]
+        # Build lookup dictionary from existing enum classes
+        self._string_to_enum = {}
+        self.terrain_types = []
+        self.feature_types = []
+        self.bonus_types = []
+        enum_classes = [TerrainTypes, FeatureTypes, BonusTypes]
 
-        # Feature types from CIV4FeatureInfos.xml
-        self.feature_types = [
-            'FEATURE_ICE', 'FEATURE_JUNGLE', 'FEATURE_OASIS',
-            'FEATURE_FLOOD_PLAINS', 'FEATURE_FOREST'
-        ]
+        for enum_class in enum_classes:
+            for attr_name in dir(enum_class):
+                if not attr_name.startswith('_'):  # Skip private attributes
+                    if enum_class is TerrainTypes:
+                        self.terrain_types.append(attr_name)
+                    elif enum_class is FeatureTypes:
+                        self.feature_types.append(attr_name)
+                    elif enum_class is BonusTypes:
+                        self.bonus_types.append(attr_name)
+                    attr_value = getattr(enum_class, attr_name)
+                    if isinstance(attr_value, int):  # Only include integer constants
+                        self._string_to_enum[attr_name] = attr_value
 
-        # Bonus types from CIV4BonusInfos.xml
-        self.bonus_types = [
-            'BONUS_ALUMINUM', 'BONUS_COAL', 'BONUS_COPPER', 'BONUS_HORSE',
-            'BONUS_IRON', 'BONUS_MARBLE', 'BONUS_OIL', 'BONUS_STONE',
-            'BONUS_URANIUM', 'BONUS_BANANA', 'BONUS_CLAM', 'BONUS_CORN',
-            'BONUS_COW', 'BONUS_CRAB', 'BONUS_DEER', 'BONUS_FISH', 'BONUS_PIG',
-            'BONUS_RICE', 'BONUS_SHEEP', 'BONUS_WHEAT', 'BONUS_DYE', 'BONUS_FUR',
-            'BONUS_GEMS', 'BONUS_GOLD', 'BONUS_INCENSE', 'BONUS_IVORY', 'BONUS_SILK',
-            'BONUS_SILVER', 'BONUS_SPICES', 'BONUS_SUGAR', 'BONUS_WINE', 'BONUS_WHALE',
-            'BONUS_MUSIC'  # Additional bonus from XML
-        ]
+    def getInfoTypeForString(self, info_string):
+        """
+        Returns the integer enum value for a given info type string.
+        Uses pre-built lookup from existing enum classes.
+        """
+        return self._string_to_enum.get(info_string, -1)
 
     def getMap(self):
         return CyMap()
@@ -162,22 +165,6 @@ class CyGlobalContext:
         if 0 <= bonus_id < len(self.bonus_types):
             return CyBonusInfo(self.bonus_types[bonus_id], bonus_id)
         return CyBonusInfo('UNKNOWN_BONUS', -1)
-
-    def getInfoTypeForString(self, type_string):
-        """Convert string to ID"""
-        # Check terrains
-        if type_string in self.terrain_types:
-            return self.terrain_types.index(type_string)
-
-        # Check features
-        if type_string in self.feature_types:
-            return self.feature_types.index(type_string)
-
-        # Check bonuses
-        if type_string in self.bonus_types:
-            return self.bonus_types.index(type_string)
-
-        return -1  # Not found
 
 
 class CyMap:

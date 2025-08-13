@@ -3,8 +3,10 @@ from MapConfig import MapConfig
 from ElevationMap import ElevationMap
 from ClimateMap import ClimateMap
 import random
+from Wrappers import *
 
 class TerrainMap:
+    @profile
     def __init__(self, mapConfig, elevationMap, climateMap, gc=None):
         """Initialize TerrainMap with required data sources"""
         if mapConfig is None:
@@ -68,6 +70,7 @@ class TerrainMap:
         self._build_biome_grid()
         self._precalculate_adjacency_maps()
 
+    @profile
     def GenerateTerrain(self):
         """Main method called by PlanetForge - generates all terrain and features"""
         print("TerrainMap: Generating biomes and terrain...")
@@ -1117,19 +1120,22 @@ class TerrainMap:
         else:
             return 0.0
 
+    @profile
     def _assign_biomes(self):
         """Assign biomes to all tiles (land and water) using fuzzy logic + secondary factors"""
         # Store temporary assignments for neighbour calculation
         self._temp_biome_assignments = {}
+        shuffle_list = list(range(len(self.terrain_map)))
+        random.shuffle(shuffle_list)
 
-        for tile_index in range(len(self.terrain_map)):
+        for tile_index in shuffle_list:
             biome_name = self._select_biome_for_tile(tile_index)
             self.biome_assignments[tile_index] = biome_name
             self._temp_biome_assignments[tile_index] = biome_name
 
             # Set base terrain
             biome_def = self.biome_definitions[biome_name]
-            self.terrain_map[tile_index] = biome_def['terrain']
+            self.terrain_map[tile_index] = self.gc.getInfoTypeForString(biome_def['terrain'])
 
     def _select_biome_for_tile(self, tile_index):
         """Select the best biome for a tile using fuzzy logic + secondary factors"""
@@ -1147,11 +1153,11 @@ class TerrainMap:
         for biome_name, biome_def in self.biome_definitions.items():
             terrain = biome_def['terrain']
 
-            if is_water and not is_coast and terrain == TerrainTypes.TERRAIN_OCEAN:
+            if is_water and not is_coast and terrain == 'TERRAIN_OCEAN':
                 eligible_biomes[biome_name] = biome_def
-            elif is_water and is_coast and terrain == TerrainTypes.TERRAIN_COAST:
+            elif is_water and is_coast and terrain == 'TERRAIN_COAST':
                 eligible_biomes[biome_name] = biome_def
-            elif not is_water and terrain not in [TerrainTypes.TERRAIN_OCEAN, TerrainTypes.TERRAIN_COAST]:
+            elif not is_water and terrain not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
                 eligible_biomes[biome_name] = biome_def
 
         # Find grid position
@@ -1254,6 +1260,7 @@ class TerrainMap:
             else:                  # Cold-Wet
                 return 'tundra'  # Tundra/no feature
 
+    @profile
     def _place_primary_features(self):
         """Place primary biome features according to coverage and placement rules"""
         # Initialize feature tracking
@@ -1440,6 +1447,7 @@ class TerrainMap:
         # More constraint checks would be implemented in MapConfig
         return True
 
+    @profile
     def _place_secondary_features(self):
         """Place secondary features like flood plains and oases"""
         for feature_name, feature_def in self.secondary_features.items():
@@ -1681,6 +1689,7 @@ class TerrainMap:
         # Check other conditions normally
         return self._tile_meets_rule_conditions(tile_index, rule)
 
+    @profile
     def _place_resources(self):
         """Place resources using scoring-based system"""
         print("TerrainMap: Placing resources...")
