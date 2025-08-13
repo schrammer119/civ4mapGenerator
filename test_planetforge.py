@@ -138,41 +138,6 @@ if True:
 
     plt.tight_layout()
 
-    # Create land-only elevation map with sea level applied
-    elev = [-2000.0 if em.plotTypes[i]==PlotTypes.PLOT_OCEAN else x for x,i in zip(em.aboveSeaLevelMap,range(mc.iNumPlots))]
-
-    Z = np.array(elev).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
-    iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
-
-    fig, ax = plt.subplots()
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.terrain)
-    ax.plot([i % mc.iNumPlotsX for i in iPeaks], [i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
-    ax.plot([i % mc.iNumPlotsX for i in iHills], [i // mc.iNumPlotsX for i in iHills], linestyle="", marker="$\\frown$", mec='tab:brown', mfc='none', ms=8)
-
-    # Add river visualization
-    north_of_rivers = cm.north_of_rivers
-    west_of_rivers = cm.west_of_rivers
-
-    # Draw E/W rivers (horizontal lines on south edges of tiles)
-    for tile_i in range(mc.iNumPlots):
-        if north_of_rivers[tile_i]:
-            x = tile_i % mc.iNumPlotsX
-            y = tile_i // mc.iNumPlotsX
-            # Horizontal line on south edge of tile
-            ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5], 'blue', linewidth=2, alpha=0.8)
-
-    # Draw N/S rivers (vertical lines on east edges of tiles)
-    for tile_i in range(mc.iNumPlots):
-        if west_of_rivers[tile_i]:
-            x = tile_i % mc.iNumPlotsX
-            y = tile_i // mc.iNumPlotsX
-            # Vertical line on east edge of tile
-            ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5], 'blue', linewidth=2, alpha=0.8)
-
-    ax.set_title('Final Map with Plot Types and Rivers')
-    fig.colorbar(p)
-
     # Create landform background data
     landform_map = np.array(em.plotTypes).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     elevation_background = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
