@@ -1062,19 +1062,14 @@ class TerrainMap:
             return True
 
         # Check south edge (north edge of tile to the south)
-        x, y = self.mc.get_coords_from_index(tile_index)
-        south_x, south_y = self.mc.wrap_coordinates(x, y - 1)
-        if self.mc.coordinates_in_bounds(south_x, south_y):
-            south_index = self.mc.get_index_from_coords(south_x, south_y)
-            if south_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[south_index]:
-                return True
+        south_index = self.mc.neighbours[tile_index][self.mc.S]
+        if 0 <= south_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[south_index]:
+            return True
 
         # Check east edge (west edge of tile to the east)
-        east_x, east_y = self.mc.wrap_coordinates(x + 1, y)
-        if self.mc.coordinates_in_bounds(east_x, east_y):
-            east_index = self.mc.get_index_from_coords(east_x, east_y)
-            if east_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[east_index]:
-                return True
+        east_index = self.mc.neighbours[tile_index][self.mc.E]
+        if 0 <= east_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[east_index]:
+            return True
 
         return False
 
@@ -1188,9 +1183,9 @@ class TerrainMap:
 
     def _is_coastal_water(self, tile_index):
         """Check if water tile is adjacent to land (coastal water)"""
-        for direction in range(8):
+        for direction in range(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
-            if neighbour_idx is not None:
+            if neighbour_idx >= 0:
                 neighbour_plot = self.em.plotTypes[neighbour_idx]
                 if neighbour_plot != PlotTypes.PLOT_OCEAN:  # Adjacent to land
                     return True
@@ -1216,9 +1211,9 @@ class TerrainMap:
         same_biome_neighbours = 0
         total_neighbours = 0
 
-        for direction in range(8):  # All 8 directions
+        for direction in range(1, 9):  # All 8 directions
             neighbour_idx = self.mc.neighbours[tile_index][direction]
-            if neighbour_idx is not None and neighbour_idx < len(self._temp_biome_assignments):
+            if neighbour_idx >= 0 and neighbour_idx < len(self._temp_biome_assignments):
                 neighbour_biome = self._temp_biome_assignments.get(neighbour_idx, None)
                 if neighbour_biome == biome_name:
                     same_biome_neighbours += 1
@@ -1308,9 +1303,9 @@ class TerrainMap:
         feature_neighbours = 0
         total_neighbours = 0
 
-        for direction in range(8):
+        for direction in range(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
-            if neighbour_idx is not None and neighbour_idx < len(self.feature_map):
+            if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
                 if self.feature_map[neighbour_idx] == feature_type:
                     feature_neighbours += 1
                 total_neighbours += 1
@@ -1348,9 +1343,9 @@ class TerrainMap:
         to_visit = []
 
         # Add neighbouring tiles with the same feature
-        for direction in range(8):
+        for direction in range(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
-            if (neighbour_idx is not None and
+            if (neighbour_idx >= 0 and
                 neighbour_idx < len(self.feature_map) and
                 self.feature_map[neighbour_idx] == feature_type):
                 to_visit.append(neighbour_idx)
@@ -1366,9 +1361,9 @@ class TerrainMap:
             patch_size += 1
 
             # Add neighbours of current tile
-            for direction in range(8):
+            for direction in range(1, 9):
                 neighbour_idx = self.mc.neighbours[current][direction]
-                if (neighbour_idx is not None and
+                if (neighbour_idx >= 0 and
                     neighbour_idx not in visited and
                     neighbour_idx < len(self.feature_map) and
                     self.feature_map[neighbour_idx] == feature_type):
