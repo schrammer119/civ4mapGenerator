@@ -33,8 +33,8 @@ class TerrainMap:
         self.feature_constraints = self.mc.feature_constraints  # From XML FeatureInfos
         self.bonus_constraints = self.mc.bonus_constraints      # From XML BonusInfos
 
-        # Core biome grid - 20x20 = 400 cells (5% resolution)
-        self.BIOME_GRID_SIZE = 20
+        # Core biome grid - 21x21 = 441 cells (5% resolution)
+        self.BIOME_GRID_SIZE = 21
         self.biome_grid = {}
 
         # Results arrays - using -1 for NO_TERRAIN/NO_FEATURE/NO_BONUS
@@ -289,8 +289,8 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.60, 1.00),
-                'precip_range': (0.00, 0.25),
+                'temp_range': (0.45, 1.00),
+                'precip_range': (0.00, 0.35),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.2,
@@ -303,6 +303,27 @@ class TerrainMap:
                 }
             },
 
+            'cold_desert': {
+                'terrain': 'TERRAIN_DESERT',
+                'feature': {
+                    'type': None,
+                    'coverage': 0.0,
+                    'placement_rules': {}
+                },
+                'temp_range': (0.35, 0.60),
+                'precip_range': (0.00, 0.15),
+                'base_weight': 1.0,
+                'scoring_factors': {
+                    'plot_flat': 0.4,      # Higher - cold deserts love flat plains/plateaus
+                    'plot_hills': 0.2,     # Moderate - some cold deserts are hilly
+                    'plot_peaks': -0.3,    # Negative - avoid mountain peaks
+                    'elevation': 0.2,      # Positive! Cold deserts often elevated (Gobi, Great Basin)
+                    'wind_speed': 0.4,     # Higher - cold deserts are often windy
+                    'pressure': 0.0,       # Neutral
+                    'neighbours': 0.2,     # Lower clustering - more scattered than hot desert
+                }
+            },
+
             # === PLAINS BIOMES ===
             'steppe': {
                 'terrain': 'TERRAIN_PLAINS',
@@ -311,7 +332,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.30, 0.70),
+                'temp_range': (0.25, 0.60),
                 'precip_range': (0.15, 0.40),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -332,8 +353,8 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.65, 1.00),
-                'precip_range': (0.25, 0.60),
+                'temp_range': (0.60, 1.00),
+                'precip_range': (0.25, 0.50),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.4,
@@ -515,8 +536,8 @@ class TerrainMap:
                         'max_patch_size': 18,
                     }
                 },
-                'temp_range': (0.70, 1.00),
-                'precip_range': (0.75, 1.00),
+                'temp_range': (0.65, 1.00),
+                'precip_range': (0.70, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.3,
@@ -565,7 +586,7 @@ class TerrainMap:
                     }
                 },
                 'temp_range': (0.15, 0.45),
-                'precip_range': (0.30, 0.80),
+                'precip_range': (0.30, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.2,
@@ -1088,7 +1109,7 @@ class TerrainMap:
                 candidates = []
                 for biome_name, biome_def in self.biome_definitions.items():
                     weight = self._calculate_climate_fitness(biome_def, temp_percentile, precip_percentile)
-                    if weight > 0:
+                    if weight > 0.0:
                         candidates.append((biome_name, weight))
 
                 self.biome_grid[(temp_idx, precip_idx)] = candidates
@@ -1107,16 +1128,17 @@ class TerrainMap:
             precip_span = (precip_max - precip_min) / 2.0
 
             if temp_span > 0:
-                temp_fitness = 1.0 - abs(temp - temp_center) / temp_span
+                temp_fitness = 1.0 - 0.99 * abs(temp - temp_center) / temp_span
             else:
                 temp_fitness = 1.0
 
             if precip_span > 0:
-                precip_fitness = 1.0 - abs(precip - precip_center) / precip_span
+                precip_fitness = 1.0 - 0.99 * abs(precip - precip_center) / precip_span
             else:
                 precip_fitness = 1.0
 
-            return biome_def['base_weight'] * temp_fitness * precip_fitness
+            weight = biome_def['base_weight'] * temp_fitness * precip_fitness
+            return weight
         else:
             return 0.0
 

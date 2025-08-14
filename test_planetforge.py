@@ -340,6 +340,7 @@ if True:
 
         # Desert biomes
         'hot_desert': '#F4A460',          # Sandy Brown
+        'cold_desert': '#BC9A6A',         # desert tan/cool brown
 
         # Plains biomes
         'steppe': '#DAA520',              # Goldenrod
@@ -436,17 +437,24 @@ if True:
     # Add grid
     ax.grid(True, alpha=0.3)
 
-    # Create legend with actual biomes found in the map
+    # Create legend with ALL biomes (including 0-count ones)
     legend_patches = []
     biome_counts = {}
     for biome in land_biomes:
         biome_counts[biome] = biome_counts.get(biome, 0) + 1
 
-    # Sort by biome name for consistent ordering
-    for biome_name in sorted(biome_counts.keys()):
-        count = biome_counts[biome_name]
+    # Include all biomes from definitions, even if not present
+    for biome_name in sorted(tm.biome_definitions.keys()):
+        # Skip water biomes for land-only analysis
+        terrain = tm.biome_definitions[biome_name]['terrain']
+        if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+            continue
+
+        count = biome_counts.get(biome_name, 0)
         color = biome_color_map.get(biome_name, '#808080')
-        patch = mpatches.Patch(color=color, label="%s (%d tiles)" % (biome_name, count))
+        label = '%s (%d tiles, %.0f%%)' % (biome_name, count, (100.0 * count) / len(land_indices))
+        print(label)
+        patch = mpatches.Patch(color=color, label=label)
         legend_patches.append(patch)
 
     ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
@@ -456,8 +464,326 @@ if True:
     n_biomes = len(biome_counts)
     ax.text(0.02, 0.98, "Total Land Tiles: %d\nUnique Biomes: %d" % (n_tiles, n_biomes),
             transform=ax.transAxes, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
 
     plt.tight_layout()
+
+
+    # Create biome range visualization
+    fig, ax = plt.subplots(figsize=(16, 12))
+
+    # Plot rectangles for each land biome
+    land_biomes_plotted = []
+    for biome_name, biome_def in tm.biome_definitions.items():
+        # Skip water biomes
+        terrain = biome_def['terrain']
+        if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+            continue
+
+        temp_min, temp_max = biome_def['temp_range']
+        precip_min, precip_max = biome_def['precip_range']
+
+        # Convert to 0-100 scale for display
+        temp_min *= 100
+        temp_max *= 100
+        precip_min *= 100
+        precip_max *= 100
+
+        # Get color for this biome
+        color = biome_color_map.get(biome_name, '#808080')
+
+        # Create rectangle with transparency to show overlaps
+        rect = mpatches.Rectangle((precip_min, temp_min),
+                                precip_max - precip_min,
+                                temp_max - temp_min,
+                                linewidth=2,
+                                edgecolor='black',
+                                facecolor=color,
+                                alpha=0.4)
+        ax.add_patch(rect)
+
+        # Add text label at center of rectangle
+        center_x = (precip_min + precip_max) / 2.0
+        center_y = (temp_min + temp_max) / 2.0
+
+        # Format biome name for display (remove underscores, capitalize)
+        display_name = biome_name.replace('_', ' ').title()
+
+        # Add text with background for readability
+        ax.text(center_x, center_y, display_name,
+            ha='center', va='center', fontsize=9, weight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='#2F2F2F', alpha=0.8, edgecolor='black'))
+
+        land_biomes_plotted.append(biome_name)
+
+    # Set up the plot
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.set_xlabel('Rainfall Percentile (%)', fontsize=14)
+    ax.set_ylabel('Temperature Percentile (%)', fontsize=14)
+    ax.set_title('Biome Range Coverage Map\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
+
+    # Add grid for easier reading
+    ax.grid(True, alpha=0.3, linestyle='--')
+
+    # Add minor ticks every 10%
+    ax.set_xticks(range(0, 101, 10))
+    ax.set_yticks(range(0, 101, 10))
+
+    # Create legend showing all land biomes
+    legend_patches = []
+    for biome_name in sorted(land_biomes_plotted):
+        color = biome_color_map.get(biome_name, '#808080')
+        display_name = biome_name.replace('_', ' ').title()
+        patch = mpatches.Patch(color=color, alpha=0.4, label=display_name)
+        legend_patches.append(patch)
+
+    ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+
+    # Add annotation explaining overlaps
+    ax.text(0.02, 0.98, 'Overlapping areas show biome competition\nDarker regions = multiple biomes compete',
+            transform=ax.transAxes, verticalalignment='top', fontsize=10,
+            bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
+
+    plt.tight_layout()
+
+    # Print analysis of coverage and gaps
+    print("=== BIOME COVERAGE ANALYSIS ===")
+
+    # Find gaps in coverage
+    coverage_grid = np.zeros((100, 100), dtype=int)
+    for i in range(100):
+        for j in range(100):
+            temp_pct = i / 100.0
+            rain_pct = j / 100.0
+
+            coverage_count = 0
+            for biome_name, biome_def in tm.biome_definitions.items():
+                terrain = biome_def['terrain']
+                if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+                    continue
+
+                temp_min, temp_max = biome_def['temp_range']
+                precip_min, precip_max = biome_def['precip_range']
+
+                if temp_min <= temp_pct <= temp_max and precip_min <= rain_pct <= precip_max:
+                    coverage_count += 1
+
+            coverage_grid[i, j] = coverage_count
+
+    # Count gaps and overlaps
+    no_coverage = np.sum(coverage_grid == 0)
+    single_coverage = np.sum(coverage_grid == 1)
+    overlap_coverage = np.sum(coverage_grid > 1)
+    max_overlap = np.max(coverage_grid)
+
+    total_cells = 100 * 100
+    print("Coverage analysis (1%% resolution):")
+    print("  No biome coverage: %d cells (%.1f%%)" % (no_coverage, no_coverage/float(total_cells)*100))
+    print("  Single biome: %d cells (%.1f%%)" % (single_coverage, single_coverage/float(total_cells)*100))
+    print("  Multiple biomes: %d cells (%.1f%%)" % (overlap_coverage, overlap_coverage/float(total_cells)*100))
+    print("  Maximum overlap: %d biomes competing" % max_overlap)
+
+    # Find largest gaps
+    if no_coverage > 0:
+        print("\nLargest gaps found - consider adding biomes for:")
+        gap_locations = []
+        for i in range(100):
+            for j in range(100):
+                if coverage_grid[i, j] == 0:
+                    gap_locations.append((i, j))
+
+        # Sample a few gaps
+        for i, (temp_idx, rain_idx) in enumerate(gap_locations[:5]):
+            print("  Temperature %d%%, Rainfall %d%%" % (temp_idx, rain_idx))
+
+
+    # Define terrain colors matching your specifications
+    terrain_colors = [
+        '#228B22',  # 0: TERRAIN_GRASS: Forest Green (lush grass)
+        "#D49C0E",  # 1: TERRAIN_PLAINS: Goldenrod (amber grain)
+        "#FFDE96",  # 2: TERRAIN_DESERT: Sandy Brown (sandy color)
+        '#708090',  # 3: TERRAIN_TUNDRA: Slate Gray (taiga-like gray/green)
+        '#FFFAFA',  # 4: TERRAIN_SNOW: Snow White
+        "#1D80DD",  # 5: TERRAIN_COAST: Sky Blue (light coastal blue)
+        '#191970',  # 6: TERRAIN_OCEAN: Midnight Blue (deep ocean blue)
+        '#696969'   # 7: TERRAIN_PEAK: Dim Gray (mountainy gray, shouldn't exist)
+    ]
+
+    # Create custom colormap for terrain types
+    terrain_cmap = mcolors.ListedColormap(terrain_colors)
+
+    # Create terrain array with data validation
+    # Handle any None/invalid values by converting to ocean (6)
+    clean_terrain = []
+    for i, terrain in enumerate(tm.terrain_map):
+        if terrain is None or terrain < 0 or terrain > 7:
+            # Default to ocean for invalid values
+            clean_terrain.append(6)
+        else:
+            clean_terrain.append(int(terrain))
+
+    # Convert to numpy array and reshape to grid
+    terrain_data = np.array(clean_terrain, dtype=np.int32).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    p = ax.imshow(terrain_data, origin='lower', cmap=terrain_cmap, vmin=0, vmax=7)
+
+    # Add plot type overlays for peaks and hills
+    iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
+    iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
+
+    # Plot peaks as triangles
+    ax.plot([i % mc.iNumPlotsX for i in iPeaks],
+            [i // mc.iNumPlotsX for i in iPeaks],
+            "^", mec="0.2", mfc="none", ms=6, alpha=0.8)
+
+    # Plot hills as frown symbols
+    ax.plot([i % mc.iNumPlotsX for i in iHills],
+            [i // mc.iNumPlotsX for i in iHills],
+            linestyle="", marker="$\\frown$", mec='#8B4513', mfc='none', ms=6, alpha=0.8)
+
+    # Add river visualization
+    north_of_rivers = cm.north_of_rivers
+    west_of_rivers = cm.west_of_rivers
+
+    # Draw E/W rivers (horizontal lines on south edges of tiles)
+    for tile_i in range(mc.iNumPlots):
+        if north_of_rivers[tile_i]:
+            x = tile_i % mc.iNumPlotsX
+            y = tile_i // mc.iNumPlotsX
+            # Horizontal line on south edge of tile
+            ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5],
+                    'cyan', linewidth=2, alpha=0.9)
+
+    # Draw N/S rivers (vertical lines on east edges of tiles)
+    for tile_i in range(mc.iNumPlots):
+        if west_of_rivers[tile_i]:
+            x = tile_i % mc.iNumPlotsX
+            y = tile_i // mc.iNumPlotsX
+            # Vertical line on east edge of tile
+            ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5],
+                    'cyan', linewidth=2, alpha=0.9)
+
+    # Create custom legend for terrain types
+    terrain_labels = [
+        'Grass', 'Plains', 'Desert', 'Tundra',
+        'Snow', 'Coast', 'Ocean', 'Peak'
+    ]
+
+    # Create legend patches
+    legend_patches = [mpatches.Patch(color=color, label=label)
+                    for color, label in zip(terrain_colors, terrain_labels)]
+
+    ax.legend(handles=legend_patches, loc='upper left', bbox_to_anchor=(1.02, 1))
+
+    ax.set_title('Final Map with Terrain Types, Plot Types and Rivers')
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+
+    # Adjust layout to accommodate legend
+    plt.tight_layout()
+
+
+
+    # Create 21x21 grid (5% increments) to analyze actual land tile distribution
+    print("=== LAND TILE DISTRIBUTION BY CLIMATE GRID ===")
+
+    # Get land-only data
+    land_indices = [i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+    land_temp_percentiles = [cm.temperature_percentiles[i] for i in land_indices]
+    land_rain_percentiles = [cm.rainfall_percentiles[i] for i in land_indices]
+
+    total_land_tiles = len(land_indices)
+    print("Total land tiles: %d" % total_land_tiles)
+
+    # Create 21x21 grid (0%, 5%, 10%, ..., 100%)
+    grid_size = 21
+    distribution_grid = np.zeros((grid_size, grid_size), dtype=int)
+    percentage_grid = np.zeros((grid_size, grid_size), dtype=float)
+
+    # Fill grid with actual tile counts
+    for temp_pct, rain_pct in zip(land_temp_percentiles, land_rain_percentiles):
+        # Convert to grid indices (0-20)
+        temp_idx = min(int(temp_pct * 20), 20)  # 0-20 for 0%-100%
+        rain_idx = min(int(rain_pct * 20), 20)  # 0-20 for 0%-100%
+        distribution_grid[temp_idx, rain_idx] += 1
+
+    # Convert to percentages
+    for i in range(grid_size):
+        for j in range(grid_size):
+            percentage_grid[i, j] = (distribution_grid[i, j] / float(total_land_tiles)) * 100
+
+    # Print the grid as a table
+    print("\nLand tile percentage by climate grid (5%% increments):")
+    print("Rows = Temperature percentile (0%% = coldest, 100%% = hottest)")
+    print("Cols = Rainfall percentile (0%% = driest, 100%% = wettest)")
+    print()
+
+    # Print header
+    header = "Temp\\Rain"
+    for rain_pct in range(0, 101, 5):
+        header += "%6d" % rain_pct
+    print(header)
+
+    # Print each row
+    for temp_idx in range(grid_size):
+        temp_pct = temp_idx * 5
+        row_str = "%8d" % temp_pct
+        for rain_idx in range(grid_size):
+            percentage = percentage_grid[temp_idx, rain_idx]
+            if percentage >= 0.1:  # Only show cells with significant tiles
+                row_str += "%6.1f" % percentage
+            else:
+                row_str += "     ."  # Show dots for empty cells
+        print(row_str)
+
+    # Identify high-density regions for biome design
+    print("\n=== HIGH-DENSITY REGIONS FOR BIOME DESIGN ===")
+    print("Grid cells with >1%% of land tiles:")
+
+    high_density_cells = []
+    for temp_idx in range(grid_size):
+        for rain_idx in range(grid_size):
+            if percentage_grid[temp_idx, rain_idx] >= 1.0:
+                temp_range = (temp_idx * 5, (temp_idx + 1) * 5)
+                rain_range = (rain_idx * 5, (rain_idx + 1) * 5)
+                percentage = percentage_grid[temp_idx, rain_idx]
+                high_density_cells.append((temp_range, rain_range, percentage))
+                print("  Temp %d%%-%d%%, Rain %d%%-%d%%: %.1f%% of tiles" %
+                    (temp_range[0], temp_range[1], rain_range[0], rain_range[1], percentage))
+
+    print("\nTotal coverage of high-density cells: %.1f%% of land" %
+        sum(cell[2] for cell in high_density_cells))
+
+    # Identify the main diagonal pattern
+    print("\n=== DIAGONAL PATTERN ANALYSIS ===")
+    print("Tiles along the main climate diagonal (temp = rain percentile):")
+
+    diagonal_tiles = 0
+    for temp_idx in range(grid_size):
+        # Check cells within +-2 grid positions of diagonal
+        for rain_offset in range(-2, 3):
+            rain_idx = temp_idx + rain_offset
+            if 0 <= rain_idx < grid_size:
+                diagonal_tiles += distribution_grid[temp_idx, rain_idx]
+
+    diagonal_percentage = (diagonal_tiles / float(total_land_tiles)) * 100
+    print("Tiles within +/-10%% of diagonal: %d (%.1f%%)" % (diagonal_tiles, diagonal_percentage))
+
+    # Suggest biome coverage strategy
+    print("\n=== BIOME DESIGN RECOMMENDATIONS ===")
+    print("Based on this distribution, focus biomes on:")
+
+    major_zones = [
+        ("Hot-Wet (tropical)", "80-100% temp, 80-100% rain"),
+        ("Cold-Dry (polar)", "0-20% temp, 0-40% rain"),
+        ("Moderate diagonal", "30-70% temp, 30-70% rain"),
+        ("Cold-Wet (boreal)", "20-40% temp, 60-100% rain"),
+    ]
+
+    for zone_name, zone_desc in major_zones:
+        print("  %s: %s" % (zone_name, zone_desc))
 
     plt.show()

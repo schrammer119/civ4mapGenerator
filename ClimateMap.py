@@ -83,6 +83,9 @@ class ClimateMap:
         # Calculate percentiles for terrain system (do this once at the end)
         self._calculate_percentiles()
 
+        # Apply diagonal ballooning to spread distribution
+        self._apply_diagonal_ballooning(calibration_factor=1.5)
+
     @profile
     def GenerateTemperatureMap(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
@@ -2744,19 +2747,25 @@ class ClimateMap:
         if max(self.RainfallMap) > 0.0:
             self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
 
+    @profile
     def _calculate_percentiles(self):
-        """Calculate and store percentiles for terrain system"""
-        print("ClimateMap: Calculating climate percentiles...")
+        """Calculate percentiles for land tiles only"""
+        # Get land-only data
+        land_indices = [i for i in range(self.mc.iNumPlots) if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+        land_temps = [self.TemperatureMap[i] for i in land_indices]
+        land_rainfall = [self.RainfallMap[i] for i in land_indices]
 
-        self.temperature_percentiles = self._build_percentile_map(self.TemperatureMap)
-        self.rainfall_percentiles = self._build_percentile_map(self.RainfallMap)
+        # Calculate percentiles for land only
+        temp_percentiles_land = self._build_percentile_map(land_temps)
+        rain_percentiles_land = self._build_percentile_map(land_rainfall)
 
-        # Optional: Calculate percentiles for other climate variables
-        if hasattr(self, 'WindSpeeds') and self.WindSpeeds:
-            self.wind_speed_percentiles = self._build_percentile_map(self.WindSpeeds)
+        # Map back to full grid
+        self.temperature_percentiles = [0.0] * self.mc.iNumPlots
+        self.rainfall_percentiles = [0.0] * self.mc.iNumPlots
 
-        if hasattr(self, 'atmospheric_pressure') and self.atmospheric_pressure:
-            self.pressure_percentiles = self._build_percentile_map(self.atmospheric_pressure)
+        for i, land_idx in enumerate(land_indices):
+            self.temperature_percentiles[land_idx] = temp_percentiles_land[i]
+            self.rainfall_percentiles[land_idx] = rain_percentiles_land[i]
 
     def _build_percentile_map(self, data_map):
         """Convert a data map to percentile rankings (0.0 to 1.0)"""
@@ -2779,14 +2788,64 @@ class ClimateMap:
 
         return percentile_map
 
-    def get_temperature_percentile(self, tile_index):
-        """Get temperature percentile for a specific tile"""
-        if not hasattr(self, 'temperature_percentiles') or tile_index >= len(self.temperature_percentiles):
-            return 0.0
-        return self.temperature_percentiles[tile_index]
+    def _balloon_climate_percentiles(self, calibration_factor=1.5):
+        """
+        Balloon the diagonal distribution to spread tiles more evenly across climate space.
 
-    def get_rainfall_percentile(self, tile_index):
-        """Get rainfall percentile for a specific tile"""
-        if not hasattr(self, 'rainfall_percentiles') or tile_index >= len(self.rainfall_percentiles):
-            return 0.0
-        return self.rainfall_percentiles[tile_index]
+        This method spreads out the natural diagonal pattern (temp = rain) to give more
+        flexibility in biome placement while preserving the physical relationship.
+
+        Args:
+            calibration_factor (float): Multiplier for diagonal spreading.
+                                    1.0 = no change, >1.0 = more spreading
+        """
+        print("ClimateMap: Ballooning climate percentiles with factor %.2f..." % calibration_factor)
+
+        # Get land-only indices for processing
+        land_indices = [i for i in range(self.mc.iNumPlots)
+                    if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+
+        if not land_indices:
+            return
+
+        sqrt2 = math.sqrt(2.0)
+        # Process each land tile
+        for tile_idx in land_indices:
+            temp_pct = self.temperature_percentiles[tile_idx]
+            rain_pct = self.rainfall_percentiles[tile_idx]
+
+            # Decompose into diagonal and orthogonal components
+            # Diagonal component: average of temp and rain (position along temp=rain line)
+            diagonal_component = (temp_pct + rain_pct) / sqrt2
+
+            # Orthogonal component: deviation from diagonal (how far from temp=rain line)
+            orthogonal_component = (rain_pct - temp_pct) / sqrt2
+
+            center_distance = abs(diagonal_component / sqrt2 - 0.5)  # 0 at center, 0.5 at corners
+            scale_factor = 1.0 - (center_distance * 2.0)  # 1.0 at center, 0.0 at corners
+            available_distance = sqrt2 * (0.5 - center_distance)
+            growth_factor = 1.0 + (calibration_factor - 1.0) * scale_factor
+
+            # Apply scaling to orthogonal component
+            new_orthogonal = min(max(orthogonal_component * growth_factor, -available_distance), available_distance)
+
+            # Reconstruct percentiles
+            new_rain_pct = (diagonal_component + new_orthogonal) / sqrt2
+            new_temp_pct = (diagonal_component - new_orthogonal) / sqrt2
+
+            # Clamp to valid range [0, 1]
+            new_temp_pct = max(0.0, min(1.0, new_temp_pct))
+            new_rain_pct = max(0.0, min(1.0, new_rain_pct))
+
+            # Update percentiles
+            self.temperature_percentiles[tile_idx] = new_temp_pct
+            self.rainfall_percentiles[tile_idx] = new_rain_pct
+
+    @profile
+    def _apply_diagonal_ballooning(self, calibration_factor=1.5):
+        """
+        Apply diagonal ballooning to spread climate distribution.
+        Call this after _calculate_percentiles() in GenerateClimateMap().
+        """
+        if calibration_factor != 1.0:
+            self._balloon_climate_percentiles(calibration_factor)
