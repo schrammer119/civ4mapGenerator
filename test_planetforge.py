@@ -309,6 +309,39 @@ if True:
     ax.set_title('Watershed IDs with Flow Directions')
     fig.colorbar(p)
 
+
+
+    # Define target percentages for earth-like biomes
+    biome_targets = {
+        'hot_desert':             16.8,   # tropical/subtropical sandy deserts
+        'tropical_jungle':         7.2,   # tropical moist broadleaf forests
+        'temperate_forest':        6.5,   # temperate broadleaf & mixed forests
+        'taiga':                  14.1,   # boreal (coniferous) forests
+        'tundra':                  9.2,   # arctic/alpine tundra
+        'savanna':                15.8,   # tropical & subtropical grasslands/savannas
+        'steppe':                  9.1,   # temperate grassland steppes + former cold deserts
+        'temperate_grassland':     3.9,   # temperate grasslands (other)
+        'mediterranean':           1.2,   # Mediterranean shrublands & woodlands
+        'coastal_rainforest':      3.8,   # temperate coastal rainforests
+        'woodland_savanna':        1.8,   # tropical dry broadleaf woodlands
+        'dry_conifer_forest':      3.0,   # montane/dry conifer forests
+        'polar_desert':            7.6    # polar ice caps & cold deserts
+    }
+    # Total: 100.0%
+
+
+    # Color scheme for target status (light colors for dark background)
+    def get_target_color(actual_pct, target_pct):
+        """Return color based on how close actual is to target"""
+        tolerance = 1.5  # Within 1.5% is considered on-target
+
+        if abs(actual_pct - target_pct) <= tolerance:
+            return '#90EE90'  # Light green - on target
+        elif actual_pct > target_pct:
+            return '#FFB6C1'  # Light pink - over target
+        else:
+            return '#87CEEB'  # Light sky blue - under target
+
     # Get land tiles only (not ocean)
     land_indices = [i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
 
@@ -330,6 +363,8 @@ if True:
 
     # Define colors for each biome type - matching your exact biome definitions
     biome_color_map = {
+        'no_biome': '#1a1a1a',
+
         # Water biomes
         'tropical_ocean': '#191970',      # Midnight Blue
         'temperate_ocean': '#4682B4',     # Steel Blue
@@ -340,7 +375,6 @@ if True:
 
         # Desert biomes
         'hot_desert': '#F4A460',          # Sandy Brown
-        'cold_desert': '#BC9A6A',         # desert tan/cool brown
 
         # Plains biomes
         'steppe': '#DAA520',              # Goldenrod
@@ -353,7 +387,7 @@ if True:
         'temperate_grassland': '#228B22', # Forest Green
         'temperate_forest': '#006400',    # Dark Green
         'coastal_rainforest': '#2E8B57',  # Sea Green
-        'tropical_jungle': '#006400',     # Dark Green
+        'tropical_jungle': '#32CD32',     # Lime Green
 
         # Tundra biomes
         'tundra': '#708090',              # Slate Gray
@@ -363,8 +397,9 @@ if True:
         'polar_desert': '#FFFAFA',        # Snow
     }
 
-    # Create ordered list of biomes and assign IDs
-    biome_names = sorted(tm.biome_definitions.keys())
+    # Create ordered list of biomes and assign IDs (no_biome gets ID 0)
+    biome_names = ['no_biome'] + sorted([name for name in tm.biome_definitions.keys()
+                                        if tm.biome_definitions[name]['terrain'] not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']])
     biome_to_id = {biome: i for i, biome in enumerate(biome_names)}
 
     # Fill the grid based on actual TerrainMap biome selection logic
@@ -373,53 +408,45 @@ if True:
             temp_pct = temp_grid[i]  # 0-1 scale
             rain_pct = rain_grid[j]  # 0-1 scale
 
-            # Simulate biome selection for land tiles only
-            # Find eligible biomes (land biomes only for background)
-            eligible_biomes = {}
-            for biome_name, biome_def in tm.biome_definitions.items():
-                terrain = biome_def['terrain']
+            # Use TerrainMap's exact percentile-to-grid conversion
+            temp_idx = min(int(temp_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1)
+            precip_idx = min(int(rain_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1)
+            grid_candidates = tm.biome_grid.get((temp_idx, precip_idx), [])
+
+            # Filter to land biomes only
+            land_candidates = []
+            for biome_name, climate_weight in grid_candidates:
+                terrain = tm.biome_definitions[biome_name]['terrain']
                 if terrain not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
-                    eligible_biomes[biome_name] = biome_def
-
-            # Find climate-suitable biomes
-            candidates = []
-            for biome_name, biome_def in eligible_biomes.items():
-                temp_min, temp_max = biome_def['temp_range']
-                precip_min, precip_max = biome_def['precip_range']
-
-                # Check if point is within biome range
-                if temp_min <= temp_pct <= temp_max and precip_min <= rain_pct <= precip_max:
-                    # Calculate climate fitness
-                    temp_center = (temp_min + temp_max) / 2.0
-                    precip_center = (precip_min + precip_max) / 2.0
-                    temp_span = (temp_max - temp_min) / 2.0 if temp_max > temp_min else 0.1
-                    precip_span = (precip_max - precip_min) / 2.0 if precip_max > precip_min else 0.1
-
-                    temp_fitness = 1.0 - abs(temp_pct - temp_center) / temp_span
-                    precip_fitness = 1.0 - abs(rain_pct - precip_center) / precip_span
-
-                    climate_weight = biome_def['base_weight'] * temp_fitness * precip_fitness
-                    candidates.append((biome_name, climate_weight))
+                    land_candidates.append((biome_name, climate_weight))
 
             # Select highest scoring biome
-            if candidates:
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                selected_biome = candidates[0][0]
-                biome_color_grid[i, j] = biome_to_id[selected_biome]
+            if land_candidates:
+                land_candidates.sort(key=lambda x: x[1], reverse=True)
+                selected_biome = land_candidates[0][0]
+                # Ensure the selected biome is in our ID mapping
+                if selected_biome in biome_to_id:
+                    biome_color_grid[i, j] = biome_to_id[selected_biome]
+                else:
+                    # Fallback to no_biome if biome not found
+                    biome_color_grid[i, j] = 0
             else:
-                # No suitable biome - use default (first biome ID)
+                # No suitable biome - assign no_biome (ID 0)
                 biome_color_grid[i, j] = 0
 
     # Create the plot
-    fig, ax = plt.subplots(figsize=(14, 10))
+    fig, ax = plt.subplots(figsize=(16, 12))
 
-    # Create colormap for background
-    colors_list = [biome_color_map.get(biome_name, '#808080') for biome_name in sorted(tm.biome_definitions.keys())]
+    # Create colormap for background - ensure exact alignment with biome_names order
+    colors_list = []
+    for biome_name in biome_names:  # This ensures perfect ID-to-color alignment
+        colors_list.append(biome_color_map.get(biome_name, '#808080'))
     background_cmap = mcolors.ListedColormap(colors_list)
 
     # Plot biome regions as background
     background = ax.imshow(biome_color_grid, extent=[0, 100, 0, 100],
-                        origin='lower', cmap=background_cmap, alpha=0.4, aspect='auto')
+                        origin='lower', cmap=background_cmap, alpha=0.4, aspect='auto',
+                        vmin=0, vmax=len(biome_names)-1)
 
     # Scatter plot of actual tiles colored by their assigned biome
     scatter_colors = [biome_color_map.get(biome, '#000000') for biome in land_biomes]
@@ -430,45 +457,78 @@ if True:
     # Labels and formatting
     ax.set_xlabel('Rainfall Percentile (%)', fontsize=12)
     ax.set_ylabel('Temperature Percentile (%)', fontsize=12)
-    ax.set_title('Biome Classification Debug Plot\n(Background: Actual Biome Selection Grid, Points: Assigned Tiles)', fontsize=14)
+    ax.set_title('Biome Assignment Analysis with Target Comparison\\n(Background: TerrainMap\'s %dx%d Grid, Points: Actual Assignments)' % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE), fontsize=14)
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
 
     # Add grid
     ax.grid(True, alpha=0.3)
 
-    # Create legend with ALL biomes (including 0-count ones)
-    legend_patches = []
+    # Calculate actual percentages and create enhanced legend
     biome_counts = {}
     for biome in land_biomes:
         biome_counts[biome] = biome_counts.get(biome, 0) + 1
 
-    # Include all biomes from definitions, even if not present
-    for biome_name in sorted(tm.biome_definitions.keys()):
-        # Skip water biomes for land-only analysis
-        terrain = tm.biome_definitions[biome_name]['terrain']
-        if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
-            continue
+    total_land = len(land_indices)
+    legend_patches = []
 
-        count = biome_counts.get(biome_name, 0)
-        color = biome_color_map.get(biome_name, '#808080')
-        label = '%s (%d tiles, %.0f%%)' % (biome_name, count, (100.0 * count) / len(land_indices))
-        print(label)
-        patch = mpatches.Patch(color=color, label=label)
-        legend_patches.append(patch)
+    # Add "no biome" entry first
+    no_biome_cells = np.sum(biome_color_grid == 0)
+    total_grid_cells = grid_resolution * grid_resolution
+    no_biome_pct = 100.0 * no_biome_cells / total_grid_cells
 
-    ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+    no_biome_patch = mpatches.Patch(color=biome_color_map['no_biome'],
+                                   label='No Biome (Grid Gaps): %.1f%% of grid' % no_biome_pct)
+    legend_patches.append((no_biome_patch, '#FFFFFF'))  # White text for no biome
+
+    # Include all land biomes from definitions, even if not present
+    for biome_name in sorted([name for name in tm.biome_definitions.keys()
+                             if tm.biome_definitions[name]['terrain'] not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']]):
+        actual_count = biome_counts.get(biome_name, 0)
+        actual_pct = (100.0 * actual_count) / total_land
+        target_pct = biome_targets.get(biome_name, 0.0)
+
+        # Get target status color
+        text_color = get_target_color(actual_pct, target_pct)
+        biome_color = biome_color_map.get(biome_name, '#808080')
+
+        # Format label with target info
+        label = '%s: %.1f%% (target %.1f%%)' % (biome_name, actual_pct, target_pct)
+        patch = mpatches.Patch(color=biome_color, label=label)
+        legend_patches.append((patch, text_color))
+
+    # Create legend with colored text
+    legend = ax.legend([patch for patch, _ in legend_patches],
+                      [patch.get_label() for patch, _ in legend_patches],
+                      loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+
+    # Color the legend text based on target status
+    for i, (_, text_color) in enumerate(legend_patches):
+        legend.get_texts()[i].set_color(text_color)
+
+    # Add target color legend
+    target_legend_elements = [
+        mpatches.Patch(color='#90EE90', label='On Target (+/-1.5%)'),
+        mpatches.Patch(color='#FFB6C1', label='Over Target'),
+        mpatches.Patch(color='#87CEEB', label='Under Target')
+    ]
+
+    ax.add_artist(legend)  # Keep the main legend
+    target_legend = ax.legend(handles=target_legend_elements,
+                             loc='lower right', fontsize=9, title='Target Status')
 
     # Add statistics text
     n_tiles = len(land_indices)
     n_biomes = len(biome_counts)
-    ax.text(0.02, 0.98, "Total Land Tiles: %d\nUnique Biomes: %d" % (n_tiles, n_biomes),
+
+    ax.text(0.02, 0.98, "Total Land Tiles: %d\\nUnique Biomes: %d\\nGrid Gaps: %d/%d cells (%.1f%%)" %
+            (n_tiles, n_biomes, no_biome_cells, total_grid_cells, no_biome_pct),
             transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
 
     plt.tight_layout()
 
-
+    # === PLOT 2: BIOME RANGE DEBUG VISUALIZATION ===
     # Create biome range visualization
     fig, ax = plt.subplots(figsize=(16, 12))
 
@@ -521,7 +581,7 @@ if True:
     ax.set_ylim(0, 100)
     ax.set_xlabel('Rainfall Percentile (%)', fontsize=14)
     ax.set_ylabel('Temperature Percentile (%)', fontsize=14)
-    ax.set_title('Biome Range Coverage Map\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
+    ax.set_title('Biome Range Coverage Map\\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
 
     # Add grid for easier reading
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -541,61 +601,37 @@ if True:
     ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
 
     # Add annotation explaining overlaps
-    ax.text(0.02, 0.98, 'Overlapping areas show biome competition\nDarker regions = multiple biomes compete',
+    ax.text(0.02, 0.98, 'Overlapping areas show biome competition\\nDarker regions = multiple biomes compete',
             transform=ax.transAxes, verticalalignment='top', fontsize=10,
             bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
 
     plt.tight_layout()
 
-    # Print analysis of coverage and gaps
-    print("=== BIOME COVERAGE ANALYSIS ===")
+    # Print summary statistics with target analysis
+    print("\\n=== BIOME TARGET ANALYSIS ===")
+    print("Using TerrainMap's %dx%d biome grid (%.1f%% resolution)" % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0/(tm.BIOME_GRID_SIZE-1)))
+    print("Biome Name               Actual    Target    Status")
+    print("-" * 55)
 
-    # Find gaps in coverage
-    coverage_grid = np.zeros((100, 100), dtype=int)
-    for i in range(100):
-        for j in range(100):
-            temp_pct = i / 100.0
-            rain_pct = j / 100.0
+    for biome_name in sorted(biome_targets.keys()):
+        actual_count = biome_counts.get(biome_name, 0)
+        actual_pct = (100.0 * actual_count) / total_land
+        target_pct = biome_targets[biome_name]
 
-            coverage_count = 0
-            for biome_name, biome_def in tm.biome_definitions.items():
-                terrain = biome_def['terrain']
-                if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
-                    continue
+        if abs(actual_pct - target_pct) <= 1.5:
+            status = "ON TARGET"
+        elif actual_pct > target_pct:
+            status = "OVER (+%.1f%%)" % (actual_pct - target_pct)
+        else:
+            status = "UNDER (-%.1f%%)" % (target_pct - actual_pct)
 
-                temp_min, temp_max = biome_def['temp_range']
-                precip_min, precip_max = biome_def['precip_range']
+        print("%-24s %6.1f%%   %6.1f%%   %s" % (biome_name, actual_pct, target_pct, status))
 
-                if temp_min <= temp_pct <= temp_max and precip_min <= rain_pct <= precip_max:
-                    coverage_count += 1
+    print("\\nGrid Analysis:")
+    print("  No-biome gaps: %d/%d cells (%.1f%%)" % (no_biome_cells, total_grid_cells, no_biome_pct))
+    print("  Note: Dark background areas show climate zones where no land biome qualifies")
 
-            coverage_grid[i, j] = coverage_count
 
-    # Count gaps and overlaps
-    no_coverage = np.sum(coverage_grid == 0)
-    single_coverage = np.sum(coverage_grid == 1)
-    overlap_coverage = np.sum(coverage_grid > 1)
-    max_overlap = np.max(coverage_grid)
-
-    total_cells = 100 * 100
-    print("Coverage analysis (1%% resolution):")
-    print("  No biome coverage: %d cells (%.1f%%)" % (no_coverage, no_coverage/float(total_cells)*100))
-    print("  Single biome: %d cells (%.1f%%)" % (single_coverage, single_coverage/float(total_cells)*100))
-    print("  Multiple biomes: %d cells (%.1f%%)" % (overlap_coverage, overlap_coverage/float(total_cells)*100))
-    print("  Maximum overlap: %d biomes competing" % max_overlap)
-
-    # Find largest gaps
-    if no_coverage > 0:
-        print("\nLargest gaps found - consider adding biomes for:")
-        gap_locations = []
-        for i in range(100):
-            for j in range(100):
-                if coverage_grid[i, j] == 0:
-                    gap_locations.append((i, j))
-
-        # Sample a few gaps
-        for i, (temp_idx, rain_idx) in enumerate(gap_locations[:5]):
-            print("  Temperature %d%%, Rainfall %d%%" % (temp_idx, rain_idx))
 
 
     # Define terrain colors matching your specifications

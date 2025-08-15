@@ -84,7 +84,7 @@ class ClimateMap:
         self._calculate_percentiles()
 
         # Apply diagonal ballooning to spread distribution
-        self._apply_diagonal_ballooning(calibration_factor=1.5)
+        self._apply_diagonal_ballooning(calibration_factor=3.5)
 
     @profile
     def GenerateTemperatureMap(self):
