@@ -105,23 +105,23 @@ class CyGlobalContext:
 
         # Build lookup dictionary from existing enum classes
         self._string_to_enum = {}
-        self.terrain_types = []
-        self.feature_types = []
-        self.bonus_types = []
+        self.terrain_types = {}
+        self.feature_types = {}
+        self.bonus_types = {}
         enum_classes = [TerrainTypes, FeatureTypes, BonusTypes]
 
         for enum_class in enum_classes:
             for attr_name in dir(enum_class):
                 if not attr_name.startswith('_'):  # Skip private attributes
-                    if enum_class is TerrainTypes:
-                        self.terrain_types.append(attr_name)
-                    elif enum_class is FeatureTypes:
-                        self.feature_types.append(attr_name)
-                    elif enum_class is BonusTypes:
-                        self.bonus_types.append(attr_name)
                     attr_value = getattr(enum_class, attr_name)
                     if isinstance(attr_value, int):  # Only include integer constants
                         self._string_to_enum[attr_name] = attr_value
+                        if enum_class is TerrainTypes:
+                            self.terrain_types[attr_value] = attr_name
+                        elif enum_class is FeatureTypes:
+                            self.feature_types[attr_value] = attr_name
+                        elif enum_class is BonusTypes:
+                            self.bonus_types[attr_value] = attr_name
 
     def getInfoTypeForString(self, info_string):
         """
@@ -346,50 +346,50 @@ class CyFeatureInfo:
 
         # Complete feature data from XML
         self.feature_data = {
-            'FEATURE_ICE': {
+            FeatureTypes.FEATURE_ICE: {
                 'yields': [0, 0, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
                 'movement': 1, 'see_through': 0, 'health_percent': 0, 'defense': 0,
                 'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
                 'no_coast': False, 'no_river': False, 'no_adjacent': False,
                 'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
                 'impassable': True, 'no_city': False, 'no_improvement': False,
-                'terrain_compat': [5, 6]  # COAST, OCEAN
+                'terrain_booleans': [5, 6]  # COAST, OCEAN
             },
-            'FEATURE_JUNGLE': {
+            FeatureTypes.FEATURE_JUNGLE: {
                 'yields': [1, -1, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
                 'movement': 2, 'see_through': 1, 'health_percent': -25, 'defense': 50,
                 'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
                 'no_coast': False, 'no_river': False, 'no_adjacent': False,
                 'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
                 'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_compat': [0]  # GRASS
+                'terrain_booleans': [0]  # GRASS
             },
-            'FEATURE_OASIS': {
+            FeatureTypes.FEATURE_OASIS: {
                 'yields': [3, 0, 2], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
                 'movement': 2, 'see_through': 1, 'health_percent': 0, 'defense': 0,
                 'appearance': 500, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
                 'no_coast': True, 'no_river': True, 'no_adjacent': True,
                 'requires_flatlands': True, 'requires_river': False, 'adds_fresh_water': True,
                 'impassable': False, 'no_city': True, 'no_improvement': True,
-                'terrain_compat': [2]  # DESERT
+                'terrain_booleans': [2]  # DESERT
             },
-            'FEATURE_FLOOD_PLAINS': {
+            FeatureTypes.FEATURE_FLOOD_PLAINS: {
                 'yields': [3, 0, 0], 'river_yield': [0, 0, 1], 'hills_yield': [0, 0, 0],
                 'movement': 1, 'see_through': 0, 'health_percent': -40, 'defense': 0,
                 'appearance': 10000, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
                 'no_coast': False, 'no_river': False, 'no_adjacent': False,
                 'requires_flatlands': True, 'requires_river': True, 'adds_fresh_water': False,
                 'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_compat': [2]  # DESERT
+                'terrain_booleans': [2]  # DESERT
             },
-            'FEATURE_FOREST': {
+            FeatureTypes.FEATURE_FOREST: {
                 'yields': [0, 1, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
                 'movement': 2, 'see_through': 1, 'health_percent': 0, 'defense': 50,
                 'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
                 'no_coast': False, 'no_river': False, 'no_adjacent': False,
                 'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
                 'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_compat': [0, 1, 3, 4]  # GRASS, PLAINS, TUNDRA, SNOW
+                'terrain_booleans': [0, 1, 3, 4]  # GRASS, PLAINS, TUNDRA, SNOW
             }
         }
 
@@ -398,73 +398,73 @@ class CyFeatureInfo:
 
     def getYieldChange(self, yield_type):
         """Get feature yield change (0=food, 1=production, 2=commerce)"""
-        data = self.feature_data.get(self.feature_type, {'yields': [0, 0, 0]})
+        data = self.feature_data.get(self.feature_id, {'yields': [0, 0, 0]})
         return data['yields'][yield_type] if yield_type < len(data['yields']) else 0
 
     def getRiverYieldChange(self, yield_type):
         """Get river yield bonus when feature present"""
-        data = self.feature_data.get(self.feature_type, {'river_yield': [0, 0, 0]})
+        data = self.feature_data.get(self.feature_id, {'river_yield': [0, 0, 0]})
         return data['river_yield'][yield_type] if yield_type < len(data['river_yield']) else 0
 
     def getHillsYieldChange(self, yield_type):
         """Get hills yield bonus when feature present"""
-        data = self.feature_data.get(self.feature_type, {'hills_yield': [0, 0, 0]})
+        data = self.feature_data.get(self.feature_id, {'hills_yield': [0, 0, 0]})
         return data['hills_yield'][yield_type] if yield_type < len(data['hills_yield']) else 0
 
     def getMovement(self):
-        return self.feature_data.get(self.feature_type, {}).get('movement', 1)
+        return self.feature_data.get(self.feature_id, {}).get('movement', 1)
 
     def getSeeThrough(self):
-        return self.feature_data.get(self.feature_type, {}).get('see_through', 1)
+        return self.feature_data.get(self.feature_id, {}).get('see_through', 1)
 
     def getHealthPercent(self):
-        return self.feature_data.get(self.feature_type, {}).get('health_percent', 0)
+        return self.feature_data.get(self.feature_id, {}).get('health_percent', 0)
 
     def getDefense(self):
-        return self.feature_data.get(self.feature_type, {}).get('defense', 0)
+        return self.feature_data.get(self.feature_id, {}).get('defense', 0)
 
     def getAppearance(self):
-        return self.feature_data.get(self.feature_type, {}).get('appearance', 0)
+        return self.feature_data.get(self.feature_id, {}).get('appearance', 0)
 
     def getDisappearance(self):
-        return self.feature_data.get(self.feature_type, {}).get('disappearance', 0)
+        return self.feature_data.get(self.feature_id, {}).get('disappearance', 0)
 
     def getGrowth(self):
-        return self.feature_data.get(self.feature_type, {}).get('growth', 0)
+        return self.feature_data.get(self.feature_id, {}).get('growth', 0)
 
     def getTurnDamage(self):
-        return self.feature_data.get(self.feature_type, {}).get('turn_damage', 0)
+        return self.feature_data.get(self.feature_id, {}).get('turn_damage', 0)
 
     def isNoCoast(self):
-        return self.feature_data.get(self.feature_type, {}).get('no_coast', False)
+        return self.feature_data.get(self.feature_id, {}).get('no_coast', False)
 
     def isNoRiver(self):
-        return self.feature_data.get(self.feature_type, {}).get('no_river', False)
+        return self.feature_data.get(self.feature_id, {}).get('no_river', False)
 
     def isNoAdjacent(self):
-        return self.feature_data.get(self.feature_type, {}).get('no_adjacent', False)
+        return self.feature_data.get(self.feature_id, {}).get('no_adjacent', False)
 
     def isRequiresFlatlands(self):
-        return self.feature_data.get(self.feature_type, {}).get('requires_flatlands', False)
+        return self.feature_data.get(self.feature_id, {}).get('requires_flatlands', False)
 
     def isRequiresRiver(self):
-        return self.feature_data.get(self.feature_type, {}).get('requires_river', False)
+        return self.feature_data.get(self.feature_id, {}).get('requires_river', False)
 
     def isAddsFreshWater(self):
-        return self.feature_data.get(self.feature_type, {}).get('adds_fresh_water', False)
+        return self.feature_data.get(self.feature_id, {}).get('adds_fresh_water', False)
 
     def isImpassable(self):
-        return self.feature_data.get(self.feature_type, {}).get('impassable', False)
+        return self.feature_data.get(self.feature_id, {}).get('impassable', False)
 
     def isNoCity(self):
-        return self.feature_data.get(self.feature_type, {}).get('no_city', False)
+        return self.feature_data.get(self.feature_id, {}).get('no_city', False)
 
     def isNoImprovement(self):
-        return self.feature_data.get(self.feature_type, {}).get('no_improvement', False)
+        return self.feature_data.get(self.feature_id, {}).get('no_improvement', False)
 
     def isTerrain(self, terrain_id):
         """Check terrain compatibility"""
-        terrain_compat = self.feature_data.get(self.feature_type, {}).get('terrain_compat', [])
+        terrain_compat = self.feature_data.get(self.feature_id, {}).get('terrain_booleans', [])
         return terrain_id in terrain_compat
 
 

@@ -1,7 +1,8 @@
-import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.colors as mcolors
+import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 import random
 
@@ -625,6 +626,7 @@ if True:
 
 
 
+
     # Define terrain colors matching your specifications
     terrain_colors = [
         '#228B22',  # 0: TERRAIN_GRASS: Forest Green (lush grass)
@@ -664,12 +666,53 @@ if True:
     # Plot peaks as triangles
     ax.plot([i % mc.iNumPlotsX for i in iPeaks],
             [i // mc.iNumPlotsX for i in iPeaks],
-            "^", mec="0.2", mfc="none", ms=6, alpha=0.8)
+            "^", mec="0.2", mfc="none", ms=6, alpha=0.8, label='Peaks')
 
     # Plot hills as frown symbols
     ax.plot([i % mc.iNumPlotsX for i in iHills],
             [i // mc.iNumPlotsX for i in iHills],
-            linestyle="", marker="$\\frown$", mec='#8B4513', mfc='none', ms=6, alpha=0.8)
+            linestyle="", marker="$\\frown$", mec='#8B4513', mfc='none', ms=6, alpha=0.8, label='Hills')
+
+    # Add terrain features overlay
+    # Get feature locations (check if feature_map exists)
+    iIce = []
+    iJungle = []
+    iOasis = []
+    iFloodPlains = []
+    iForest = []
+
+    if hasattr(tm, 'feature_map') and tm.feature_map is not None:
+        iIce = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE]
+        iJungle = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE]
+        iOasis = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS]
+        iFloodPlains = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FLOOD_PLAINS]
+        iForest = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST]
+
+    # Plot features with distinct symbols and colors
+    if iIce:
+        ax.plot([i % mc.iNumPlotsX for i in iIce],
+                [i // mc.iNumPlotsX for i in iIce],
+                "s", mec="lightblue", mfc="white", ms=4, alpha=0.9, label='Ice')
+
+    if iJungle:
+        ax.plot([i % mc.iNumPlotsX for i in iJungle],
+                [i // mc.iNumPlotsX for i in iJungle],
+                linestyle="", marker="$\\clubsuit$", mec='darkgreen', mfc='green', ms=5, alpha=0.8, label='Jungle')
+
+    if iOasis:
+        ax.plot([i % mc.iNumPlotsX for i in iOasis],
+                [i // mc.iNumPlotsX for i in iOasis],
+                "o", mec="blue", mfc="cyan", ms=4, alpha=0.9, label='Oasis')
+
+    if iFloodPlains:
+        ax.plot([i % mc.iNumPlotsX for i in iFloodPlains],
+                [i // mc.iNumPlotsX for i in iFloodPlains],
+                linestyle="", marker="$\\sim$", mec='brown', mfc='yellow', ms=6, alpha=0.8, label='Flood Plains')
+
+    if iForest:
+        ax.plot([i % mc.iNumPlotsX for i in iForest],
+                [i // mc.iNumPlotsX for i in iForest],
+                linestyle="", marker="$\\spadesuit$", mec='darkgreen', mfc='forestgreen', ms=4, alpha=0.8, label='Forest')
 
     # Add river visualization
     north_of_rivers = cm.north_of_rivers
@@ -693,23 +736,76 @@ if True:
             ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5],
                     'cyan', linewidth=2, alpha=0.9)
 
-    # Create custom legend for terrain types
+    # Create comprehensive legend combining terrain types, plot types, and features
+    legend_handles = []
+
+    # Add terrain type patches
     terrain_labels = [
         'Grass', 'Plains', 'Desert', 'Tundra',
         'Snow', 'Coast', 'Ocean', 'Peak'
     ]
 
-    # Create legend patches
-    legend_patches = [mpatches.Patch(color=color, label=label)
-                    for color, label in zip(terrain_colors, terrain_labels)]
+    for color, label in zip(terrain_colors, terrain_labels):
+        legend_handles.append(mpatches.Patch(color=color, label=label))
 
-    ax.legend(handles=legend_patches, loc='upper left', bbox_to_anchor=(1.02, 1))
+    # Add separator
+    legend_handles.append(mpatches.Patch(color='none', label=''))  # Empty space
 
-    ax.set_title('Final Map with Terrain Types, Plot Types and Rivers')
+    # Add plot type and feature entries if they exist
+    if iPeaks:
+        legend_handles.append(mlines.Line2D([], [], marker="^", mec="0.2", mfc="none",
+                                        markersize=6, linestyle="None", label='Peaks'))
+    if iHills:
+        legend_handles.append(mlines.Line2D([], [], marker="$\\frown$", mec='#8B4513', mfc='none',
+                                        markersize=6, linestyle="None", label='Hills'))
+
+    # Add feature entries if they exist
+    if iIce:
+        legend_handles.append(mlines.Line2D([], [], marker="s", mec="lightblue", mfc="white",
+                                        markersize=4, linestyle="None", label='Ice'))
+    if iJungle:
+        legend_handles.append(mlines.Line2D([], [], marker="$\\clubsuit$", mec='darkgreen', mfc='green',
+                                        markersize=5, linestyle="None", label='Jungle'))
+    if iOasis:
+        legend_handles.append(mlines.Line2D([], [], marker="o", mec="blue", mfc="cyan",
+                                        markersize=4, linestyle="None", label='Oasis'))
+    if iFloodPlains:
+        legend_handles.append(mlines.Line2D([], [], marker="$\\sim$", mec='brown', mfc='yellow',
+                                        markersize=6, linestyle="None", label='Flood Plains'))
+    if iForest:
+        legend_handles.append(mlines.Line2D([], [], marker="$\\spadesuit$", mec='darkgreen', mfc='forestgreen',
+                                        markersize=4, linestyle="None", label='Forest'))
+
+    # Add rivers legend entry
+    legend_handles.append(mlines.Line2D([], [], color='cyan', linewidth=2, label='Rivers'))
+
+    # Create single legend
+    ax.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1))
+
+    ax.set_title('Final Map: Terrain Types, Plot Types, Features & Rivers')
     ax.set_xlabel('X Coordinate')
     ax.set_ylabel('Y Coordinate')
 
-    # Adjust layout to accommodate legend
+    # Adjust layout to accommodate legends
     plt.tight_layout()
+
+    # Print feature statistics
+    if hasattr(tm, 'feature_map') and tm.feature_map is not None:
+        feature_counts = {
+            'Ice': len(iIce),
+            'Jungle': len(iJungle),
+            'Oasis': len(iOasis),
+            'Flood Plains': len(iFloodPlains),
+            'Forest': len(iForest)
+        }
+
+        print("\nFeature distribution:")
+        total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
+        for feature_name, count in feature_counts.items():
+            if count > 0:
+                percentage = (count / float(total_land_tiles)) * 100 if total_land_tiles > 0 else 0
+                print("%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage))
+    else:
+        print("\nFeature map not available - TerrainMap may not be fully initialized")
 
     plt.show()

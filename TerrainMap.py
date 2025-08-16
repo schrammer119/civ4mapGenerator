@@ -1278,7 +1278,7 @@ class TerrainMap:
 
             # Check if this tile should get the feature
             if self._should_place_feature(tile_index, feature_def):
-                self.feature_map[tile_index] = feature_def['type']
+                self.feature_map[tile_index] = self.gc.getInfoTypeForString(feature_def['type'])
                 self._track_feature_placement(tile_index, feature_def['type'])
 
     def _should_place_feature(self, tile_index, feature_def):
@@ -1295,7 +1295,8 @@ class TerrainMap:
 
         # Modify probability based on clustering
         if cluster_factor > 0.0:
-            neighbour_bonus = self._calculate_cluster_bonus(tile_index, feature_def['type'], cluster_factor)
+            feature_id = self.gc.getInfoTypeForString(feature_def['type'])
+            neighbour_bonus = self._calculate_cluster_bonus(tile_index, feature_id, cluster_factor)
             modified_prob = base_prob * (1.0 + neighbour_bonus * cluster_factor)
         else:
             modified_prob = base_prob
@@ -1306,7 +1307,7 @@ class TerrainMap:
 
         return random.random() <= min(modified_prob, 1.0)
 
-    def _calculate_cluster_bonus(self, tile_index, feature_type, cluster_factor):
+    def _calculate_cluster_bonus(self, tile_index, feature_id, cluster_factor):
         """Calculate clustering bonus for feature placement"""
         feature_neighbours = 0
         total_neighbours = 0
@@ -1314,7 +1315,7 @@ class TerrainMap:
         for direction in range(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
-                if self.feature_map[neighbour_idx] == feature_type:
+                if self.feature_map[neighbour_idx] == feature_id:
                     feature_neighbours += 1
                 total_neighbours += 1
 
@@ -1351,11 +1352,12 @@ class TerrainMap:
         to_visit = []
 
         # Add neighbouring tiles with the same feature
+        feature_id = self.gc.getInfoTypeForString(feature_type)
         for direction in range(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if (neighbour_idx >= 0 and
                 neighbour_idx < len(self.feature_map) and
-                self.feature_map[neighbour_idx] == feature_type):
+                self.feature_map[neighbour_idx] == feature_id):
                 to_visit.append(neighbour_idx)
 
         # Flood fill to count patch size
@@ -1374,7 +1376,7 @@ class TerrainMap:
                 if (neighbour_idx >= 0 and
                     neighbour_idx not in visited and
                     neighbour_idx < len(self.feature_map) and
-                    self.feature_map[neighbour_idx] == feature_type):
+                    self.feature_map[neighbour_idx] == feature_id):
                     to_visit.append(neighbour_idx)
 
         return patch_size
@@ -1401,26 +1403,27 @@ class TerrainMap:
         if rules.get('avoid_hills', False) and plot_type == PlotTypes.PLOT_HILLS:
             return False
         if rules.get('prefer_flat', False) and plot_type != PlotTypes.PLOT_LAND:
-            if random.random() > 0.3:  # 70% penalty for non-flat
+            if random.random() > 0.5:  # 50% penalty for non-flat
                 return False
         if rules.get('prefer_hills', False) and plot_type != PlotTypes.PLOT_HILLS:
-            if random.random() > 0.4:  # 60% penalty for non-hills
+            if random.random() > 0.5:  # 50% penalty for non-hills
                 return False
 
         if rules.get('prefer_rivers', False):
             if not self.mc.is_adjacent_to_river(tile_index):
-                if random.random() > 0.2:  # 80% penalty for non-river
+                if random.random() > 0.5:  # 50% penalty for non-river
                     return False
 
         if rules.get('require_high_moisture', False):
-            if self.cm.rainfall_percentiles[tile_index] < 0.75:
+            if self.cm.rainfall_percentiles[tile_index] < 0.70:
                 return False
 
         return True
 
     def _check_xml_feature_constraints(self, tile_index, feature_type):
         """Check XML-defined feature constraints (implemented by MapConfig)"""
-        constraints = self.feature_constraints.get(feature_type, {})
+        feature_id = self.gc.getInfoTypeForString(feature_type)
+        constraints = self.feature_constraints.get(feature_id, {})
 
         # Example constraints checking (MapConfig handles the details)
         if constraints.get('bRequiresFlatlands', False):
@@ -1577,7 +1580,8 @@ class TerrainMap:
                     break
 
             if not too_close and self.feature_map[candidate] == FeatureTypes.NO_FEATURE:
-                self.feature_map[candidate] = feature_type
+                feature_id = self.gc.getInfoTypeForString(feature_type)
+                self.feature_map[candidate] = feature_id
                 placed_features.append(candidate)
 
     def _place_clustered_features(self, eligible_tiles, feature_type, rule):
@@ -1589,6 +1593,7 @@ class TerrainMap:
         cluster_size = rule.get('cluster_size', 3)
 
         target_clusters = max(1, int(len(eligible_tiles) * density / cluster_size))
+        feature_id = self.gc.getInfoTypeForString(feature_type)
 
         for _ in range(target_clusters):
             # Pick random center
@@ -1604,7 +1609,7 @@ class TerrainMap:
                 if (tile in eligible_tiles and
                     self.feature_map[tile] == FeatureTypes.NO_FEATURE and
                     placed_in_cluster < cluster_size):
-                    self.feature_map[tile] = feature_type
+                    self.feature_map[tile] = feature_id
                     placed_in_cluster += 1
 
     def _place_linear_features(self, eligible_tiles, feature_type, rule):
@@ -1622,11 +1627,12 @@ class TerrainMap:
     def _place_probability_features(self, eligible_tiles, feature_type, rule):
         """Place features using probability method"""
         probability = rule.get('probability', 0.5)
+        feature_id = self.gc.getInfoTypeForString(feature_type)
 
         for tile_index in eligible_tiles:
             if self.feature_map[tile_index] == FeatureTypes.NO_FEATURE:
                 if random.random() <= probability:
-                    self.feature_map[tile_index] = feature_type
+                    self.feature_map[tile_index] = feature_id
 
     def _get_tiles_in_radius(self, center_tile, radius):
         """Get all tiles within radius of center tile"""
@@ -1656,7 +1662,7 @@ class TerrainMap:
         3. Assuming automatic placement on XML-compatible terrains, manual on others
         """
         # Get XML-compatible terrains for floodplains (from game engine)
-        xml_compatible_terrains = self.feature_constraints.get(FeatureTypes.FEATURE_FLOOD_PLAINS, {}).get('terrain_booleans', [])
+        xml_compatible_terrains = self.feature_constraints.get(FeatureTypes.FEATURE_FLOOD_PLAINS, {}).get('TerrainBooleans', [])
 
         for tile_index in range(len(self.terrain_map)):
             if self.em.plotTypes[tile_index] != PlotTypes.PLOT_LAND:  # Only flat tiles
