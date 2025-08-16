@@ -289,7 +289,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.45, 1.00),
+                'temp_range': (0.35, 1.00),
                 'precip_range': (0.00, 0.45),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -311,7 +311,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.15, 0.55),
+                'temp_range': (0.10, 0.45),
                 'precip_range': (0.00, 0.30),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -333,7 +333,7 @@ class TerrainMap:
                     'placement_rules': {}
                 },
                 'temp_range': (0.60, 1.00),
-                'precip_range': (0.25, 0.50),
+                'precip_range': (0.25, 0.80),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.4,
@@ -414,7 +414,7 @@ class TerrainMap:
                     }
                 },
                 'temp_range': (0.70, 1.00),
-                'precip_range': (0.40, 0.75),
+                'precip_range': (0.75, 0.85),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.3,
@@ -436,7 +436,7 @@ class TerrainMap:
                     'placement_rules': {}
                 },
                 'temp_range': (0.40, 0.70),
-                'precip_range': (0.45, 0.65),  # Narrow sweet spot
+                'precip_range': (0.45, 0.75),  # Narrow sweet spot
                 'base_weight': 0.8,  # Rare biome
                 'scoring_factors': {
                     'plot_flat': 0.6,
@@ -462,8 +462,8 @@ class TerrainMap:
                         'max_patch_size': 20,
                     }
                 },
-                'temp_range': (0.40, 0.75),
-                'precip_range': (0.55, 1.00),
+                'temp_range': (0.40, 0.85),
+                'precip_range': (0.70, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.2,
@@ -515,8 +515,8 @@ class TerrainMap:
                         'max_patch_size': 18,
                     }
                 },
-                'temp_range': (0.75, 1.00),
-                'precip_range': (0.75, 1.00),
+                'temp_range': (0.80, 1.00),
+                'precip_range': (0.80, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
                     'plot_flat': 0.3,
@@ -537,7 +537,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.05, 0.25),
+                'temp_range': (0.04, 0.20),
                 'precip_range': (0.00, 0.30),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -586,7 +586,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.00, 0.10),
+                'temp_range': (0.00, 0.08),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {

@@ -57,11 +57,6 @@ print("Land: %d (%.1f%%)" % (land_count, land_count/float(mc.iNumPlots)*100))
 print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(mc.iNumPlots)*100))
 print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(mc.iNumPlots)*100))
 
-print("Climate system initialized successfully!")
-print("Temperature map generated: %s" % ("Yes" if hasattr(cm, 'TemperatureMap') else "No"))
-print("Rainfall map generated: %s" % ("Yes" if hasattr(cm, 'RainfallMap') else "No"))
-print("Wind maps generated: %s" % ("Yes" if hasattr(cm, 'WindU') and hasattr(cm, 'WindV') else "No"))
-
 
 if True:
 
@@ -333,7 +328,7 @@ if True:
     # Color scheme for target status (light colors for dark background)
     def get_target_color(actual_pct, target_pct):
         """Return color based on how close actual is to target"""
-        tolerance = 1.5  # Within 1.5% is considered on-target
+        tolerance = 2.0  # Within 2.0% is considered on-target
 
         if abs(actual_pct - target_pct) <= tolerance:
             return '#90EE90'  # Light green - on target
@@ -627,10 +622,6 @@ if True:
 
         print("%-24s %6.1f%%   %6.1f%%   %s" % (biome_name, actual_pct, target_pct, status))
 
-    print("\\nGrid Analysis:")
-    print("  No-biome gaps: %d/%d cells (%.1f%%)" % (no_biome_cells, total_grid_cells, no_biome_pct))
-    print("  Note: Dark background areas show climate zones where no land biome qualifies")
-
 
 
 
@@ -720,106 +711,5 @@ if True:
 
     # Adjust layout to accommodate legend
     plt.tight_layout()
-
-
-
-    # Create 21x21 grid (5% increments) to analyze actual land tile distribution
-    print("=== LAND TILE DISTRIBUTION BY CLIMATE GRID ===")
-
-    # Get land-only data
-    land_indices = [i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
-    land_temp_percentiles = [cm.temperature_percentiles[i] for i in land_indices]
-    land_rain_percentiles = [cm.rainfall_percentiles[i] for i in land_indices]
-
-    total_land_tiles = len(land_indices)
-    print("Total land tiles: %d" % total_land_tiles)
-
-    # Create 21x21 grid (0%, 5%, 10%, ..., 100%)
-    grid_size = 21
-    distribution_grid = np.zeros((grid_size, grid_size), dtype=int)
-    percentage_grid = np.zeros((grid_size, grid_size), dtype=float)
-
-    # Fill grid with actual tile counts
-    for temp_pct, rain_pct in zip(land_temp_percentiles, land_rain_percentiles):
-        # Convert to grid indices (0-20)
-        temp_idx = min(int(temp_pct * 20), 20)  # 0-20 for 0%-100%
-        rain_idx = min(int(rain_pct * 20), 20)  # 0-20 for 0%-100%
-        distribution_grid[temp_idx, rain_idx] += 1
-
-    # Convert to percentages
-    for i in range(grid_size):
-        for j in range(grid_size):
-            percentage_grid[i, j] = (distribution_grid[i, j] / float(total_land_tiles)) * 100
-
-    # Print the grid as a table
-    print("\nLand tile percentage by climate grid (5%% increments):")
-    print("Rows = Temperature percentile (0%% = coldest, 100%% = hottest)")
-    print("Cols = Rainfall percentile (0%% = driest, 100%% = wettest)")
-    print()
-
-    # Print header
-    header = "Temp\\Rain"
-    for rain_pct in range(0, 101, 5):
-        header += "%6d" % rain_pct
-    print(header)
-
-    # Print each row
-    for temp_idx in range(grid_size):
-        temp_pct = temp_idx * 5
-        row_str = "%8d" % temp_pct
-        for rain_idx in range(grid_size):
-            percentage = percentage_grid[temp_idx, rain_idx]
-            if percentage >= 0.1:  # Only show cells with significant tiles
-                row_str += "%6.1f" % percentage
-            else:
-                row_str += "     ."  # Show dots for empty cells
-        print(row_str)
-
-    # Identify high-density regions for biome design
-    print("\n=== HIGH-DENSITY REGIONS FOR BIOME DESIGN ===")
-    print("Grid cells with >1%% of land tiles:")
-
-    high_density_cells = []
-    for temp_idx in range(grid_size):
-        for rain_idx in range(grid_size):
-            if percentage_grid[temp_idx, rain_idx] >= 1.0:
-                temp_range = (temp_idx * 5, (temp_idx + 1) * 5)
-                rain_range = (rain_idx * 5, (rain_idx + 1) * 5)
-                percentage = percentage_grid[temp_idx, rain_idx]
-                high_density_cells.append((temp_range, rain_range, percentage))
-                print("  Temp %d%%-%d%%, Rain %d%%-%d%%: %.1f%% of tiles" %
-                    (temp_range[0], temp_range[1], rain_range[0], rain_range[1], percentage))
-
-    print("\nTotal coverage of high-density cells: %.1f%% of land" %
-        sum(cell[2] for cell in high_density_cells))
-
-    # Identify the main diagonal pattern
-    print("\n=== DIAGONAL PATTERN ANALYSIS ===")
-    print("Tiles along the main climate diagonal (temp = rain percentile):")
-
-    diagonal_tiles = 0
-    for temp_idx in range(grid_size):
-        # Check cells within +-2 grid positions of diagonal
-        for rain_offset in range(-2, 3):
-            rain_idx = temp_idx + rain_offset
-            if 0 <= rain_idx < grid_size:
-                diagonal_tiles += distribution_grid[temp_idx, rain_idx]
-
-    diagonal_percentage = (diagonal_tiles / float(total_land_tiles)) * 100
-    print("Tiles within +/-10%% of diagonal: %d (%.1f%%)" % (diagonal_tiles, diagonal_percentage))
-
-    # Suggest biome coverage strategy
-    print("\n=== BIOME DESIGN RECOMMENDATIONS ===")
-    print("Based on this distribution, focus biomes on:")
-
-    major_zones = [
-        ("Hot-Wet (tropical)", "80-100% temp, 80-100% rain"),
-        ("Cold-Dry (polar)", "0-20% temp, 0-40% rain"),
-        ("Moderate diagonal", "30-70% temp, 30-70% rain"),
-        ("Cold-Wet (boreal)", "20-40% temp, 60-100% rain"),
-    ]
-
-    for zone_name, zone_desc in major_zones:
-        print("  %s: %s" % (zone_name, zone_desc))
 
     plt.show()
