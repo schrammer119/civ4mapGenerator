@@ -2767,6 +2767,14 @@ class ClimateMap:
             self.temperature_percentiles[land_idx] = temp_percentiles_land[i]
             self.rainfall_percentiles[land_idx] = rain_percentiles_land[i]
 
+        # Ocean temps for ocean biomes
+        ocean_indices = [i for i in range(self.mc.iNumPlots) if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN]
+        ocean_temps = [self.TemperatureMap[i] for i in ocean_indices]
+        temp_percentiles_ocean = self._build_percentile_map(ocean_temps)
+        self.temperature_percentiles_water = [0.0] * self.mc.iNumPlots
+        for i, ocean_idx in enumerate(ocean_indices):
+            self.temperature_percentiles_water[ocean_idx] = temp_percentiles_ocean[i]
+
     def _build_percentile_map(self, data_map):
         """Convert a data map to percentile rankings (0.0 to 1.0)"""
         if not data_map or len(data_map) == 0:

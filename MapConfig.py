@@ -190,7 +190,7 @@ class MapConfig:
         self.qgHadleyStrength = 2e11               # Hadley cell amplitude (1/s2) - tropical heating strength
 
         # Solver Control
-        self.qgJacobiIterations = 1000               # Inner Jacobi solver iterations - balance accuracy vs speed
+        self.qgJacobiIterations = 200               # Inner Jacobi solver iterations - balance accuracy vs speed
         self.qgConvergenceTolerance = 1e-1          # Solver tolerance - smaller = more accurate but slower
         self.qgSolverFriction = 7e-12        # jacobi solver damping
 

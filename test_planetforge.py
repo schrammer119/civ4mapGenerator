@@ -666,7 +666,7 @@ if True:
     # Plot peaks as triangles
     ax.plot([i % mc.iNumPlotsX for i in iPeaks],
             [i // mc.iNumPlotsX for i in iPeaks],
-            "^", mec="0.2", mfc="none", ms=6, alpha=0.8, label='Peaks')
+            "^", mec="#808080", mfc="none", ms=6, alpha=0.8, label='Peaks')
 
     # Plot hills as frown symbols
     ax.plot([i % mc.iNumPlotsX for i in iHills],
@@ -688,31 +688,80 @@ if True:
         iFloodPlains = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FLOOD_PLAINS]
         iForest = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST]
 
-    # Plot features with distinct symbols and colors
+    # Helper function to plot distributed forest/jungle symbols
+    def plot_distributed_vegetation(tile_indices, symbol, edge_color, fill_color, symbol_size, label):
+        """Plot 4 small symbols distributed around each tile"""
+        if not tile_indices:
+            return
+
+        # Calculate positions for 4 symbols per tile (corners)
+        offsets = [(-0.2, -0.2), (0.2, -0.2), (-0.2, 0.2), (0.2, 0.2)]
+
+        all_x = []
+        all_y = []
+
+        for tile_i in tile_indices:
+            tile_x = tile_i % mc.iNumPlotsX
+            tile_y = tile_i // mc.iNumPlotsX
+
+            for dx, dy in offsets:
+                all_x.append(tile_x + dx)
+                all_y.append(tile_y + dy)
+
+        ax.plot(all_x, all_y, linestyle="", marker=symbol, mec=edge_color,
+                mfc=fill_color, ms=symbol_size, alpha=0.8, label=label)
+
+    # Plot non-vegetation features with single symbols (these don't block other features)
     if iIce:
         ax.plot([i % mc.iNumPlotsX for i in iIce],
                 [i // mc.iNumPlotsX for i in iIce],
-                "s", mec="lightblue", mfc="white", ms=4, alpha=0.9, label='Ice')
-
-    if iJungle:
-        ax.plot([i % mc.iNumPlotsX for i in iJungle],
-                [i // mc.iNumPlotsX for i in iJungle],
-                linestyle="", marker="$\\clubsuit$", mec='darkgreen', mfc='green', ms=5, alpha=0.8, label='Jungle')
+                "s", mec="#FFFFFF", mfc="#FFFFFF", ms=4, alpha=0.9, label='Ice')
 
     if iOasis:
         ax.plot([i % mc.iNumPlotsX for i in iOasis],
                 [i // mc.iNumPlotsX for i in iOasis],
-                "o", mec="blue", mfc="cyan", ms=4, alpha=0.9, label='Oasis')
+                "o", mec="#0000FF", mfc="#0000FF", ms=4, alpha=0.9, label='Oasis')
 
     if iFloodPlains:
         ax.plot([i % mc.iNumPlotsX for i in iFloodPlains],
                 [i // mc.iNumPlotsX for i in iFloodPlains],
-                linestyle="", marker="$\\sim$", mec='brown', mfc='yellow', ms=6, alpha=0.8, label='Flood Plains')
+                linestyle="", marker="$\\sim$", mec="#265809", mfc="#265809", ms=6, alpha=0.8, label='Flood Plains')
+
+    # Plot vegetation features with distributed symbols and subtype support
+    if iJungle:
+        # Jungle: bright green club
+        plot_distributed_vegetation(iJungle, "$\\Psi$", "#00E400", "#00E400", 3, 'Jungle')
 
     if iForest:
-        ax.plot([i % mc.iNumPlotsX for i in iForest],
-                [i // mc.iNumPlotsX for i in iForest],
-                linestyle="", marker="$\\spadesuit$", mec='darkgreen', mfc='forestgreen', ms=4, alpha=0.8, label='Forest')
+        # Forest subtypes - placeholder for future subtype map
+        # For now, check if subtype map exists, otherwise default to broadleaf
+        if hasattr(tm, 'feature_subtype_map') and tm.feature_subtype_map is not None:
+            # Group forests by subtype
+            broadleaf_forests = []
+            evergreen_forests = []
+            snowy_forests = []
+
+            for tile_i in iForest:
+                subtype = tm.feature_subtype_map[tile_i]
+                if subtype == 0:  # Broadleaf forest
+                    broadleaf_forests.append(tile_i)
+                elif subtype == 1:  # Evergreen forest
+                    evergreen_forests.append(tile_i)
+                elif subtype == 2:  # Snowy forest
+                    snowy_forests.append(tile_i)
+                else:  # -1 or unknown, default to broadleaf
+                    broadleaf_forests.append(tile_i)
+
+            # Plot each subtype with appropriate symbol/color
+            if broadleaf_forests:
+                plot_distributed_vegetation(broadleaf_forests, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
+            if evergreen_forests:
+                plot_distributed_vegetation(evergreen_forests, "^", "#084B19", "#084B19", 3, 'Evergreen Forest')
+            if snowy_forests:
+                plot_distributed_vegetation(snowy_forests, "^", "#8CCA8A", "#8CCA8A", 3, 'Snowy Forest')
+        else:
+            # Default to broadleaf forest for all forest tiles
+            plot_distributed_vegetation(iForest, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
 
     # Add river visualization
     north_of_rivers = cm.north_of_rivers
@@ -753,7 +802,7 @@ if True:
 
     # Add plot type and feature entries if they exist
     if iPeaks:
-        legend_handles.append(mlines.Line2D([], [], marker="^", mec="0.2", mfc="none",
+        legend_handles.append(mlines.Line2D([], [], marker="^", mec="#808080", mfc="none",
                                         markersize=6, linestyle="None", label='Peaks'))
     if iHills:
         legend_handles.append(mlines.Line2D([], [], marker="$\\frown$", mec='#8B4513', mfc='none',
@@ -761,20 +810,41 @@ if True:
 
     # Add feature entries if they exist
     if iIce:
-        legend_handles.append(mlines.Line2D([], [], marker="s", mec="lightblue", mfc="white",
+        legend_handles.append(mlines.Line2D([], [], marker="s", mec="#FFFFFF", mfc="#FFFFFF",
                                         markersize=4, linestyle="None", label='Ice'))
     if iJungle:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\clubsuit$", mec='darkgreen', mfc='green',
+        legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec='#00E400', mfc='#00E400',
                                         markersize=5, linestyle="None", label='Jungle'))
     if iOasis:
-        legend_handles.append(mlines.Line2D([], [], marker="o", mec="blue", mfc="cyan",
+        legend_handles.append(mlines.Line2D([], [], marker="o", mec="#0000FF", mfc="#0000FF",
                                         markersize=4, linestyle="None", label='Oasis'))
     if iFloodPlains:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\sim$", mec='brown', mfc='yellow',
+        legend_handles.append(mlines.Line2D([], [], marker="$\\sim$", mec='#265809', mfc='#265809',
                                         markersize=6, linestyle="None", label='Flood Plains'))
+
+    # Handle forest subtypes in legend
     if iForest:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\spadesuit$", mec='darkgreen', mfc='forestgreen',
-                                        markersize=4, linestyle="None", label='Forest'))
+        if hasattr(tm, 'forest_subtype_map') and tm.forest_subtype_map is not None:
+            # Check which forest subtypes are actually present
+            forest_subtypes_present = set()
+            for tile_i in iForest:
+                subtype = tm.forest_subtype_map[tile_i]
+                forest_subtypes_present.add(subtype)
+
+            # Add legend entries for present subtypes
+            if 0 in forest_subtypes_present or -1 in forest_subtypes_present:  # Broadleaf or default
+                legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec="#005A00", mfc='#005A00',
+                                                markersize=4, linestyle="None", label='Broadleaf Forest'))
+            if 1 in forest_subtypes_present:  # Evergreen
+                legend_handles.append(mlines.Line2D([], [], marker="^", mec='#084B19', mfc='#084B19',
+                                                markersize=4, linestyle="None", label='Evergreen Forest'))
+            if 2 in forest_subtypes_present:  # Snowy
+                legend_handles.append(mlines.Line2D([], [], marker="^", mec='#8CCA8A', mfc='#8CCA8A',
+                                                markersize=4, linestyle="None", label='Snowy Forest'))
+        else:
+            # Default forest legend entry
+            legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec='#005A00', mfc='#005A00',
+                                            markersize=4, linestyle="None", label='Broadleaf Forest'))
 
     # Add rivers legend entry
     legend_handles.append(mlines.Line2D([], [], color='cyan', linewidth=2, label='Rivers'))

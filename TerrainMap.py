@@ -40,6 +40,7 @@ class TerrainMap:
         # Results arrays - using -1 for NO_TERRAIN/NO_FEATURE/NO_BONUS
         self.terrain_map = [-1] * self.mc.iNumPlots
         self.feature_map = [-1] * self.mc.iNumPlots
+        self.feature_subtype_map = [-1] * self.mc.iNumPlots
         self.resource_map = [-1] * self.mc.iNumPlots
         self.biome_assignments = [''] * self.mc.iNumPlots
 
@@ -175,7 +176,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.35, 0.65),
+                'temp_range': (0.20, 0.70),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -195,12 +196,12 @@ class TerrainMap:
                     'type': 'FEATURE_ICE',  # Ice features on polar ocean
                     'coverage': 0.40,     # 40% ice coverage
                     'placement_rules': {
-                        'cluster_factor': 0.8,
-                        'min_patch_size': 3,
-                        'max_patch_size': 15,
+                        'cluster_factor': 0.95,
+                        'min_patch_size': 7,
+                        'max_patch_size': 40,
                     }
                 },
-                'temp_range': (0.00, 0.35),
+                'temp_range': (0.00, 0.25),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -221,7 +222,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.65, 1.00),
+                'temp_range': (0.60, 1.00),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -242,7 +243,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.35, 0.65),
+                'temp_range': (0.20, 0.65),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -262,12 +263,12 @@ class TerrainMap:
                     'type': 'FEATURE_ICE',
                     'coverage': 0.25,
                     'placement_rules': {
-                        'cluster_factor': 0.6,
-                        'min_patch_size': 1,
-                        'max_patch_size': 8,
+                        'cluster_factor': 0.9,
+                        'min_patch_size': 3,
+                        'max_patch_size': 20,
                     }
                 },
-                'temp_range': (0.00, 0.35),
+                'temp_range': (0.00, 0.25),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -351,12 +352,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.30,  # Sparse mediterranean woodland
+                    'coverage': 1.0,#0.30,  # Sparse mediterranean woodland
                     'placement_rules': {
-                        'prefer_hills': True,
-                        'cluster_factor': 0.5,
-                        'min_patch_size': 1,
-                        'max_patch_size': 4,
+                        #'prefer_hills': True,
+                        #'cluster_factor': 0.5,
+                        #'min_patch_size': 1,
+                        #'max_patch_size': 4,
                     }
                 },
                 'temp_range': (0.55, 0.80),
@@ -378,12 +379,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 0.70,
+                    'coverage': 1.0,#0.70,
                     'placement_rules': {
-                        'avoid_peaks': True,
-                        'cluster_factor': 0.8,
-                        'min_patch_size': 2,
-                        'max_patch_size': 12,
+                        #'avoid_peaks': True,
+                        #'cluster_factor': 0.8,
+                        #'min_patch_size': 2,
+                        #'max_patch_size': 12,
                     }
                 },
                 'temp_range': (0.35, 0.65),
@@ -405,12 +406,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.40,
+                    'coverage': 1.0,#0.40,
                     'placement_rules': {
-                        'prefer_rivers': True,
-                        'cluster_factor': 0.6,
-                        'min_patch_size': 1,
-                        'max_patch_size': 6,
+                        #'prefer_rivers': True,
+                        #'cluster_factor': 0.6,
+                        #'min_patch_size': 1,
+                        #'max_patch_size': 6,
                     }
                 },
                 'temp_range': (0.70, 1.00),
@@ -454,12 +455,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.85,
+                    'coverage': 1.0,#0.85,
                     'placement_rules': {
-                        'avoid_peaks': True,
-                        'cluster_factor': 0.9,
-                        'min_patch_size': 3,
-                        'max_patch_size': 20,
+                        #'avoid_peaks': True,
+                        #'cluster_factor': 0.9,
+                        #'min_patch_size': 3,
+                        #'max_patch_size': 20,
                     }
                 },
                 'temp_range': (0.40, 0.85),
@@ -481,12 +482,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 0.95,
+                    'coverage': 1.0,#0.95,
                     'placement_rules': {
-                        'require_high_moisture': True,
-                        'cluster_factor': 0.95,
-                        'min_patch_size': 4,
-                        'max_patch_size': 25,
+                        #'require_high_moisture': True,
+                        #'cluster_factor': 0.95,
+                        #'min_patch_size': 4,
+                        #'max_patch_size': 25,
                     }
                 },
                 'temp_range': (0.30, 0.60),
@@ -507,12 +508,12 @@ class TerrainMap:
                 'terrain': 'TERRAIN_GRASS',
                 'feature': {
                     'type': 'FEATURE_JUNGLE',
-                    'coverage': 0.90,
+                    'coverage': 1.0,#0.90,
                     'placement_rules': {
-                        'avoid_peaks': True,
-                        'cluster_factor': 0.85,
-                        'min_patch_size': 3,
-                        'max_patch_size': 18,
+                        #'avoid_peaks': True,
+                        #'cluster_factor': 0.85,
+                        #'min_patch_size': 3,
+                        #'max_patch_size': 18,
                     }
                 },
                 'temp_range': (0.80, 1.00),
@@ -556,12 +557,12 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 2,  # Snowy Evergreen
-                    'coverage': 0.75,
+                    'coverage': 1.0,#0.75,
                     'placement_rules': {
-                        'avoid_peaks': True,
-                        'cluster_factor': 0.8,
-                        'min_patch_size': 2,
-                        'max_patch_size': 15,
+                        #'avoid_peaks': True,
+                        #'cluster_factor': 0.8,
+                        #'min_patch_size': 2,
+                        #'max_patch_size': 15,
                     }
                 },
                 'temp_range': (0.00, 0.45),
@@ -1056,22 +1057,22 @@ class TerrainMap:
             return False
 
         # A tile "has a river" if there's a river on any of its edges
-        # Check north edge
+        # Check south edge
         if self.cm.north_of_rivers[tile_index]:
             return True
 
-        # Check west edge
+        # Check east edge
         if self.cm.west_of_rivers[tile_index]:
             return True
 
-        # Check south edge (north edge of tile to the south)
-        south_index = self.mc.neighbours[tile_index][self.mc.S]
-        if 0 <= south_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[south_index]:
+        # Check north edge (south edge of tile to the north)
+        north_index = self.mc.neighbours[tile_index][self.mc.N]
+        if 0 <= north_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[north_index]:
             return True
 
-        # Check east edge (west edge of tile to the east)
-        east_index = self.mc.neighbours[tile_index][self.mc.E]
-        if 0 <= east_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[east_index]:
+        # Check west edge (east edge of tile to the west)
+        west_index = self.mc.neighbours[tile_index][self.mc.W]
+        if 0 <= west_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[west_index]:
             return True
 
         return False
@@ -1162,6 +1163,8 @@ class TerrainMap:
                 eligible_biomes[biome_name] = biome_def
 
         # Find grid position
+        if is_water:
+            temp_percentile = self.cm.temperature_percentiles_water[tile_index]
         temp_idx = min(int(temp_percentile * (self.BIOME_GRID_SIZE - 1)), self.BIOME_GRID_SIZE - 1)
         precip_idx = min(int(precip_percentile * (self.BIOME_GRID_SIZE - 1)), self.BIOME_GRID_SIZE - 1)
 
@@ -1279,6 +1282,7 @@ class TerrainMap:
             # Check if this tile should get the feature
             if self._should_place_feature(tile_index, feature_def):
                 self.feature_map[tile_index] = self.gc.getInfoTypeForString(feature_def['type'])
+                self.feature_subtype_map[tile_index] = feature_def.get('subtype', 0)
                 self._track_feature_placement(tile_index, feature_def['type'])
 
     def _should_place_feature(self, tile_index, feature_def):
@@ -1469,15 +1473,15 @@ class TerrainMap:
             placement_method = rule.get('placement_method', 'probability')
 
             if placement_method == 'scattered':
-                self._place_scattered_features(eligible_tiles, feature_def['base_feature'], rule)
+                self._place_scattered_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             elif placement_method == 'clustered':
-                self._place_clustered_features(eligible_tiles, feature_def['base_feature'], rule)
+                self._place_clustered_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             elif placement_method == 'linear':
-                self._place_linear_features(eligible_tiles, feature_def['base_feature'], rule)
+                self._place_linear_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             elif placement_method == 'radial':
-                self._place_radial_features(eligible_tiles, feature_def['base_feature'], rule)
+                self._place_radial_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             else:  # Default to probability
-                self._place_probability_features(eligible_tiles, feature_def['base_feature'], rule)
+                self._place_probability_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
 
     def _find_eligible_tiles_for_rule(self, rule):
         """Find tiles that meet the rule conditions"""
@@ -1555,7 +1559,7 @@ class TerrainMap:
 
         return True
 
-    def _place_scattered_features(self, eligible_tiles, feature_type, rule):
+    def _place_scattered_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using scattered placement method"""
         if not eligible_tiles:
             return
@@ -1582,9 +1586,10 @@ class TerrainMap:
             if not too_close and self.feature_map[candidate] == FeatureTypes.NO_FEATURE:
                 feature_id = self.gc.getInfoTypeForString(feature_type)
                 self.feature_map[candidate] = feature_id
+                self.feature_subtype_map[candidate] = feature_subtype
                 placed_features.append(candidate)
 
-    def _place_clustered_features(self, eligible_tiles, feature_type, rule):
+    def _place_clustered_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using clustered placement method"""
         if not eligible_tiles:
             return
@@ -1610,21 +1615,22 @@ class TerrainMap:
                     self.feature_map[tile] == FeatureTypes.NO_FEATURE and
                     placed_in_cluster < cluster_size):
                     self.feature_map[tile] = feature_id
+                    self.feature_subtype_map[tile] = feature_subtype
                     placed_in_cluster += 1
 
-    def _place_linear_features(self, eligible_tiles, feature_type, rule):
+    def _place_linear_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using linear placement method (along rivers, coasts)"""
         # TODO: Implement proper linear feature placement along rivers/coastlines
         # For now, defaulting to probability placement
-        self._place_probability_features(eligible_tiles, feature_type, rule)
+        self._place_probability_features(eligible_tiles, feature_type, feature_subtype, rule)
 
-    def _place_radial_features(self, eligible_tiles, feature_type, rule):
+    def _place_radial_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using radial placement method (around points)"""
         # TODO: Implement proper radial feature placement around specific points
         # For now, defaulting to probability placement
-        self._place_probability_features(eligible_tiles, feature_type, rule)
+        self._place_probability_features(eligible_tiles, feature_type, feature_subtype, rule)
 
-    def _place_probability_features(self, eligible_tiles, feature_type, rule):
+    def _place_probability_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using probability method"""
         probability = rule.get('probability', 0.5)
         feature_id = self.gc.getInfoTypeForString(feature_type)
@@ -1633,6 +1639,7 @@ class TerrainMap:
             if self.feature_map[tile_index] == FeatureTypes.NO_FEATURE:
                 if random.random() <= probability:
                     self.feature_map[tile_index] = feature_id
+                    self.feature_subtype_map[tile_index] = feature_subtype
 
     def _get_tiles_in_radius(self, center_tile, radius):
         """Get all tiles within radius of center tile"""
@@ -1678,12 +1685,14 @@ class TerrainMap:
                 # Game engine will automatically place floodplains here
                 # We just mark it in our tracking but don't place manually
                 self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
+                self.feature_subtype_map[tile_index] = 0
             else:
                 # Use our custom rules for non-XML terrains
                 for rule in feature_def['placement_rules']:
                     if self._tile_meets_floodplains_rule(tile_index, rule):
                         if random.random() <= rule.get('probability', 0.5):
                             self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
+                            self.feature_subtype_map[tile_index] = 0
                         break  # Only apply first matching rule
 
     def _tile_meets_floodplains_rule(self, tile_index, rule):
