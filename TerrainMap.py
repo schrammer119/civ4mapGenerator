@@ -121,7 +121,6 @@ class TerrainMap:
                     'avoid_hills': bool,                # Don't place on PLOT_HILLS
                     'prefer_flat': bool,                # Prefer PLOT_LAND (reduce prob on hills/peaks)
                     'prefer_rivers': bool,              # Prefer tiles near rivers
-                    'require_high_moisture': bool,      # Only in high precipitation areas
                     'cluster_factor': float (0.0-1.0), # 0=random, 1=maximum clustering
                     'min_patch_size': int,              # Minimum contiguous feature area
                     'max_patch_size': int,              # Maximum contiguous feature area
@@ -176,7 +175,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.20, 0.70),
+                'temp_range': (0.10, 0.70),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -193,15 +192,13 @@ class TerrainMap:
             'polar_ocean': {
                 'terrain': 'TERRAIN_OCEAN',
                 'feature': {
-                    'type': 'FEATURE_ICE',  # Ice features on polar ocean
-                    'coverage': 0.40,     # 40% ice coverage
+                    'type': 'FEATURE_ICE',
+                    'coverage': 1.0,
                     'placement_rules': {
-                        'cluster_factor': 0.95,
-                        'min_patch_size': 7,
-                        'max_patch_size': 40,
+                        'temp_scaled_coverage': -1.0,
                     }
                 },
-                'temp_range': (0.00, 0.25),
+                'temp_range': (0.00, 0.15),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -243,7 +240,7 @@ class TerrainMap:
                     'coverage': 0.0,
                     'placement_rules': {}
                 },
-                'temp_range': (0.20, 0.65),
+                'temp_range': (0.05, 0.65),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -261,14 +258,12 @@ class TerrainMap:
                 'terrain': 'TERRAIN_COAST',
                 'feature': {
                     'type': 'FEATURE_ICE',
-                    'coverage': 0.25,
+                    'coverage': 1.0,
                     'placement_rules': {
-                        'cluster_factor': 0.9,
-                        'min_patch_size': 3,
-                        'max_patch_size': 20,
+                        'temp_scaled_coverage': -1.0,
                     }
                 },
-                'temp_range': (0.00, 0.25),
+                'temp_range': (0.00, 0.10),
                 'precip_range': (0.00, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -352,12 +347,10 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 1.0,#0.30,  # Sparse mediterranean woodland
+                    'coverage': 0.9,  # Sparse mediterranean woodland
                     'placement_rules': {
-                        #'prefer_hills': True,
-                        #'cluster_factor': 0.5,
-                        #'min_patch_size': 1,
-                        #'max_patch_size': 4,
+                        'prefer_hills': True,
+                        'cluster_factor': 0.5,
                     }
                 },
                 'temp_range': (0.55, 0.80),
@@ -379,12 +372,9 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 1.0,#0.70,
+                    'coverage': 0.95,
                     'placement_rules': {
-                        #'avoid_peaks': True,
-                        #'cluster_factor': 0.8,
-                        #'min_patch_size': 2,
-                        #'max_patch_size': 12,
+                        'cluster_factor': 0.8,
                     }
                 },
                 'temp_range': (0.35, 0.65),
@@ -406,12 +396,10 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 1.0,#0.40,
+                    'coverage': 0.9,
                     'placement_rules': {
-                        #'prefer_rivers': True,
-                        #'cluster_factor': 0.6,
-                        #'min_patch_size': 1,
-                        #'max_patch_size': 6,
+                        'prefer_rivers': True,
+                        'cluster_factor': 0.6,
                     }
                 },
                 'temp_range': (0.70, 1.00),
@@ -455,12 +443,9 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 1.0,#0.85,
+                    'coverage': 0.95,
                     'placement_rules': {
-                        #'avoid_peaks': True,
-                        #'cluster_factor': 0.9,
-                        #'min_patch_size': 3,
-                        #'max_patch_size': 20,
+                        'cluster_factor': 0.9,
                     }
                 },
                 'temp_range': (0.40, 0.85),
@@ -482,12 +467,9 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 1.0,#0.95,
+                    'coverage': 0.95,
                     'placement_rules': {
-                        #'require_high_moisture': True,
-                        #'cluster_factor': 0.95,
-                        #'min_patch_size': 4,
-                        #'max_patch_size': 25,
+                        'cluster_factor': 0.95,
                     }
                 },
                 'temp_range': (0.30, 0.60),
@@ -508,12 +490,9 @@ class TerrainMap:
                 'terrain': 'TERRAIN_GRASS',
                 'feature': {
                     'type': 'FEATURE_JUNGLE',
-                    'coverage': 1.0,#0.90,
+                    'coverage': 0.95,
                     'placement_rules': {
-                        #'avoid_peaks': True,
-                        #'cluster_factor': 0.85,
-                        #'min_patch_size': 3,
-                        #'max_patch_size': 18,
+                        'cluster_factor': 0.85,
                     }
                 },
                 'temp_range': (0.80, 1.00),
@@ -557,12 +536,9 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 2,  # Snowy Evergreen
-                    'coverage': 1.0,#0.75,
+                    'coverage': 0.95,
                     'placement_rules': {
-                        #'avoid_peaks': True,
-                        #'cluster_factor': 0.8,
-                        #'min_patch_size': 2,
-                        #'max_patch_size': 15,
+                        'cluster_factor': 0.8,
                     }
                 },
                 'temp_range': (0.00, 0.45),
@@ -1293,9 +1269,8 @@ class TerrainMap:
 
         rules = feature_def.get('placement_rules', {})
         cluster_factor = rules.get('cluster_factor', 0.0)
-
-        # Base probability from coverage
-        base_prob = feature_def['coverage']
+        # Base probability from coverage (allow dynamic scaling for some features)
+        base_prob = self._get_scaled_coverage(tile_index, feature_def)
 
         # Modify probability based on clustering
         if cluster_factor > 0.0:
@@ -1310,6 +1285,49 @@ class TerrainMap:
             return False
 
         return random.random() <= min(modified_prob, 1.0)
+
+    def _get_scaled_coverage(self, tile_index, feature_def):
+        """Return coverage scaled dynamically for certain features.
+
+        Currently used to scale FEATURE_ICE coverage by water temperature
+        percentile so ice becomes denser at lower temperatures.
+        """
+        base_cov = feature_def.get('coverage', 0.0)
+        if base_cov <= 0.0:
+            return 0.0
+
+        ftype = feature_def.get('type')
+
+        # Read placement rule for temperature-scaled coverage (optional)
+        rules = feature_def.get('placement_rules', {})
+        temp_scale = rules.get('temp_scaled_coverage', None) # temperature scale factor
+
+        # If no temp scaling rule, keep base coverage
+        if temp_scale is None:
+            return base_cov
+
+        # Determine temperature percentile for water tiles (0.0 cold .. 1.0 warm)
+        if self.terrain_map[tile_index] in [TerrainTypes.TERRAIN_OCEAN, TerrainTypes.TERRAIN_COAST]:
+            temp_pct = self.cm.temperature_percentiles_water[tile_index]
+        else:
+            temp_pct = self.cm.temperature_percentiles[tile_index]
+
+        biome_def = self.biome_definitions[self.biome_assignments[tile_index]]
+        min_temp, max_temp = biome_def.get('temp_range', (0.0, 1.0))
+
+        # If temperature is warmer than max threshold, scale is 0.
+        if temp_pct >= max_temp:
+            scale = 1.0
+        elif temp_pct <= min_temp:
+            scale = 0.0
+        else:
+            # Linear interpolation: colder => larger scale
+            scale = (temp_pct - min_temp) / float(max_temp - min_temp)
+
+        scale = max(0.0, min(1.0, scale))
+
+        # Final coverage: base coverage multiplied by the smooth_scale and by the rule multiplier
+        return base_cov + scale * temp_scale
 
     def _calculate_cluster_bonus(self, tile_index, feature_id, cluster_factor):
         """Calculate clustering bonus for feature placement"""
@@ -1417,10 +1435,6 @@ class TerrainMap:
             if not self.mc.is_adjacent_to_river(tile_index):
                 if random.random() > 0.5:  # 50% penalty for non-river
                     return False
-
-        if rules.get('require_high_moisture', False):
-            if self.cm.rainfall_percentiles[tile_index] < 0.70:
-                return False
 
         return True
 
