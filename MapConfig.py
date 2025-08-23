@@ -806,43 +806,6 @@ class MapConfig:
         for bonus_id, data in self.bonus_constraints.items():
             self.bonus_id_to_string[bonus_id] = data['type_string']
 
-    def _precalculate_adjacency_maps(self):
-        """Pre-calculate adjacency maps for frequently used checks"""
-        print("MapConfig: Pre-calculating adjacency maps...")
-
-        # Initialize adjacency maps
-        self.river_adjacency_map = [False] * self.iNumPlots
-        self.coast_adjacency_map = [False] * self.iNumPlots
-
-        # Calculate river adjacency
-        for i in range(self.iNumPlots):
-            x, y = self.get_coords_from_index(i)
-
-            # Check if tile itself has a river
-            if self.is_river_tile(i):
-                self.river_adjacency_map[i] = True
-                continue
-
-            # Check adjacent tiles for rivers
-            for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
-                adj_index = self.neighbours[i][direction]
-                if adj_index != -1 and self.is_river_tile(adj_index):
-                    self.river_adjacency_map[i] = True
-                    break
-
-        # Calculate coast adjacency
-        for i in range(self.iNumPlots):
-            if self.plot_types[i] == 3:  # PLOT_OCEAN
-                self.coast_adjacency_map[i] = True
-                continue
-
-            # Check adjacent tiles for ocean
-            for direction in range(1, 9):
-                adj_index = self.neighbours[i][direction]
-                if adj_index != -1 and self.plot_types[adj_index] == 3:  # PLOT_OCEAN
-                    self.coast_adjacency_map[i] = True
-                    break
-
     # Utility functions for XML integration
     def get_terrain_id(self, terrain_string):
         """Convert terrain string to game ID, with error handling"""

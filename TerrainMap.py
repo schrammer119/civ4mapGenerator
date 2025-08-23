@@ -347,7 +347,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.9,  # Sparse mediterranean woodland
+                    'coverage': 0.8,  # Sparse mediterranean woodland
                     'placement_rules': {
                         'prefer_hills': True,
                         'cluster_factor': 0.5,
@@ -372,7 +372,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 0.95,
+                    'coverage': 0.9,
                     'placement_rules': {
                         'cluster_factor': 0.8,
                     }
@@ -396,7 +396,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.9,
+                    'coverage': 0.8,
                     'placement_rules': {
                         'prefer_rivers': True,
                         'cluster_factor': 0.6,
@@ -443,7 +443,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 0,  # Broadleaf
-                    'coverage': 0.95,
+                    'coverage': 0.9,
                     'placement_rules': {
                         'cluster_factor': 0.9,
                     }
@@ -467,7 +467,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 1,  # Evergreen
-                    'coverage': 0.95,
+                    'coverage': 0.9,
                     'placement_rules': {
                         'cluster_factor': 0.95,
                     }
@@ -490,7 +490,7 @@ class TerrainMap:
                 'terrain': 'TERRAIN_GRASS',
                 'feature': {
                     'type': 'FEATURE_JUNGLE',
-                    'coverage': 0.95,
+                    'coverage': 0.9,
                     'placement_rules': {
                         'cluster_factor': 0.85,
                     }
@@ -536,7 +536,7 @@ class TerrainMap:
                 'feature': {
                     'type': 'FEATURE_FOREST',
                     'subtype': 2,  # Snowy Evergreen
-                    'coverage': 0.95,
+                    'coverage': 0.9,
                     'placement_rules': {
                         'cluster_factor': 0.8,
                     }
@@ -595,17 +595,14 @@ class TerrainMap:
             'placement_rules': [                        # List of placement rule sets
                 {
                     # === CONDITION TYPES ===
-                    'condition': 'string',              # Rule trigger condition:
+                    'conditions': list('string'),              # Rule trigger condition:
                     #   'river_tile' - Must be adjacent to river
                     #   'terrain_match' - Must be on specific terrain
                     #   'climate_match' - Must meet climate requirements
                     #   'plot_match' - Must be on specific plot type
                     #   'biome_match' - Must be in specific biome
-                    #   'distance_from' - Distance-based placement
-                    #   'always' - Always attempt placement
 
                     # === FILTERS AND REQUIREMENTS ===
-                    'required': bool,                   # Must meet this condition (vs optional bonus)
                     'terrain_filter': ['TERRAIN_TYPES'], # Only on these terrain types
                     'biome_filter': ['biome_names'],    # Only in these biomes
                     'plot_requirements': ['plot_types'], # Required plot types:
@@ -613,8 +610,8 @@ class TerrainMap:
 
                     # === CLIMATE REQUIREMENTS ===
                     'climate_requirements': {
-                        'temp_range': (float, float),   # Temperature percentile requirements
-                        'precip_range': (float, float), # Precipitation percentile requirements
+                        'temp_range': (float, float),   # Temperature percentile requirements (optional)
+                        'precip_range': (float, float), # Precipitation percentile requirements (optional)
                         'wind_range': (float, float),   # Wind speed requirements (optional)
                         'pressure_range': (float, float), # Pressure requirements (optional)
                     },
@@ -624,16 +621,12 @@ class TerrainMap:
                     #   'probability' - Random chance per eligible tile
                     #   'scattered' - Random scattered placement with constraints
                     #   'clustered' - Group placement in patches
-                    #   'linear' - Along linear features (rivers, coasts)
-                    #   'radial' - Around specific points
 
                     # === PLACEMENT PARAMETERS ===
                     'probability': float (0.0-1.0),    # Chance per eligible tile
                     'density': float (0.0-1.0),        # Fraction of eligible tiles to target
                     'cluster_size': int,               # Average size of feature clusters
                     'min_distance': int,               # Minimum distance between features
-                    'max_distance': int,               # Maximum distance between features
-                    'spread_factor': float (0.0-1.0),  # How spread out to make placement
                 }
             ]
         },
@@ -644,22 +637,15 @@ class TerrainMap:
                 'base_feature': 'FEATURE_FLOOD_PLAINS',
                 'placement_rules': [
                     {
-                        'condition': 'river_tile',
-                        'required': True,
-                        'terrain_filter': ['TERRAIN_DESERT'],  # Game engine flaw - always on desert rivers
-                        'placement_method': 'probability',
-                        'probability': 1.0,
-                    },
-                    {
-                        'condition': 'river_tile',
+                        'conditions': ['river_tile', 'terrain_match', 'climate_match', 'plot_match'],
                         'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS'],
                         'climate_requirements': {
-                            'temp_range': (0.40, 1.00),  # Warm climates
-                            'precip_range': (0.30, 0.80),  # Moderate to high rainfall
+                            'precip_range': (0.5, 1.0),  # Moderate to high rainfall
                         },
                         'plot_requirements': ['plot_flat'],  # Flat river areas
-                        'placement_method': 'probability',
-                        'probability': 0.6,
+                        'placement_method': 'clustered',
+                        'density': 0.2,
+                        'cluster_size': 2,
                     },
                 ]
             },
@@ -668,11 +654,10 @@ class TerrainMap:
                 'base_feature': 'FEATURE_OASIS',
                 'placement_rules': [
                     {
-                        'condition': 'terrain_match',
+                        'conditions': 'terrain_match',
                         'terrain_filter': ['TERRAIN_DESERT'],
-                        'required': True,
                         'placement_method': 'scattered',
-                        'density': 0.05,  # 5% of desert tiles eligible
+                        'density': 0.1,  # 10% of desert tiles eligible
                         'cluster_size': 1,  # Single tile oases
                         'min_distance': 3,  # Minimum 3 tiles apart
                     },
@@ -1000,10 +985,18 @@ class TerrainMap:
                 river_adjacency_map[i] = True
                 continue
 
-            # Check adjacent tiles for rivers
-            for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
-                adj_index = self.mc.neighbours[i][direction]
-                if adj_index != -1 and self._is_river_tile(adj_index):
+            # Check only appropriate neighbours
+            dir_list = [self.mc.E, self.mc.W, self.mc.NE, self.mc.NW]
+            for direction in dir_list:
+                neighbour_index = self.mc.neighbours[i][direction]
+                if 0 <= neighbour_index < self.mc.iNumPlots and self.cm.north_of_rivers[neighbour_index]:
+                    river_adjacency_map[i] = True
+                    break
+
+            dir_list = [self.mc.N, self.mc.S, self.mc.NW, self.mc.SW]
+            for direction in dir_list:
+                neighbour_index = self.mc.neighbours[i][direction]
+                if 0 <= neighbour_index < self.mc.iNumPlots and self.cm.west_of_rivers[neighbour_index]:
                     river_adjacency_map[i] = True
                     break
 
@@ -1438,7 +1431,7 @@ class TerrainMap:
 
         return True
 
-    def _check_xml_feature_constraints(self, tile_index, feature_type):
+    def _check_xml_feature_constraints(self, tile_index, feature_type, is_floodplains=False):
         """Check XML-defined feature constraints (implemented by MapConfig)"""
         feature_id = self.gc.getInfoTypeForString(feature_type)
         constraints = self.feature_constraints.get(feature_id, {})
@@ -1457,14 +1450,19 @@ class TerrainMap:
             if not self.mc.is_adjacent_to_river(tile_index):
                 return False
 
+        if constraints.get('bNoRiver', False):
+            if self.mc.is_adjacent_to_river(tile_index):
+                return False
+
         if constraints.get('bNoAdjacent', False):
             if self.mc.is_adjacent_to_feature(tile_index, feature_type):
                 return False
 
         # Check terrain compatibility
-        allowed_terrains = constraints.get('terrain_booleans', [])
-        if allowed_terrains and self.terrain_map[tile_index] not in allowed_terrains:
-            return False
+        if not is_floodplains:
+            allowed_terrains = constraints.get('TerrainBooleans', [])
+            if allowed_terrains and self.terrain_map[tile_index] not in allowed_terrains:
+                return False
 
         # More constraint checks would be implemented in MapConfig
         return True
@@ -1482,7 +1480,7 @@ class TerrainMap:
     def _apply_secondary_feature_rules(self, feature_name, feature_def):
         """Apply secondary feature placement rules"""
         for rule in feature_def['placement_rules']:
-            eligible_tiles = self._find_eligible_tiles_for_rule(rule)
+            eligible_tiles = self._find_eligible_tiles_for_rule(rule, feature_def['base_feature'])
 
             placement_method = rule.get('placement_method', 'probability')
 
@@ -1490,37 +1488,37 @@ class TerrainMap:
                 self._place_scattered_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             elif placement_method == 'clustered':
                 self._place_clustered_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
-            elif placement_method == 'linear':
-                self._place_linear_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
-            elif placement_method == 'radial':
-                self._place_radial_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
             else:  # Default to probability
                 self._place_probability_features(eligible_tiles, feature_def['base_feature'], feature_def.get('subtype',0), rule)
 
-    def _find_eligible_tiles_for_rule(self, rule):
+    def _find_eligible_tiles_for_rule(self, rule, base_feature):
         """Find tiles that meet the rule conditions"""
         eligible = []
 
         for tile_index in range(len(self.terrain_map)):
-            if self._tile_meets_rule_conditions(tile_index, rule):
+            if self._tile_meets_rule_conditions(tile_index, rule, base_feature):
                 eligible.append(tile_index)
 
         return eligible
 
-    def _tile_meets_rule_conditions(self, tile_index, rule):
+    def _tile_meets_rule_conditions(self, tile_index, rule, base_feature, is_floodplains = False):
         """Check if a tile meets all conditions for a rule"""
-        condition = rule['condition']
+        conditions = rule.get('conditions', [])
+        if not isinstance(conditions, list):
+            conditions = [conditions]
 
-        if condition == 'always':
-            pass  # Always meets condition
-        elif condition == 'river_tile':
+        if not self._check_xml_feature_constraints(tile_index, base_feature, is_floodplains):
+            return False
+        elif len(conditions) == 0:
+            return True  # No conditions means always eligible
+        elif 'river_tile' in conditions:
             if not self.mc.is_adjacent_to_river(tile_index):
                 return False
-        elif condition == 'terrain_match':
+        elif 'terrain_match' in conditions:
             terrain_filter = rule.get('terrain_filter', [])
             if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
                 return False
-        elif condition == 'plot_match':
+        elif 'plot_match' in conditions:
             plot_requirements = rule.get('plot_requirements', [])
             plot_type = self.em.plotTypes[tile_index]
             meets_plot_req = False
@@ -1533,30 +1531,25 @@ class TerrainMap:
                     meets_plot_req = True
             if plot_requirements and not meets_plot_req:
                 return False
-        elif condition == 'biome_match':
+        elif 'biome_match' in conditions:
             biome_filter = rule.get('biome_filter', [])
             if biome_filter and self.biome_assignments[tile_index] not in biome_filter:
                 return False
-        elif condition == 'climate_match':
-            pass  # Handled below
-        elif condition == 'distance_from':
-            # TODO: Implement distance-based placement conditions
-            # This would check distance from specific features, biomes, or landmarks
-            pass
 
         # Check climate requirements
         climate_req = rule.get('climate_requirements', {})
-        if climate_req:
-            temp = self.cm.temperature_percentiles[tile_index]
-            precip = self.cm.rainfall_percentiles[tile_index]
+        if 'climate_match' in conditions and climate_req:
+            if 'temp_range' in climate_req:
+                temp = self.cm.temperature_percentiles[tile_index]
+                temp_range = climate_req.get('temp_range')
+                if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
+                    return False
 
-            temp_range = climate_req.get('temp_range')
-            if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
-                return False
-
-            precip_range = climate_req.get('precip_range')
-            if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
-                return False
+            if 'precip_range' in climate_req:
+                precip = self.cm.rainfall_percentiles[tile_index]
+                precip_range = climate_req.get('precip_range')
+                if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
+                    return False
 
             # Check wind and pressure if specified
             if 'wind_range' in climate_req:
@@ -1632,18 +1625,6 @@ class TerrainMap:
                     self.feature_subtype_map[tile] = feature_subtype
                     placed_in_cluster += 1
 
-    def _place_linear_features(self, eligible_tiles, feature_type, feature_subtype, rule):
-        """Place features using linear placement method (along rivers, coasts)"""
-        # TODO: Implement proper linear feature placement along rivers/coastlines
-        # For now, defaulting to probability placement
-        self._place_probability_features(eligible_tiles, feature_type, feature_subtype, rule)
-
-    def _place_radial_features(self, eligible_tiles, feature_type, feature_subtype, rule):
-        """Place features using radial placement method (around points)"""
-        # TODO: Implement proper radial feature placement around specific points
-        # For now, defaulting to probability placement
-        self._place_probability_features(eligible_tiles, feature_type, feature_subtype, rule)
-
     def _place_probability_features(self, eligible_tiles, feature_type, feature_subtype, rule):
         """Place features using probability method"""
         probability = rule.get('probability', 0.5)
@@ -1682,42 +1663,30 @@ class TerrainMap:
         2. Using our own terrain rules instead
         3. Assuming automatic placement on XML-compatible terrains, manual on others
         """
-        # Get XML-compatible terrains for floodplains (from game engine)
-        xml_compatible_terrains = self.feature_constraints.get(FeatureTypes.FEATURE_FLOOD_PLAINS, {}).get('TerrainBooleans', [])
 
         for tile_index in range(len(self.terrain_map)):
-            if self.em.plotTypes[tile_index] != PlotTypes.PLOT_LAND:  # Only flat tiles
-                continue
-
-            if not self._is_river_tile(tile_index):  # Only river tiles
-                continue
-
-            terrain = self.terrain_map[tile_index]
-
             # Check if terrain will get automatic floodplains from game engine
-            if terrain in xml_compatible_terrains:
+            if self._tile_meets_rule_conditions(tile_index, {}, 'FEATURE_FLOOD_PLAINS'):
                 # Game engine will automatically place floodplains here
                 # We just mark it in our tracking but don't place manually
                 self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
                 self.feature_subtype_map[tile_index] = 0
-            else:
-                # Use our custom rules for non-XML terrains
-                for rule in feature_def['placement_rules']:
-                    if self._tile_meets_floodplains_rule(tile_index, rule):
-                        if random.random() <= rule.get('probability', 0.5):
-                            self.feature_map[tile_index] = FeatureTypes.FEATURE_FLOOD_PLAINS
-                            self.feature_subtype_map[tile_index] = 0
-                        break  # Only apply first matching rule
 
-    def _tile_meets_floodplains_rule(self, tile_index, rule):
-        """Check if tile meets floodplains rule (ignoring XML terrain booleans)"""
-        # Skip the XML terrain boolean check for floodplains
-        terrain_filter = rule.get('terrain_filter', [])
-        if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
-            return False
+        # Use our custom rules for non-XML terrains
+        for rule in feature_def['placement_rules']:
+            eligible = []
+            for tile_index in range(len(self.terrain_map)):
+                if self._tile_meets_rule_conditions(tile_index, rule, 'FEATURE_FLOOD_PLAINS', True):
+                    eligible.append(tile_index)
 
-        # Check other conditions normally
-        return self._tile_meets_rule_conditions(tile_index, rule)
+            placement_method = rule.get('placement_method', 'probability')
+
+            if placement_method == 'scattered':
+                self._place_scattered_features(eligible, feature_def['base_feature'], feature_def.get('subtype',0), rule)
+            elif placement_method == 'clustered':
+                self._place_clustered_features(eligible, feature_def['base_feature'], feature_def.get('subtype',0), rule)
+            else:  # Default to probability
+                self._place_probability_features(eligible, feature_def['base_feature'], feature_def.get('subtype',0), rule)
 
     @profile
     def _place_resources(self):
