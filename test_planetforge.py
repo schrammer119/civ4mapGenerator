@@ -453,7 +453,7 @@ if True:
     # Labels and formatting
     ax.set_xlabel('Rainfall Percentile (%)', fontsize=12)
     ax.set_ylabel('Temperature Percentile (%)', fontsize=12)
-    ax.set_title('Biome Assignment Analysis with Target Comparison\\n(Background: TerrainMap\'s %dx%d Grid, Points: Actual Assignments)' % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE), fontsize=14)
+    ax.set_title('Biome Assignment Analysis with Target Comparison\n(Background: TerrainMap\'s %dx%d Grid, Points: Actual Assignments)' % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE), fontsize=14)
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
 
@@ -504,7 +504,7 @@ if True:
 
     # Add target color legend
     target_legend_elements = [
-        mpatches.Patch(color='#90EE90', label='On Target (+/-1.5%)'),
+        mpatches.Patch(color='#90EE90', label='On Target (+/-2.0%)'),
         mpatches.Patch(color='#FFB6C1', label='Over Target'),
         mpatches.Patch(color='#87CEEB', label='Under Target')
     ]
@@ -517,12 +517,15 @@ if True:
     n_tiles = len(land_indices)
     n_biomes = len(biome_counts)
 
-    ax.text(0.02, 0.98, "Total Land Tiles: %d\\nUnique Biomes: %d\\nGrid Gaps: %d/%d cells (%.1f%%)" %
+    ax.text(0.02, 0.98, "Total Land Tiles: %d\nUnique Biomes: %d\nGrid Gaps: %d/%d cells (%.1f%%)" %
             (n_tiles, n_biomes, no_biome_cells, total_grid_cells, no_biome_pct),
             transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
 
     plt.tight_layout()
+
+    # Adjust layout to accommodate external legend
+    plt.subplots_adjust(right=0.75)
 
     # === PLOT 2: BIOME RANGE DEBUG VISUALIZATION ===
     # Create biome range visualization
@@ -577,7 +580,7 @@ if True:
     ax.set_ylim(0, 100)
     ax.set_xlabel('Rainfall Percentile (%)', fontsize=14)
     ax.set_ylabel('Temperature Percentile (%)', fontsize=14)
-    ax.set_title('Biome Range Coverage Map\\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
+    ax.set_title('Biome Range Coverage Map\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
 
     # Add grid for easier reading
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -604,7 +607,7 @@ if True:
     plt.tight_layout()
 
     # Print summary statistics with target analysis
-    print("\\n=== BIOME TARGET ANALYSIS ===")
+    print("\n=== BIOME TARGET ANALYSIS ===")
     print("Using TerrainMap's %dx%d biome grid (%.1f%% resolution)" % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0/(tm.BIOME_GRID_SIZE-1)))
     print("Biome Name               Actual    Target    Status")
     print("-" * 55)

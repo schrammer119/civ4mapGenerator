@@ -541,7 +541,7 @@ class TerrainMap:
                         'cluster_factor': 0.8,
                     }
                 },
-                'temp_range': (0.00, 0.45),
+                'temp_range': (0.04, 0.45),
                 'precip_range': (0.20, 1.00),
                 'base_weight': 1.0,
                 'scoring_factors': {
@@ -1240,6 +1240,12 @@ class TerrainMap:
         self.feature_patches = {}
         self.placed_features = {}
 
+        # Extract lake tiles from ClimateMap for special ice generation rules
+        self.lake_tiles = set()
+        if hasattr(self.cm, 'lake_data') and self.cm.lake_data:
+            for lake in self.cm.lake_data['lakes']:
+                self.lake_tiles.update(lake['final_tiles'])
+
         for tile_index in range(len(self.terrain_map)):
             biome_name = self.biome_assignments[tile_index]
             biome_def = self.biome_definitions[biome_name]
@@ -1259,6 +1265,11 @@ class TerrainMap:
         # Check basic placement rules first
         if not self._check_feature_placement_rules(tile_index, feature_def):
             return False
+
+        # Special handling for lake ice generation
+        if (tile_index in self.lake_tiles and
+            feature_def.get('type') == 'FEATURE_ICE'):
+            return self._should_place_lake_ice(tile_index)
 
         rules = feature_def.get('placement_rules', {})
         cluster_factor = rules.get('cluster_factor', 0.0)
@@ -1290,6 +1301,11 @@ class TerrainMap:
             return 0.0
 
         ftype = feature_def.get('type')
+
+        # Override for lake ice - return 0.0 to skip normal coverage calculation
+        # Lakes use special neighbor-based rules instead
+        if (tile_index in self.lake_tiles and ftype == 'FEATURE_ICE'):
+            return 0.0
 
         # Read placement rule for temperature-scaled coverage (optional)
         rules = feature_def.get('placement_rules', {})
@@ -1338,6 +1354,26 @@ class TerrainMap:
             return 0.0
 
         return feature_neighbours / float(total_neighbours)
+
+    def _count_snow_neighbors(self, tile_index):
+        """Count cardinal neighbors (N,S,E,W) with snow terrain"""
+        snow_count = 0
+        terrain_snow_id = self.gc.getInfoTypeForString('TERRAIN_SNOW')
+
+        # Check only cardinal directions (N,S,E,W)
+        for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
+            neighbor_idx = self.mc.neighbours[tile_index][direction]
+            if neighbor_idx >= 0 and neighbor_idx < len(self.terrain_map):
+                if self.terrain_map[neighbor_idx] == terrain_snow_id:
+                    snow_count += 1
+
+        return snow_count
+
+    def _should_place_lake_ice(self, tile_index):
+        """Determine if ice should be placed on a lake tile based on snow neighbors"""
+        snow_neighbor_count = self._count_snow_neighbors(tile_index)
+        # Require at least 3 out of 4 cardinal neighbors to have snow terrain
+        return snow_neighbor_count >= 2
 
     def _check_patch_size_limits(self, tile_index, feature_def):
         """Check if placing feature would violate patch size limits"""
