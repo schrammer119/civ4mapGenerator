@@ -3,6 +3,7 @@ from MapConfig import MapConfig
 from ElevationMap import ElevationMap
 from ClimateMap import ClimateMap
 import random
+import math
 from Wrappers import *
 
 class TerrainMap:
@@ -1545,16 +1546,20 @@ class TerrainMap:
 
         if not self._check_xml_feature_constraints(tile_index, base_feature, is_floodplains):
             return False
-        elif len(conditions) == 0:
+
+        if len(conditions) == 0:
             return True  # No conditions means always eligible
-        elif 'river_tile' in conditions:
+
+        if 'river_tile' in conditions:
             if not self.mc.is_adjacent_to_river(tile_index):
                 return False
-        elif 'terrain_match' in conditions:
-            terrain_filter = rule.get('terrain_filter', [])
+
+        if 'terrain_match' in conditions:
+            terrain_filter = [self.gc.getInfoTypeForString(t) for t in rule.get('terrain_filter', [])]
             if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
                 return False
-        elif 'plot_match' in conditions:
+
+        if 'plot_match' in conditions:
             plot_requirements = rule.get('plot_requirements', [])
             plot_type = self.em.plotTypes[tile_index]
             meets_plot_req = False
@@ -1567,7 +1572,8 @@ class TerrainMap:
                     meets_plot_req = True
             if plot_requirements and not meets_plot_req:
                 return False
-        elif 'biome_match' in conditions:
+
+        if 'biome_match' in conditions:
             biome_filter = rule.get('biome_filter', [])
             if biome_filter and self.biome_assignments[tile_index] not in biome_filter:
                 return False
@@ -1622,7 +1628,9 @@ class TerrainMap:
             # Check minimum distance
             too_close = False
             for placed_tile in placed_features:
-                if self.mc.get_wrapped_distance(candidate, placed_tile) < min_distance:
+                x1, y1 = self.mc.get_coords_from_index(candidate)
+                x2, y2 = self.mc.get_coords_from_index(placed_tile)
+                if math.sqrt(sum(x**2 for x in self.mc.get_wrapped_distance(x1, y1, x2, y2))) < min_distance:
                     too_close = True
                     break
 
