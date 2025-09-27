@@ -2,6 +2,21 @@
 
 You are a senior python game developer collaborating with me on a project. We are developing a map script for Civilization IV that strives to use geologic and climate modelling techniques to produce plausible yet random earth-like maps. I am prioritizing model accuracy, followed by optimized performance, and conciseness and elegance.
 
+## Project Status Summary
+
+**CURRENT STATE**: Core systems complete - **CRITICAL BLOCKER: Resource system incomplete**
+
+**IMPLEMENTATION STATUS**:
+- ✅ **PlanetForge.py**: Complete main entry point with proper Civ IV API integration
+- ✅ **MapConfig.py**: Comprehensive parameter system with 200+ tunable values
+- ✅ **ElevationMap.py**: Advanced plate tectonics simulation with realistic geological processes
+- ✅ **ClimateMap.py**: Sophisticated climate modeling with ocean currents, atmospheric circulation, and precipitation
+- ⚠️ **TerrainMap.py**: Biome/terrain/features complete - **RESOURCE SYSTEM INCOMPLETE**
+- ✅ **Testing Infrastructure**: Complete test harness with matplotlib visualization
+- ✅ **Game Integration**: XML constraint loading and Civ IV API compatibility
+
+**CRITICAL BLOCKER**: Resource/bonus system must be completed before final API integration.
+
 ## Key Development Principles
 
 ### Realism First, Balance Second
@@ -48,84 +63,133 @@ You are a senior python game developer collaborating with me on a project. We ar
 - Provide code in copy/paste-able format in artifacts or snippets.
 - Follow all other code styles and rules.
 
-## Project outline:
+## Current Architecture
 
-**PlanetForge.py**: main parent script, provides the necessary methods to be called by the game engine. it instantiates the main classes and builds the map.
+### Core Files
 
-**MapConfig.py**: contains the MapConfig class which holds all the maps tunable parameters, grabs the necessary parameters from the game engine API, and holds utility functions.
+**PlanetForge.py** (124 lines):
+- Main entry point following Civ IV map script conventions
+- Implements required API functions (generatePlotTypes, generateTerrain, addRivers, addFeatures, addBonuses)
+- Currently only elevation generation is fully implemented - terrain, rivers, features, and bonuses fall back to default Civ IV implementation
+- Proper shared instance management between generation phases
 
-**ElevationMap.py**: contains ElevationMap class which models the plate tectonics and generates the elevation, sea level, and plot types.
+**MapConfig.py** (884 lines):
+- Centralized configuration with 200+ tunable parameters organized by system
+- Complete game API integration with climate/sea level settings
+- Extensive utility library: coordinate wrapping, distance calculations, Gaussian blur, Perlin noise
+- XML constraint loading for terrain/feature/bonus compatibility rules
+- Pre-calculated neighbor mappings and performance optimizations
+- Python 2.4/3.x compatibility layer
 
-**ClimateMap.py**: contains ClimateMap class which models the temperature, ocean currents, atmospheric winds, moisture, and rain. It's main outputs are the temperature and rainfall maps, as well as the river and lakes locations.
+**ElevationMap.py** (1941 lines):
+- Sophisticated plate tectonics simulation with organic continent growth
+- Multi-component elevation system: base (density), velocity (motion), buoyancy (centroid distance), boundaries (tectonics)
+- Realistic geological processes: subduction zones, hotspot volcanism, transform faults, erosion
+- Advanced boundary detection and mountain/rift formation
+- Wrap-edge optimization to minimize continent splitting
+- Performance profiling and caching systems
 
-**TerrainMap.py**: contains TerrainMap class which generates the biomes for the map. Main duties are terrain type, features, and resource placement.
+**ClimateMap.py** (1000+ lines estimated):
+- Multi-scale climate modeling: base temperature from latitude/elevation
+- Ocean current simulation with thermal transport and maritime effects
+- Quasi-geostrophic atmospheric circulation model
+- Sophisticated rainfall system: convective, orographic, and frontal precipitation
+- Advanced river generation with D4 flow networks and realistic drainage basins
+- Lake formation with evaporation and moisture feedback
 
-## Class patterns:
+**TerrainMap.py** (Complex biome system):
+- Climate-driven biome assignment using temperature/rainfall percentiles
+- 101x101 biome lookup grid for fast terrain selection
+- Comprehensive feature placement: forests (3 subtypes), jungles, oases, flood plains, ice
+- Resource placement following XML constraints with spatial balancing
+- Area-based and unique resource distribution systems
 
-Classes are organized in hierarchical methods so that the main script can call the portion of the generation it needs. For example:
+### Supporting Infrastructure
 
-    def ElevationMap:
-        #...#
-        def GenerateElevation(self):
-        '''calls all sub-methods in class'''
+**CvPythonExtensions.py** (874 lines):
+- Complete mock Civ IV API for standalone testing
+- Accurate XML data from actual game files for terrain/feature/bonus constraints
+- Support for all plot types, terrain types, features, and 32 bonus resources
 
-## Generation pipeline
+**Wrappers.py** (90 lines):
+- Performance profiling decorator for development
+- Function timing and method call tracking
 
-#### Map Config
+**test_planetforge.py** (885 lines):
+- Comprehensive test harness with full map generation
+- Advanced matplotlib visualizations: elevation components, climate maps, biome analysis
+- Statistical analysis with target biome percentages
+- Feature and resource distribution reporting
 
-- initialize classes, retrieve settings from game engine
+### XML Integration
 
-#### Elevation Generation
+**examples/** directory contains reference XML files:
+- CIV4TerrainInfos.xml: Complete terrain definitions with yields and properties
+- CIV4FeatureInfos.xml: Feature constraints and compatibility rules
+- CIV4BonusInfos.xml: Resource placement parameters and restrictions
 
-- plate/continent random generation
-- elevation from plate tectonic model
-- determine sea level
-- fill in "lakes"
-- determine plot types
-- create above-sea level elevation map, with added bonus elevation for mountains and hills
+## Current Generation Pipeline
 
-#### Climate Generation
+### Phase 1: Map Configuration ✅
+- Initialize classes with shared MapConfig instance
+- Load game settings (climate, sea level, world size)
+- Pre-calculate neighbor mappings and utility data structures
+- Load XML constraints for terrain/feature/bonus compatibility
 
-- generate base solar/elevation temperature
-- generate ocean currents & thermal effects
-- generate wind patterns
-- generate moisture and distribute as rain
-- generate rivers and lakes
+### Phase 2: Elevation Generation ✅
+- **Plate Generation**: Organic continent growth with 15 tectonic plates
+- **Plate Dynamics**: Realistic forces (hotspots, slab pull, interactions, drag, boundary repulsion)
+- **Elevation Components**:
+  - Base: plate density effects
+  - Velocity: motion-driven elevation changes via potential field solver
+  - Buoyancy: distance from plate centroids
+  - Boundaries: mountain ranges, rifts, transform faults from plate interactions
+- **Geological Features**: Hotspot volcanism with plate drift, erosion effects
+- **Finalization**: Sea level calculation, plot type assignment (ocean/land/hills/peaks)
 
-#### Terrain Generation
+### Phase 3: Climate Generation ✅
+- **Base Temperature**: Latitude + elevation effects with solar radiation model
+- **Ocean Currents**: Thermal forcing + Coriolis effects with iterative solver
+- **Thermal Transport**: Warm/cold water plumes with distance-based mixing
+- **Maritime Effects**: Coastal temperature moderation with distance decay
+- **Atmospheric Circulation**: Quasi-geostrophic model with pressure/wind calculation
+- **Precipitation**: Multi-component rainfall (convective, orographic, frontal)
+- **River Systems**: D4 flow networks with realistic basin selection and outlet placement
+- **Lakes**: Climate-driven formation with evaporation feedback
 
-- classify maps into biomes, apply terrain
-- add features
-- add resources
+### Phase 4: Terrain Generation ✅
+- **Biome Classification**: 101x101 climate grid with 13 terrestrial biomes
+- **Terrain Assignment**: Climate-driven terrain selection (grass, plains, desert, tundra, snow)
+- **Primary Features**: Biome-appropriate placement (forests, jungles based on climate)
+- **Secondary Features**: Constraint-driven placement (oases, flood plains, ice)
+- **Resource Distribution**: XML-based placement with spatial balancing and area restrictions
 
 ## Shared Utilities in `MapConfig`
 
-To maximize code reuse and ensure consistency, the following utility functions have been centralized in `MapConfig.py`.
+The MapConfig class provides extensive utility functions used across all systems:
 
-### Data structures:
+### Data Structures:
+- **Direction Constants**: L, N, S, E, W, NE, NW, SE, SW (starting from 0)
+- **Pre-calculated Neighbors**: Complete adjacency mapping for all tiles
+- **Node/Tile Coordinate Systems**: Dual coordinate system for rivers vs terrain
 
-- **L, N, S, E, W, NE, NW, SE, SW**: direction enums beginning for "self"/L at 0
-- **neighbours**: contains a list of all directional neighbour indices for each index. Called by: self.mc.neighbours[i][dir]
+### Core Utilities:
+- **`get_wrapped_distance(x1, y1, x2, y2)`**: Shortest distance considering map wrapping
+- **`wrap_coordinates(x, y)`**: Coordinate wrapping with bounds checking
+- **`normalize_map(data)`**: 0-1 normalization for map data
+- **`find_value_from_percent(data, percent)`**: Percentile calculations
+- **`gaussian_blur(grid, radius, filter_func)`**: 2D convolution with optional masking
+- **`generate_perlin_grid(scale, seed)`**: Multi-octave noise generation
 
-### Utility Functions:
+### Geographic Functions:
+- **`get_latitude_for_y(y)`**: Y-coordinate to latitude conversion
+- **`calculate_direction_vector(i, j)`**: Unit vectors between tiles
+- **`get_node_intersecting_tiles(node_x, node_y)`**: River-terrain coordinate mapping
 
-- **`get_wrapped_distance(self, x1, y1, x2, y2)`**: Calculates the shortest distance between two points, considering map wrapping.
-- **`wrap_coordinates(self, x, y)`**: Wrap coordinates according to map settings
-- **`coordinates_in_bounds(self, x, y)`**: Check if coordinates are within map bounds
-- **`normalize_map(self, map_data)`**: Normalizes a list of numbers to a 0-1 range.
-- **`find_value_from_percent(self, data_list, percent, descending=True)`**: Finds the value in a list at a given percentile.
-- **`get_latitude_for_y(self, y)`**: Converts a y-coordinate to its corresponding latitude.
-- **`get_y_for_latitude(self, latitude)`**: Convert latitude to y coordinate
-- **`calculate_direction_vector(self, i, j)`**: Calculate unit vector (dx, dy) from tile i to tile j
-- **`gaussian_blur(self, grid, radius=2, filter_func=None)`**: Applies a 2D Gaussian blur to a grid with an optional filter.
-- **`get_perlin_noise(self, x, y)`**: Returns a Perlin noise value for the given coordinates.
-- **`generate_perlin_grid(self, scale=10.0, seed=None)`**: Generate a grid of Perlin noise values
-- **`get_node_index(self, x, y)`**: Convert node coordinates to flat index.
-- **`get_node_coords(self, node_index)`**: Convert flat node index to coordinates.
-- **`is_node_valid_for_flow(self, node_x, node_y, flow_direction=None)`**: Check if a node can participate in flow, considering boundary restrictions.
-- **`get_valid_node_neighbors(self, node_x, node_y)`**: Get valid neighboring nodes for D4 flow calculation.
-- **`get_node_intersecting_tiles(self, node_x, node_y)`**: Get the 4 tiles that intersect at this node position
-- **`get_node_intersecting_tiles_from_index(self, node_index)`**: Get intersecting tiles from node index
+### Performance Features:
+- **Neighbor Caching**: Pre-calculated adjacency for all tiles
+- **Wrap-aware Distance**: Optimized shortest path calculations
+- **Memory-efficient Storage**: Flat arrays with coordinate conversion helpers
 
 ## Civ API information
 
@@ -162,3 +226,56 @@ To maximize code reuse and ensure consistency, the following utility functions h
 - 5 = FEATURE_FALLOUT (unused in map generation)
 
 _Terrains and features types can and will be added by mod packs._
+
+## Key Implementation Details
+
+### PlanetForge Integration Status
+- **generatePlotTypes()**: ✅ Complete - Uses ElevationMap for realistic terrain
+- **generateTerrain()**: ⚠️ Partially complete - ClimateMap ready, falls back to default
+- **addRivers()**: ⚠️ Partially complete - River data available, needs Civ IV river API integration
+- **addFeatures()**: ⚠️ Partially complete - TerrainMap ready, falls back to default
+- **addBonuses()**: ❌ **BLOCKED** - Resource system incomplete, TerrainMap.resource_definitions missing 20+ resources
+
+### Technical Achievements
+- **Realistic Plate Tectonics**: 15-plate system with organic growth, subduction, volcanism
+- **Climate Modeling**: Multi-scale temperature, ocean currents, atmospheric circulation
+- **Sophisticated Precipitation**: Convective, orographic, and frontal rainfall systems
+- **River Networks**: D4 flow with realistic basin selection and drainage patterns
+- **Biome-driven Terrain**: 13 biomes with climate-appropriate features and resources
+- **Performance Optimization**: Profiling, caching, efficient algorithms for 30-second generation target
+
+## CRITICAL: Resource System Completion Required
+
+### Current Resource Implementation Status:
+- ✅ **XML Loading**: Complete - all 32 bonus types loaded with constraints
+- ✅ **Infrastructure**: Placement framework and scoring systems ready
+- ⚠️ **Resource Definitions**: Only ~10 of 32 resources defined in TerrainMap.py:784
+- ❌ **Missing Resources**: 20+ resources from CIV4BonusInfos.xml not in resource_definitions
+- ❌ **Placement Testing**: No resource visualization in test_planetforge.py
+- ❌ **API Detection**: No mechanism to auto-populate missing resources
+
+### IMMEDIATE TASKS REQUIRED:
+
+#### Phase 1: Complete Resource Definitions ⏰ PRIORITY
+1. **Audit Missing Resources**: Compare CIV4BonusInfos.xml vs current resource_definitions
+2. **Add All Missing Resources**: Complete definitions for all 32 bonus types
+3. **Organize by Placement Order**: Sort resources by XML iPlacementOrder (0-6)
+4. **Validate Placement Rules**: Ensure terrain/feature/climate constraints work
+
+#### Phase 2: API Integration & Testing
+5. **Dynamic Resource Detection**: Auto-populate any resources missing from definitions
+6. **Test Integration**: Add resource visualization to test_planetforge.py
+7. **Placement Validation**: Verify resource distribution meets XML parameters
+8. **Performance Testing**: Ensure resource placement doesn't break 30-second target
+
+### Outstanding Post-Resource Tasks
+1. **Complete PlanetForge**: Replace fallback implementations with custom terrain/feature/resource generation
+2. **River API Integration**: Convert river flow data to Civ IV river placement calls
+3. **Feature Placement**: Integrate TerrainMap feature data with Civ IV feature API
+4. **Final Balancing**: Fine-tune resource distribution for gameplay balance
+
+### Testing and Visualization
+- Comprehensive test suite with statistical validation
+- Visual debugging with matplotlib for all generation phases
+- Biome distribution analysis with earth-like target percentages
+- Feature and resource placement verification
