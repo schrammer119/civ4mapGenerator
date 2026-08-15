@@ -1,16 +1,27 @@
+import argparse
+import os
+import sys
+
 import matplotlib as mpl
 import matplotlib.colors as mcolors
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+
+if "--show" not in sys.argv and not os.environ.get("DISPLAY"):
+    mpl.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
 
-import sys
 if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
     xrange = range
 
 from PlanetSim import *
+
+parser = argparse.ArgumentParser(description="Run the PlanetSim pipeline and optionally display matplotlib diagnostics.")
+parser.add_argument("--show", action="store_true", help="Open the visualization windows for interactive debugging.")
+ARGS = parser.parse_args()
 
 # random.seed(542069)
 
@@ -62,7 +73,7 @@ print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(mc.iNumPlots)*100))
 print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(mc.iNumPlots)*100))
 
 
-if True:
+if ARGS.show:
 
     ## Plots
 
@@ -885,3 +896,5 @@ if True:
         print("\nFeature map not available - TerrainMap may not be fully initialized")
 
     plt.show()
+else:
+    print("Visualization disabled. Re-run with --show to open the diagnostic plots.")

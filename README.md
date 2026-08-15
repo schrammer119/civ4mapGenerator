@@ -29,18 +29,15 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
   - Continental growth, subduction zones, transform faults
   - Hotspot volcanism with plate motion effects
   - Erosion and isostatic adjustment
-  
 - **Climate Modeling** - Multi-scale atmospheric and oceanic systems
   - Solar radiation-based temperature calculation
   - Ocean current simulation with thermal transport
   - Quasi-geostrophic atmospheric circulation
   - Multi-component precipitation (convective, orographic, frontal)
-  
 - **Hydrology** - Realistic river and lake systems
   - D4 flow networks from elevation data
   - Strategic river allocation for gameplay balance
   - Climate-driven lake formation
-  
 - **Terrain Generation** - Climate-appropriate biome assignment
   - 13 terrestrial biomes (polar desert, taiga, tundra, etc.)
   - Biome-appropriate terrain and features
@@ -54,7 +51,7 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 
 ## Performance
 
-- **Generation Time**: 3-4 seconds for standard maps (well under Civ IV's 30-second limit)
+- **Generation Time**: 3-4 seconds for standard maps
 - **Memory Efficient**: Flat array storage with coordinate conversion utilities
 - **Optimized Algorithms**: Caching, pre-calculated utilities, efficient solvers
 
@@ -69,7 +66,6 @@ mapGenerator/
 ├── CvPythonExtensions.py   # Mock Civ IV API for testing
 ├── CvUtil.py               # Utility module
 ├── CLAUDE.md               # Technical documentation
-├── examples/               # Reference XML files
 └── README.md               # This file
 ```
 
@@ -82,6 +78,7 @@ python test_planetsim.py
 ```
 
 This generates matplotlib visualizations of:
+
 - Elevation components (base, velocity, buoyancy, boundaries)
 - Climate maps (temperature, rainfall, wind patterns)
 - River system and watersheds

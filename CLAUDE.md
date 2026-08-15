@@ -21,12 +21,14 @@ You are a senior python game developer collaborating with me on a project. We ar
 **MODULES CONSOLIDATED**: MapConfig, ElevationMap, ClimateMap, TerrainMap, Wrappers all integrated into PlanetSim.py
 
 **KNOWN ISSUES**:
+
 - River generation: Incomplete migration from tracking arrays (north_of_rivers, west_of_rivers) to river_map structure
 - 10+ code TODOs unresolved (resource placement, elevation checking, etc.)
 - Resource/bonus placement visualization missing from test suite
 - Project structure needs reorganization (.gitignore cleanup, folder structure)
 
 **NEXT STEPS** (see FINISH_LINE_TODO.md for complete checklist):
+
 - Phase 0: Complete river_map migration (BLOCKING)
 - Phase 1: Resolve 10+ code TODOs
 - Phase 2: Complete resource placement with visualization
