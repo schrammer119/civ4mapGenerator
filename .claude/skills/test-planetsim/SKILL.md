@@ -5,7 +5,7 @@ description: "Use when verifying PlanetSim pipeline behavior with test_planetsim
 
 # Use the PlanetSim test harness safely
 
-Use this workflow when you need to run the repository's end-to-end map generation harness in [test_planetsim.py](../../test_planetsim.py). This is not a unit test; it is a full pipeline smoke test and diagnostic run. It prints timing, distribution, terrain, river, and climate statistics to the console, and it may also render diagnostic plots for a human viewer.
+Use this workflow when you need to run the repository's end-to-end map generation harness in [test_planetsim.py](../../tests/test_planetsim.py). This is not a unit test; it is a full pipeline smoke test and diagnostic run. It prints timing, distribution, terrain, river, and climate statistics to the console, and it may also render diagnostic plots for a human viewer.
 
 ## What the harness is for
 
@@ -17,7 +17,7 @@ Use this workflow when you need to run the repository's end-to-end map generatio
 ## Default usage
 
 1. Run it in normal bot-safe mode.
-   - `python test_planetsim.py`
+   - `python tests/test_planetsim.py`
    - This should emit the full console output and exit without waiting for a user to close a window.
    - If the environment is headless, the script should use a non-interactive backend automatically.
 
@@ -27,7 +27,7 @@ Use this workflow when you need to run the repository's end-to-end map generatio
    - Look for warnings, failed generation stages, and placement summaries in the output.
 
 3. Use the visual mode only when needed.
-   - `python test_planetsim.py --show`
+   - `python tests/test_planetsim.py --show`
    - This is for a human debugging session where the plots are useful.
    - Keep the default mode free of blocking UI calls.
 
@@ -55,5 +55,5 @@ Use this workflow when you need to run the repository's end-to-end map generatio
 ## Related repo context
 
 - Main generation logic: [PlanetSim.py](../../PlanetSim.py)
-- Harness script: [test_planetsim.py](../../test_planetsim.py)
+- Harness script: [test_planetsim.py](../../tests/test_planetsim.py)
 - Project notes: [CLAUDE.md](../../CLAUDE.md)

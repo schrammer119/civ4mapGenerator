@@ -34,11 +34,11 @@ Must complete before moving to other phases. These are in-progress refactors tha
 
 ### 1.1 Reorganize Project Layout
 
-- [ ] Create `tests/` folder and move test utilities there
-- [ ] Create `tools/` folder for mock API and utilities
-- [ ] Create `docs/` folder for technical documentation
-- [ ] Move test scripts to `tests/`
-- [ ] Update import paths to reflect new structure
+- [x] Create `tests/` folder and move test utilities there
+- [x] Create `tools/` folder for mock API and utilities
+- [x] Create `docs/` folder for technical documentation
+- [x] Move test scripts to `tests/`
+- [x] Update import paths to reflect new structure
 
 **Owner**: Code organization
 **Time**: 1 hour
@@ -46,26 +46,15 @@ Must complete before moving to other phases. These are in-progress refactors tha
 
 ### 1.2 Fix .gitignore
 
-- [ ] Add .vscode/ to tracked files (currently ignored but useful for team)
-- [ ] Remove overly broad patterns that ignore useful files
-- [ ] Add patterns for build artifacts, **pycache**, .pyc files
-- [ ] Add patterns for logs and temporary test outputs
-- [ ] Keep examples/ unignored for reference XML
+- [x] Add .vscode/ to tracked files (currently ignored but useful for team)
+- [x] Remove overly broad patterns that ignore useful files
+- [x] Add patterns for build artifacts, **pycache**, .pyc files
+- [x] Add patterns for logs and temporary test outputs
+- [x] Keep examples/ ignored for large reference XML
 
 **Owner**: Git configuration
 **Time**: 30 min
 **Blocker**: None (can be done in parallel)
-
-### 1.3 Add Development Documentation
-
-- [ ] Create DEVELOPMENT.md with setup instructions
-- [ ] Document how to run tests and interpret output
-- [ ] Add section on tweaking MapConfig parameters
-- [ ] Include troubleshooting guide for common test failures
-
-**Owner**: Documentation
-**Time**: 1 hour
-**Blocker**: 3.1-3.2 should complete first
 
 ---
 

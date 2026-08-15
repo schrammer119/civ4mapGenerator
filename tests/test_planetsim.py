@@ -17,6 +17,12 @@ if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
     xrange = range
 
+# PlanetSim.py lives at repo root; the game engine normally supplies
+# CvPythonExtensions/CvUtil, so the tools/ mocks are only needed here.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "tools"))
+sys.path.insert(0, _REPO_ROOT)
+
 from PlanetSim import *
 
 parser = argparse.ArgumentParser(description="Run the PlanetSim pipeline and optionally display matplotlib diagnostics.")

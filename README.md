@@ -62,9 +62,12 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 ```
 mapGenerator/
 ├── PlanetSim.py            # Main consolidated map script (8300+ lines)
-├── test_planetsim.py       # Test harness with visualization
-├── CvPythonExtensions.py   # Mock Civ IV API for testing
-├── CvUtil.py               # Utility module
+├── tests/
+│   └── test_planetsim.py   # Test harness with visualization
+├── tools/
+│   ├── CvPythonExtensions.py  # Mock Civ IV API for testing
+│   └── CvUtil.py              # Utility module
+├── docs/                   # Technical documentation
 ├── CLAUDE.md               # Technical documentation
 └── README.md               # This file
 ```
@@ -74,7 +77,7 @@ mapGenerator/
 Run the test harness to generate a map and visualize the results:
 
 ```
-python test_planetsim.py
+python tests/test_planetsim.py
 ```
 
 This generates matplotlib visualizations of:
