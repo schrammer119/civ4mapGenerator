@@ -3026,9 +3026,8 @@ class ClimateMap:
         self.initial_node_flows = [0.0] * self.mc.iNumPlots
         self.river_map = []
         
-        # River edge tracking for placement validation
-        self.north_of_rivers = [False] * self.mc.iNumPlots
-        self.west_of_rivers = [False] * self.mc.iNumPlots
+        # TODO: Complete migration from north_of_rivers/west_of_rivers tracking arrays
+        # to river_map structure. Update _remove_river_segment() and validation logic.
 
     @profile
     def GenerateClimateMap(self):
