@@ -4,13 +4,13 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
-import random
 
-from PlanetForge import *
-from MapConfig import MapConfig
-from ElevationMap import ElevationMap
-from ClimateMap import ClimateMap
-from TerrainMap import TerrainMap
+import sys
+if sys.version_info[0] >= 3:
+    # Python 3: xrange doesn't exist, so we alias it to range
+    xrange = range
+
+from PlanetSim import *
 
 # random.seed(542069)
 
@@ -24,18 +24,21 @@ mpl.rcParams['axes.edgecolor'] = 'white'
 mpl.rcParams['figure.facecolor'] = '#2E2E2E'
 mpl.rcParams['axes.facecolor'] = '#2E2E2E'
 
+gc = CyGlobalContext()
+mapCtx = gc.getMap()
+
 # Initialize shared MapConfig instance
-mc = MapConfig()
+mc = MapConfig(gc, mapCtx)
 
 # Initialize the elevation map with shared constants
 em = ElevationMap(mc)
 em.GenerateElevationMap()
 
 # Initialize climate map with shared constants and elevation data
-cm = ClimateMap(em, mc)
+cm = ClimateMap(mc, em)
 cm.GenerateClimateMap()
 
-tm = TerrainMap(mc, em, cm)
+tm = TerrainMap(gc, mc, em, cm)
 tm.GenerateTerrain()
 
 print("Map generation completed successfully!")

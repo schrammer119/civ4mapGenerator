@@ -92,6 +92,13 @@ class WorldSizeTypes:
     WORLDSIZE_HUGE = 5
     NUM_WORLDSIZE_TYPES = 6
 
+class CardinalDirectionTypes:
+    CARDINALDIRECTION_NORTH = 0
+    CARDINALDIRECTION_EAST = 1
+    CARDINALDIRECTION_SOUTH = 2
+    CARDINALDIRECTION_WEST = 3
+    NO_CARDINALDIRECTION = 4
+
 ############################################ Classes ###############################################
 
 
@@ -778,6 +785,9 @@ class CyBonusInfo:
     def getType(self):
         return self.bonus_type
 
+    def getBonusClassType(self):
+        return self.bonus_type
+
     def getYieldChange(self, yield_type):
         """Get bonus yield change (0=food, 1=production, 2=commerce)"""
         data = self.bonus_data.get(self.bonus_type, {'yields': [0, 0, 0]})
@@ -832,7 +842,7 @@ class CyBonusInfo:
     def getMinLandPercent(self):
         return self.bonus_data.get(self.bonus_type, {}).get('min_land_percent', 0)
 
-    def getUnique(self):
+    def getUniqueRange(self):
         return self.bonus_data.get(self.bonus_type, {}).get('unique', 0)
 
     def getGroupRange(self):
@@ -841,7 +851,7 @@ class CyBonusInfo:
     def getGroupRand(self):
         return self.bonus_data.get(self.bonus_type, {}).get('group_rand', 0)
 
-    def isArea(self):
+    def isOneArea(self):
         return self.bonus_data.get(self.bonus_type, {}).get('area', False)
 
     def isHills(self):
