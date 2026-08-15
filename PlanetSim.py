@@ -2815,29 +2815,21 @@ class ElevationMap:
             last_stretch = stretches[-1]
 
             if first_stretch[0] == 0 and last_stretch[1] == wrap_size - 1:
-                # Wrap-around case: combine first and last stretches
-                wrap_length = (first_stretch[1] - first_stretch[0] + 1) + (last_stretch[1] - last_stretch[0] + 1)
-                wrap_stretch = (last_stretch[0] - wrap_size, first_stretch[1])  # Adjusted coordinates
-
-                # Remove the individual stretches and add combined
-                stretches = stretches[1:-1] + [(wrap_stretch, wrap_length)]
+                # Wrap-around case: combine first and last stretches while keeping a
+                # normal (start, end) tuple representation for downstream callers.
+                wrap_start = last_stretch[0] - wrap_size
+                wrap_end = first_stretch[1]
+                stretches = stretches[1:-1] + [(wrap_start, wrap_end)]
 
         # Find widest stretch
         widest_stretch = None
         max_width = 0
 
         for stretch in stretches:
-            if isinstance(stretch[1], int):  # Normal stretch
-                width = stretch[1] - stretch[0] + 1
-                if width > max_width:
-                    max_width = width
-                    widest_stretch = stretch
-            else:  # Wrap-around stretch (stretch, length) tuple
-                width = stretch[1]
-                if width > max_width:
-                    max_width = width
-                    # Convert back to normal coordinates for wrap-around
-                    widest_stretch = stretch[0]
+            width = stretch[1] - stretch[0] + 1
+            if width > max_width:
+                max_width = width
+                widest_stretch = stretch
 
         return widest_stretch
 
@@ -3025,11 +3017,6 @@ class ClimateMap:
         self.tile_watershed_ids = [-1] * self.mc.iNumPlots
         self.initial_node_flows = [0.0] * self.mc.iNumPlots
         self.river_map = []
-        
-        self.west_of_rivers = [False] * self.mc.iNumPlots
-        self.north_of_rivers = [False] * self.mc.iNumPlots
-        # TODO: Complete migration from north_of_rivers/west_of_rivers tracking arrays
-        # to river_map structure. Update _remove_river_segment() and validation logic.
 
     @profile
     def GenerateClimateMap(self):
@@ -5513,45 +5500,11 @@ class ClimateMap:
                             self.west_of_rivers[tile_i] = False
 
     def _remove_river_segment(self, from_node, to_node):
-        """Remove a river segment by reversing the placement logic"""
-        # Copy the logic from place_validated_river_segment but set to False
-        from_x, from_y = self.mc.get_node_coords(from_node)
-        to_x, to_y = self.mc.get_node_coords(to_node)
-
-        # Calculate flow direction (same as placement)
-        dx = to_x - from_x
-        dy = to_y - from_y
-
-        # Handle wrapping
-        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
-            dx = dx - int(copysign(self.mc.iNumPlotsX, dx))
-        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
-            dy = dy - int(copysign(self.mc.iNumPlotsY, dy))
-
-        # Remove river using same edge logic as placement
-        if abs(dx) > abs(dy):  # Primarily horizontal flow
-            if dx > 0:  # Eastward flow: remove north_of_rivers on to_tile
-                tile_i = to_y * self.mc.iNumPlotsX + to_x
-                if 0 <= tile_i < len(self.north_of_rivers):
-                    self.north_of_rivers[tile_i] = False
-                    return True
-            else:  # Westward flow: remove north_of_rivers on from_tile
-                tile_i = from_y * self.mc.iNumPlotsX + from_x
-                if 0 <= tile_i < len(self.north_of_rivers):
-                    self.north_of_rivers[tile_i] = False
-                    return True
-        else:  # Primarily vertical flow
-            if dy > 0:  # Northward flow: remove west_of_rivers on from_tile
-                tile_i = from_y * self.mc.iNumPlotsX + from_x
-                if 0 <= tile_i < len(self.west_of_rivers):
-                    self.west_of_rivers[tile_i] = False
-                    return True
-            else:  # Southward flow: remove west_of_rivers on to_tile
-                tile_i = to_y * self.mc.iNumPlotsX + from_x
-                if 0 <= tile_i < len(self.west_of_rivers):
-                    self.west_of_rivers[tile_i] = False
-                    return True
-
+        """Remove the first matching river segment from river_map."""
+        for index, segment in enumerate(self.river_map):
+            if segment[0] == from_node and segment[1] == to_node:
+                del self.river_map[index]
+                return True
         return False
 
     def add_lake_moisture(self):
@@ -6732,27 +6685,37 @@ class TerrainMap:
         river_adjacency_map = [False] * self.mc.iNumPlots
         coast_adjacency_map = [False] * self.mc.iNumPlots
 
-        # Calculate river adjacency
-        for i in range(self.mc.iNumPlots):
-            # Check if tile itself has a river
-            if self._is_river_tile(i):
-                river_adjacency_map[i] = True
-                continue
+        # Calculate river adjacency using the canonical river_map representation
+        for from_node, to_node, _, _ in self.cm.river_map:
+            from_x, from_y = self.cm.mc.get_node_coords(from_node)
+            to_x, to_y = self.cm.mc.get_node_coords(to_node)
 
-            # Check only appropriate neighbours
-            dir_list = [self.mc.E, self.mc.W, self.mc.NE, self.mc.NW]
-            for direction in dir_list:
-                neighbour_index = self.mc.neighbours[i][direction]
-                if 0 <= neighbour_index < self.mc.iNumPlots and self.cm.north_of_rivers[neighbour_index]:
-                    river_adjacency_map[i] = True
-                    break
+            dx = to_x - from_x
+            dy = to_y - from_y
 
-            dir_list = [self.mc.N, self.mc.S, self.mc.NW, self.mc.SW]
-            for direction in dir_list:
-                neighbour_index = self.mc.neighbours[i][direction]
-                if 0 <= neighbour_index < self.mc.iNumPlots and self.cm.west_of_rivers[neighbour_index]:
-                    river_adjacency_map[i] = True
-                    break
+            if self.cm.mc.wrapX and abs(dx) > self.cm.mc.iNumPlotsX // 2:
+                dx = dx - int(copysign(self.cm.mc.iNumPlotsX, dx))
+            if self.cm.mc.wrapY and abs(dy) > self.cm.mc.iNumPlotsY // 2:
+                dy = dy - int(copysign(self.cm.mc.iNumPlotsY, dy))
+
+            if abs(dx) > abs(dy):
+                if dx > 0:
+                    tile_x = to_x
+                    tile_y = to_y
+                else:
+                    tile_x = from_x
+                    tile_y = from_y
+            else:
+                if dy > 0:
+                    tile_x = from_x
+                    tile_y = from_y
+                else:
+                    tile_x = from_x
+                    tile_y = to_y
+
+            tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+            if 0 <= tile_i < self.mc.iNumPlots:
+                river_adjacency_map[tile_i] = True
 
         # Calculate coast adjacency
         for i in range(self.mc.iNumPlots):
@@ -6771,32 +6734,40 @@ class TerrainMap:
         self.mc.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
 
     def _is_river_tile(self, tile_index):
-        """Check if tile has a river (helper for adjacency calculation)"""
-        # Check ClimateMap's directional river arrays
-        if not hasattr(self.cm, 'north_of_rivers') or not hasattr(self.cm, 'west_of_rivers'):
+        """Return True if this tile borders any river edge from river_map."""
+        if tile_index < 0 or tile_index >= self.mc.iNumPlots:
             return False
 
-        if tile_index >= len(self.cm.north_of_rivers) or tile_index >= len(self.cm.west_of_rivers):
-            return False
+        for from_node, to_node, _, _ in self.cm.river_map:
+            from_x, from_y = self.cm.mc.get_node_coords(from_node)
+            to_x, to_y = self.cm.mc.get_node_coords(to_node)
 
-        # A tile "has a river" if there's a river on any of its edges
-        # Check south edge
-        if self.cm.north_of_rivers[tile_index]:
-            return True
+            dx = to_x - from_x
+            dy = to_y - from_y
 
-        # Check east edge
-        if self.cm.west_of_rivers[tile_index]:
-            return True
+            if self.cm.mc.wrapX and abs(dx) > self.cm.mc.iNumPlotsX // 2:
+                dx = dx - int(copysign(self.cm.mc.iNumPlotsX, dx))
+            if self.cm.mc.wrapY and abs(dy) > self.cm.mc.iNumPlotsY // 2:
+                dy = dy - int(copysign(self.cm.mc.iNumPlotsY, dy))
 
-        # Check north edge (south edge of tile to the north)
-        north_index = self.mc.neighbours[tile_index][self.mc.N]
-        if 0 <= north_index < len(self.cm.north_of_rivers) and self.cm.north_of_rivers[north_index]:
-            return True
+            if abs(dx) > abs(dy):
+                if dx > 0:
+                    edge_tile_x = to_x
+                    edge_tile_y = to_y
+                else:
+                    edge_tile_x = from_x
+                    edge_tile_y = from_y
+            else:
+                if dy > 0:
+                    edge_tile_x = from_x
+                    edge_tile_y = from_y
+                else:
+                    edge_tile_x = from_x
+                    edge_tile_y = to_y
 
-        # Check west edge (east edge of tile to the west)
-        west_index = self.mc.neighbours[tile_index][self.mc.W]
-        if 0 <= west_index < len(self.cm.west_of_rivers) and self.cm.west_of_rivers[west_index]:
-            return True
+            edge_tile_i = edge_tile_y * self.mc.iNumPlotsX + edge_tile_x
+            if edge_tile_i == tile_index:
+                return True
 
         return False
 

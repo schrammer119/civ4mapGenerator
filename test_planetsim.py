@@ -1,17 +1,17 @@
 import argparse
 import os
 import sys
+import numpy as np
+from math import copysign
 
 import matplotlib as mpl
 import matplotlib.colors as mcolors
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 
 if "--show" not in sys.argv and not os.environ.get("DISPLAY"):
     mpl.use("Agg")
-
-import matplotlib.pyplot as plt
-import numpy as np
 
 if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
@@ -780,27 +780,59 @@ if ARGS.show:
             # Default to broadleaf forest for all forest tiles
             plot_distributed_vegetation(iForest, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
 
-    # Add river visualization
-    north_of_rivers = cm.north_of_rivers
-    west_of_rivers = cm.west_of_rivers
+    # Add river visualization from river_map
+    
+    # Track which tiles have which types of rivers
+    horizontal_rivers = set()  # north_of_rivers
+    vertical_rivers = set()    # west_of_rivers
+    
+    for from_node, to_node, _, _ in cm.river_map:
+        from_x, from_y = mc.get_node_coords(from_node)
+        to_x, to_y = mc.get_node_coords(to_node)
+
+        dx = to_x - from_x
+        dy = to_y - from_y
+
+        if mc.wrapX and abs(dx) > mc.iNumPlotsX // 2:
+            dx = dx - int(copysign(mc.iNumPlotsX, dx))
+        if mc.wrapY and abs(dy) > mc.iNumPlotsY // 2:
+            dy = dy - int(copysign(mc.iNumPlotsY, dy))
+
+        # Determine which tile gets the river edge (same logic as _is_river_tile)
+        if abs(dx) > abs(dy):  # Horizontal river
+            if dx > 0:
+                edge_tile_x = to_x
+                edge_tile_y = to_y
+            else:
+                edge_tile_x = from_x
+                edge_tile_y = from_y
+            edge_tile_i = edge_tile_y * mc.iNumPlotsX + edge_tile_x
+            horizontal_rivers.add(edge_tile_i)
+        else:  # Vertical river
+            if dy > 0:
+                edge_tile_x = from_x
+                edge_tile_y = from_y
+            else:
+                edge_tile_x = from_x
+                edge_tile_y = to_y
+            edge_tile_i = edge_tile_y * mc.iNumPlotsX + edge_tile_x
+            vertical_rivers.add(edge_tile_i)
 
     # Draw E/W rivers (horizontal lines on south edges of tiles)
-    for tile_i in range(mc.iNumPlots):
-        if north_of_rivers[tile_i]:
-            x = tile_i % mc.iNumPlotsX
-            y = tile_i // mc.iNumPlotsX
-            # Horizontal line on south edge of tile
-            ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5],
-                    'cyan', linewidth=2, alpha=0.9)
+    for tile_i in horizontal_rivers:
+        x = tile_i % mc.iNumPlotsX
+        y = tile_i // mc.iNumPlotsX
+        # Horizontal line on south edge of tile
+        ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5],
+                'cyan', linewidth=2, alpha=0.9)
 
     # Draw N/S rivers (vertical lines on east edges of tiles)
-    for tile_i in range(mc.iNumPlots):
-        if west_of_rivers[tile_i]:
-            x = tile_i % mc.iNumPlotsX
-            y = tile_i // mc.iNumPlotsX
-            # Vertical line on east edge of tile
-            ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5],
-                    'cyan', linewidth=2, alpha=0.9)
+    for tile_i in vertical_rivers:
+        x = tile_i % mc.iNumPlotsX
+        y = tile_i // mc.iNumPlotsX
+        # Vertical line on east edge of tile
+        ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5],
+                'cyan', linewidth=2, alpha=0.9)
 
     # Create comprehensive legend combining terrain types, plot types, and features
     legend_handles = []
@@ -842,22 +874,16 @@ if ARGS.show:
     # Handle forest subtypes in legend
     if iForest:
         if hasattr(tm, 'forest_subtype_map') and tm.forest_subtype_map is not None:
-            # Check which forest subtypes are actually present
-            forest_subtypes_present = set()
-            for tile_i in iForest:
-                subtype = tm.forest_subtype_map[tile_i]
-                forest_subtypes_present.add(subtype)
-
             # Add legend entries for present subtypes
-            if 0 in forest_subtypes_present or -1 in forest_subtypes_present:  # Broadleaf or default
-                legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec="#005A00", mfc='#005A00',
-                                                markersize=4, linestyle="None", label='Broadleaf Forest'))
-            if 1 in forest_subtypes_present:  # Evergreen
-                legend_handles.append(mlines.Line2D([], [], marker="^", mec='#084B19', mfc='#084B19',
-                                                markersize=4, linestyle="None", label='Evergreen Forest'))
-            if 2 in forest_subtypes_present:  # Snowy
-                legend_handles.append(mlines.Line2D([], [], marker="^", mec='#8CCA8A', mfc='#8CCA8A',
-                                                markersize=4, linestyle="None", label='Snowy Forest'))
+            # Broadleaf or default
+            legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec="#005A00", mfc='#005A00',
+                                            markersize=4, linestyle="None", label='Broadleaf Forest'))
+            # Evergreen
+            legend_handles.append(mlines.Line2D([], [], marker="^", mec='#084B19', mfc='#084B19',
+                                            markersize=4, linestyle="None", label='Evergreen Forest'))
+            # Snowy
+            legend_handles.append(mlines.Line2D([], [], marker="^", mec='#8CCA8A', mfc='#8CCA8A',
+                                            markersize=4, linestyle="None", label='Snowy Forest'))
         else:
             # Default forest legend entry
             legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec='#005A00', mfc='#005A00',
