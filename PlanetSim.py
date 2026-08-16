@@ -209,6 +209,9 @@ class MapConfig:
         # --- Boundary & Mountain Formation ---
         self.boundaryFactor = 3.5           # Height multiplier for mountains/trenches at plate boundaries.
         self.boundarySmoothing = 3          # Smoothing radius applied to the preliminary elevation map before boundaries.
+        self.passiveMarginPercentile = 0.2  # Fraction of admitted boundaries below which margins are treated as passive/quiet.
+        self.passiveMarginDamping = 0.15    # Multiplier applied to passive boundary intensity so quiet margins fade naturally.
+        self.collisionDensityPercentile = 0.35  # Density-difference percentile for continent-continent collision treatment.
         self.minDensityDifference = 0.05    # Minimum density difference required for one plate to subduct under another.
         self.minBoundaryLength = 3          # Minimum length of a shared border to be considered a major tectonic boundary.
         self.maxInfluenceDistance = 0.3     # Max distance (% of map size) for plate interaction forces to apply.
@@ -228,6 +231,7 @@ class MapConfig:
         self.landPercent = 0.38             # Target percentage of land on the map. Adjusted by sea level setting.
         self.coastPercent = 0.01            # Percentage of shallow water (coast) relative to the total water area.
         self.perlinNoiseFactor = 0.2        # Amount of Perlin noise to add to the final elevation map for small-scale variety.
+        self.MountainPassNeighbourThreshold = 6  # Maximum clustered peaks/hills allowed before nearby neighbors are demoted.
         self.basinLakeSize = 10
         self.enableWrapOptimization = True  # Enable wrap edge optimization to minimize continent splitting
         self.maxElev = 4500.0                  # Maximum elevation in m
@@ -1038,6 +1042,7 @@ class ElevationMap:
         self.elevationBuoyMap = [0.0] * self.mc.iNumPlots
         self.elevationPrelMap = [0.0] * self.mc.iNumPlots
         self.elevationBoundaryMap = [0.0] * self.mc.iNumPlots
+        self.elevationProminenceMap = [0.0] * self.mc.iNumPlots
         self.elevationMap = [0.0] * self.mc.iNumPlots
         self.prominenceMap = [0.0] * self.mc.iNumPlots
 
@@ -1096,6 +1101,7 @@ class ElevationMap:
         self._calculate_prominence_map()
         self._calculate_terrain_thresholds()
         self._calculate_plot_types()
+        self._decluster_elevation_peaks()
         self._calculateOceanBasins()
         self._calculateContinentIDs()
         self._optimize_wrap_edges()
@@ -2027,6 +2033,8 @@ class ElevationMap:
     def _collect_boundary_interactions(self):
         """Collect all boundary interactions for processing"""
         boundary_queue = []
+        admitted_intensities = []
+        crush_density_diffs = []
 
         for plot_index in xrange(self.mc.iNumPlots):
             x = plot_index % self.mc.iNumPlotsX
@@ -2048,6 +2056,29 @@ class ElevationMap:
                         )
                         if boundary_data['intensity'] > 0.01:  # Only process significant boundaries
                             boundary_queue.append(boundary_data)
+                            admitted_intensities.append(boundary_data['intensity'])
+                            if boundary_data['type'] == "crush":
+                                crush_density_diffs.append(abs(boundary_data['density_diff']))
+
+        passive_threshold = 0.0
+        if admitted_intensities:
+            passive_threshold = self.mc.find_value_from_percent(
+                admitted_intensities, self.mc.passiveMarginPercentile, descending=False
+            )
+
+        collision_threshold = 0.0
+        if crush_density_diffs:
+            collision_threshold = self.mc.find_value_from_percent(
+                crush_density_diffs, self.mc.collisionDensityPercentile, descending=False
+            )
+
+        for boundary in boundary_queue:
+            boundary['passive'] = boundary['intensity'] <= passive_threshold
+            boundary['collision'] = False
+            if boundary['type'] == "crush" and crush_density_diffs:
+                boundary['collision'] = abs(boundary['density_diff']) <= collision_threshold
+            if boundary['passive']:
+                boundary['intensity'] *= self.mc.passiveMarginDamping
 
         return boundary_queue
 
@@ -2112,6 +2143,7 @@ class ElevationMap:
         intensity = boundary['intensity']
         density_diff = boundary['density_diff']
         direction = boundary['direction']
+        collision = bool(boundary.get('collision', False))
 
         overriding_side = density_diff > 0
         if boundary_type == "crush":
@@ -2129,23 +2161,26 @@ class ElevationMap:
 
                 # Generate elevation based on boundary type and geological processes
                 base_elevation = self._generate_boundary_profile(
-                    boundary_type, intensity, distance, density_diff
+                    boundary_type, intensity, distance, density_diff, collision
                 )
 
                 # Apply asymmetry for convergent boundaries
                 if boundary_type == "crush":
-                    if (side_multiplier > 0) == overriding_side:
-                        base_elevation *= 0.8  # Overriding plate: more gradual
+                    if collision:
+                        side_multiplier_factor = 1.0
+                    elif (side_multiplier > 0) == overriding_side:
+                        side_multiplier_factor = 0.8  # Overriding plate: more gradual
                     else:
-                        base_elevation *= 1.2  # Subducting plate: steeper
+                        side_multiplier_factor = 1.2  # Subducting plate: steeper
                         if distance <= 2:
                             base_elevation -= intensity * 0.2  # Trench effect
+                    base_elevation *= side_multiplier_factor
 
                 # Add natural variation
                 variation = 0.8 + 0.4 * random.random()
                 self.elevationBoundaryMap[offset_index] += base_elevation * variation
 
-    def _generate_boundary_profile(self, boundary_type, intensity, distance, density_diff):
+    def _generate_boundary_profile(self, boundary_type, intensity, distance, density_diff, collision=False):
         """Generate elevation profile based on geological boundary type"""
         if boundary_type == "rift":
             width_variation = 0.7 + 0.6 * random.random()
@@ -2168,7 +2203,9 @@ class ElevationMap:
         elif boundary_type == "crush":
             peak_distance = 1 + int(abs(intensity) * 3)
             if distance <= peak_distance:
-                if density_diff > 0:
+                if collision:
+                    asymmetry_factor = 1.0
+                elif density_diff > 0:
                     asymmetry_factor = 1.5
                 else:
                     asymmetry_factor = 1.0
@@ -2395,6 +2432,7 @@ class ElevationMap:
     def _combine_final_elevation(self):
         """Combine all elevation components into final elevation map"""
         for i in xrange(self.mc.iNumPlots):
+            self.elevationProminenceMap[i] = self.mc.boundaryFactor * self.elevationBoundaryMap[i]
             self.elevationMap[i] = (self.elevationPrelMap[i] +
                                    self.mc.boundaryFactor * self.elevationBoundaryMap[i])
         self.elevationMap = self.mc.normalize_map(self.elevationMap)
@@ -2419,6 +2457,7 @@ class ElevationMap:
 
         # Add to elevation map
         for i in xrange(self.mc.iNumPlots):
+            self.elevationProminenceMap[i] += self.mc.perlinNoiseFactor * combined_noise[i]
             self.elevationMap[i] += self.mc.perlinNoiseFactor * combined_noise[i]
 
         self.elevationMap = self.mc.normalize_map(self.elevationMap)
@@ -2450,14 +2489,17 @@ class ElevationMap:
             max_elevation_diff = 0.0
 
             if self.elevationMap[i] > self.seaLevelThreshold:
-                # Check cardinal directions for maximum elevation difference
+                has_land_neighbour = False
                 for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
                     neighbour_index = self.mc.neighbours[i][direction]
-                    if neighbour_index >= 0:
-                        if neighbour_index >= 0 and neighbour_index < self.mc.iNumPlots:
-                            neighbour_elevation = max(self.seaLevelThreshold, self.elevationMap[neighbour_index])
-                            elevation_diff = self.elevationMap[i] - neighbour_elevation
-                            max_elevation_diff = max(max_elevation_diff, elevation_diff)
+                    if (neighbour_index >= 0 and neighbour_index < self.mc.iNumPlots and
+                        self.elevationMap[neighbour_index] > self.seaLevelThreshold):
+                        has_land_neighbour = True
+                        elevation_diff = self.elevationProminenceMap[i] - self.elevationProminenceMap[neighbour_index]
+                        max_elevation_diff = max(max_elevation_diff, elevation_diff)
+
+                if not has_land_neighbour:
+                    max_elevation_diff = self.elevationProminenceMap[i]
 
             self.prominenceMap[i] = max_elevation_diff
 
@@ -2494,6 +2536,37 @@ class ElevationMap:
             else:
                 self.plotTypes[i] = PlotTypes.PLOT_LAND
 
+    @profile
+    def _decluster_elevation_peaks(self):
+        """Demote clustered peaks then clustered hills, each pass reading a stable snapshot so demotions don't cascade within a pass."""
+        directions = [self.mc.N, self.mc.S, self.mc.E, self.mc.W, self.mc.NE, self.mc.NW, self.mc.SE, self.mc.SW]
+
+        peak_snapshot = list(self.plotTypes)
+        for i in xrange(self.mc.iNumPlots):
+            if peak_snapshot[i] != PlotTypes.PLOT_PEAK:
+                continue
+            neighbour_indices = [self.mc.neighbours[i][d] for d in directions
+                                  if 0 <= self.mc.neighbours[i][d] < self.mc.iNumPlots]
+            if neighbour_indices and all(peak_snapshot[n] == PlotTypes.PLOT_OCEAN for n in neighbour_indices):
+                self.plotTypes[i] = PlotTypes.PLOT_HILLS
+                continue  # all-ocean peak islands cannot also have peak neighbours, so cluster check is moot
+            self._demote_clustered_neighbours(neighbour_indices, peak_snapshot, PlotTypes.PLOT_PEAK, PlotTypes.PLOT_HILLS)
+
+        hill_snapshot = list(self.plotTypes)
+        for i in xrange(self.mc.iNumPlots):
+            if hill_snapshot[i] != PlotTypes.PLOT_HILLS:
+                continue
+            neighbour_indices = [self.mc.neighbours[i][d] for d in directions
+                                  if 0 <= self.mc.neighbours[i][d] < self.mc.iNumPlots]
+            self._demote_clustered_neighbours(neighbour_indices, hill_snapshot, PlotTypes.PLOT_HILLS, PlotTypes.PLOT_LAND)
+
+    def _demote_clustered_neighbours(self, neighbour_indices, snapshot, source_type, target_type):
+        """Once same-type neighbours exceed the pass threshold, demote the 2 lowest-elevation of them."""
+        candidates = [(self.elevationMap[n], n) for n in neighbour_indices if snapshot[n] == source_type]
+        if len(candidates) > self.mc.MountainPassNeighbourThreshold:
+            candidates.sort(key=lambda item: item[0])
+            for _, neighbour_index in candidates[:2]:
+                self.plotTypes[neighbour_index] = target_type
 
     @profile
     def _calculateOceanBasins(self):
@@ -2693,6 +2766,7 @@ class ElevationMap:
             self.elevationBuoyMap,
             self.elevationPrelMap,
             self.elevationBoundaryMap,
+            self.elevationProminenceMap,
             self.elevationMap,
             self.prominenceMap,
             self.aboveSeaLevelMap,

@@ -15,8 +15,6 @@ Must complete before moving to other phases. These are in-progress refactors tha
 - [x] Re-run test suite to confirm river generation still works
 
 **Owner**: Code fix
-**Time**: 1-2 hours
-**Blocker**: None - highest priority
 
 ### 0.2 Verify Test Passes After Migration
 
@@ -25,8 +23,6 @@ Must complete before moving to other phases. These are in-progress refactors tha
 - [x] Check that no segmentation issues occur in test
 
 **Owner**: Testing
-**Time**: 15 min
-**Blocker**: 0.1 must complete
 
 ---
 
@@ -41,8 +37,6 @@ Must complete before moving to other phases. These are in-progress refactors tha
 - [x] Update import paths to reflect new structure
 
 **Owner**: Code organization
-**Time**: 1 hour
-**Blocker**: None (can be done in parallel)
 
 ### 1.2 Fix .gitignore
 
@@ -53,8 +47,6 @@ Must complete before moving to other phases. These are in-progress refactors tha
 - [x] Keep examples/ ignored for large reference XML
 
 **Owner**: Git configuration
-**Time**: 30 min
-**Blocker**: None (can be done in parallel)
 
 ---
 
@@ -64,13 +56,13 @@ Must complete before moving to other phases. These are in-progress refactors tha
 
 Causes river basins to mainly flow inland to lakes. Peaks appear mainly at land/ocean borders.
 
-- [ ] Determine cause of edge lift in elevationMap generation
-- [ ] Determine if edge lift can be reduced with tuning knobs
-- [ ] If not, elevate the issue into a re-think of the elevationMap generation algorithm
+- [x] Determine cause of edge lift in elevationMap generation
+- [x] Determine if edge lift can be reduced with tuning knobs
+- [x] If not, elevate the issue into a re-think of the elevationMap generation algorithm
 
 ### Phase H.2: Rainfall is not distributed correctly
 
-All rainfall tends to logarithmically occur on one or two tiles.
+All rainfall tends to logarithmically occur on one or two tiles. This has been looked into before, but it seems is still an issue.
 
 - [ ] Determine why rainfall is not distributing as the algorithm intends
 - [ ] Determine if rainfall distribution can be fixed with tuning knobs
@@ -104,8 +96,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Line 2686: Verify "map arrays that need to be shifted" logic is correct
 
 **Owner**: Implementation
-**Time**: 2-4 hours
-**Blocker**: 0.1-0.2 must pass
 
 ---
 
@@ -120,8 +110,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Verify luxury and food resources are evenly distributed
 
 **Owner**: Implementation
-**Time**: 2-3 hours
-**Blocker**: 1.1 must pass
 
 ### 3.2 Add Test Visualization for Resources
 
@@ -132,8 +120,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Add biome-specific resource checklist (e.g., farms in grassland, etc.)
 
 **Owner**: Testing/visualization
-**Time**: 1-2 hours
-**Blocker**: 2.1 must pass
 
 ### 3.3 Verify Resource Balancing
 
@@ -144,8 +130,15 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Document any balance issues for adjustment phase
 
 **Owner**: Balance testing
-**Time**: 1-2 hours
-**Blocker**: 2.1-2.2 must pass
+
+---
+
+## Phase F: Missing features
+
+### F.1 Implement start location based on civilization
+
+Based on example implementation from another map script, implement weighted start locations
+based on civilization.
 
 ---
 
@@ -160,8 +153,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Add property-based tests for determinism (same seed = same map)
 
 **Owner**: Testing
-**Time**: 2-3 hours
-**Blocker**: 0.1-1.1 must pass
 
 ### 4.2 CI/CD-Ready Test Suite
 
@@ -171,8 +162,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Add performance benchmarking
 
 **Owner**: Testing infrastructure
-**Time**: 1 hour
-**Blocker**: 4.1 must complete
 
 ---
 
@@ -187,8 +176,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Confirm game is playable (no CTD during early turns)
 
 **Owner**: Manual testing
-**Time**: 30 min
-**Blocker**: 0.1-2.3 must pass
 
 ### 5.2 Test All Map Sizes
 
@@ -201,8 +188,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Document any size-specific issues
 
 **Owner**: Manual testing
-**Time**: 1 hour
-**Blocker**: 5.1 must pass
 
 ### 5.3 Test World Wrap Settings
 
@@ -213,8 +198,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Verify no CTD or visual artifacts at map edges
 
 **Owner**: Manual testing
-**Time**: 30 min
-**Blocker**: 5.1 must pass
 
 ### 5.4 Gameplay Balancing
 
@@ -227,8 +210,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Ensure no civilizations start in unplayable regions
 
 **Owner**: Balance testing
-**Time**: 2-3 hours
-**Blocker**: 5.1-5.3 must pass
 
 ### 5.5 Stress & Edge Case Testing
 
@@ -239,8 +220,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Verify no OOS or graphical issues
 
 **Owner**: Stability testing
-**Time**: 1.5-2 hours
-**Blocker**: 5.1-5.3 must pass
 
 ---
 
@@ -253,8 +232,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Create example XML overrides for customization
 
 **Owner**: Documentation
-**Time**: 30 min
-**Blocker**: 5.1-5.5 must pass
 
 ### 6.2 Create User Guide
 
@@ -262,10 +239,9 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Add FAQ for common issues
 - [ ] Include performance tips
 - [ ] Document parameter tuning guide
+- [ ] Add guide for modders to include in mod packs
 
 **Owner**: Documentation
-**Time**: 45 min
-**Blocker**: 5.1-5.5 must pass
 
 ### 6.3 Commit & Release
 
@@ -276,47 +252,6 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 - [ ] Verify PlanetSim.py is the only required file
 
 **Owner**: Release management
-**Time**: 30 min
-**Blocker**: 6.1-6.2 must pass
-
----
-
-## Quick Reference: Time Estimates
-
-| Phase                 | Est. Time       | Blocker    | Priority     |
-| --------------------- | --------------- | ---------- | ------------ |
-| 0. Code Migrations    | 1.5-2.5 hours   | None       | **CRITICAL** |
-| 1. Resolve TODOs      | 2-4 hours       | Phase 0    | **CRITICAL** |
-| 2. Resource Placement | 3-5 hours       | Phase 1    | **CRITICAL** |
-| 3. Project Structure  | 2.5 hours       | None       | Medium       |
-| 4. Unit Testing       | 3-4 hours       | Phase 1    | Medium       |
-| 5. In-Game Testing    | 5-7 hours       | Phases 0-2 | **CRITICAL** |
-| 6. Final Polish       | 1-1.5 hours     | Phase 5    | Medium       |
-| **TOTAL**             | **18-27 hours** | -          | -            |
-
-**Critical path** (must complete before shipping): Phases 0, 1, 2, 5
-**Parallel work possible**: Phase 3, 4 can happen during Phase 2-5
-
----
-
-## Success Criteria
-
-✅ **SHIP READY** when:
-
-- [ ] Phase 0: River migration complete, test passes
-- [ ] Phase 1: All code TODOs resolved
-- [ ] Phase 2: Resource placement complete with test visualization
-- [ ] Phase 3: Project restructured and .gitignore fixed
-- [ ] Phase 5: In-game testing passes all scenarios (5.1-5.5)
-- [ ] Phase 6: Documentation complete and release tagged
-
-❌ **DO NOT SHIP** if:
-
-- Code still has unresolved TODOs
-- Test fails for any map size or wrap setting
-- Resources missing or improperly constrained
-- Resource placement causes CTD or OOS
-- Performance > 30 seconds on standard maps
 
 ---
 
