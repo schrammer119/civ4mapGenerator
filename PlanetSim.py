@@ -328,7 +328,6 @@ class MapConfig:
         self.riverNodeSmoothing = 4
         self.RiverTargetCountStandard = 30  # Target number of major rivers for standard map
         self.RiverFlowAccumulationFactor = 1000.0  # Base factor for flow accumulation calculations
-        self.LakeRainfallRequirement = 0.4  # Minimum rainfall for lake formation (normalized 0-1)
         self.LakeTargetCount = 9  # Target number of lakes for standard map
 
         # Node-based Flow Parameters (D4 - Cardinal directions only)
@@ -3098,9 +3097,14 @@ class ClimateMap:
         print("----Generating Climate System----")
         self.GenerateTemperatureMap()
         self.GenerateRainfallMap()
+
+        # Rivers/lakes score basins by rainfall percentile, so percentiles must
+        # exist before GenerateRiverMap runs.
+        self._calculate_percentiles()
         self.GenerateRiverMap()
 
-        # Calculate percentiles for terrain system (do this once at the end)
+        # Lake creation adds moisture and renormalizes RainfallMap, so recalculate
+        # percentiles once more against the final post-lake rainfall.
         self._calculate_percentiles()
 
         # Apply diagonal ballooning to spread distribution
@@ -4553,7 +4557,7 @@ class ClimateMap:
 
                     # Add rainfall to node
                     if 0 <= lowest_node < len(self.initial_node_flows):
-                        rainfall = self.RainfallMap[tile_i]
+                        rainfall = self.rainfall_percentiles[tile_i]
                         self.initial_node_flows[lowest_node] += rainfall * self.mc.RiverFlowAccumulationFactor
 
     @profile
@@ -5120,7 +5124,7 @@ class ClimateMap:
             intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
             for tile_i in intersecting_tiles:
                 if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                    total_rainfall += self.RainfallMap[tile_i]
+                    total_rainfall += self.rainfall_percentiles[tile_i]
                     valid_nodes += 1
 
         if valid_nodes > 0:

@@ -64,17 +64,17 @@ Causes river basins to mainly flow inland to lakes. Peaks appear mainly at land/
 
 All rainfall tends to logarithmically occur on one or two tiles. This has been looked into before, but it seems is still an issue.
 
-- [ ] Determine why rainfall is not distributing as the algorithm intends
-- [ ] Determine if rainfall distribution can be fixed with tuning knobs
-- [ ] If not, elevate the issue into a re-think of the rainfall distribution algorithm
+- [x] Determine why rainfall is not distributing as the algorithm intends
+- [x] Determine if rainfall distribution can be fixed with tuning knobs
+- [x] If not, elevate the issue into a re-think of the rainfall distribution algorithm
 
 ### Phase H.3: Temperature Percentile vs Rainfall Percentile distribution
 
 The distribution is too narrow to a single line, showing clumps and artifacts. Could be related to the rainfall distribution issue (Phase H.2).
 
-- [ ] Determine why temperature vs rainfall distribution is not producing a smooth curve
-- [ ] Determine if the distribution can be fixed with tuning knobs
-- [ ] If not, elevate the issue into a re-think of the temperature and rainfall algorithms
+- [x] Determine why temperature vs rainfall distribution is not producing a smooth curve
+- [x] Determine if the distribution can be fixed with tuning knobs
+- [x] If not, elevate the issue into a re-think of the temperature and rainfall algorithms
 
 ---
 

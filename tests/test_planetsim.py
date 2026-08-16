@@ -172,7 +172,7 @@ if ARGS.show:
     Z_temp = np.array(cm.TemperatureMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     U_wind = np.array(cm.WindU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
     V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    Z_rain = np.array(cm.RainfallMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    Z_rain = np.array(cm.rainfall_percentiles).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
     # Add plot type overlays for peaks and hills
     iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
@@ -249,8 +249,8 @@ if ARGS.show:
     ax4.plot([i % mc.iNumPlotsX for i in iPeaks], [
     i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
 
-    ax4.set_title('Rainfall Map with Landforms')
-    fig.colorbar(p4, ax=ax4, label='Rainfall')
+    ax4.set_title('Rainfall Percentile Map with Landforms')
+    fig.colorbar(p4, ax=ax4, label='Rainfall Percentile')
 
     plt.tight_layout()
 
