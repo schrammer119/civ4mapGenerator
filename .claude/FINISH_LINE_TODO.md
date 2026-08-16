@@ -140,6 +140,21 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 Based on example implementation from another map script, implement weighted start locations
 based on civilization.
 
+- [ ] intercept existing Civ IV start location function
+- [ ] create baseline scores for each start location eligible tile. Based on yields and resources in the "fat cross".
+- [ ] Resources carry different weights (strategics weigh high for example, early strategics weigh even higher)
+- [ ] Add weight for desirable terrain: rivers, coast, hills, etc.
+- [ ] For each civilization, add weights for tiles in historical biomes, latitudes, resources, coast/river/peaks, on islands, etc.
+- [ ] Add unit tests to verify behaviour of both base weights and civ-specific weights.
+
+### F.2 Add "old world"/"new world" functionality
+
+Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
+
+- [ ] Implement a determination of which landmasses are "old" and which is "new".
+- [ ] Implement a placement rule for resources and civilizations based on landmass assignment.
+- [ ] Add unit tests to verify classifications and placements.
+
 ---
 
 ## Phase 4: Unit Testing Framework (OPTIONAL - If Time Permits)
