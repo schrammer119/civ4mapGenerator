@@ -975,19 +975,19 @@ class MapConfig:
         return self.coast_adjacency_map[tile_index]
 
     def is_adjacent_to_feature(self, tile_index, feature_type):
-        """Check if tile is adjacent to specific feature (calculated on-demand)"""
+        """Check if tile is adjacent to a specific feature in the active TerrainMap."""
         feature_id = self.get_feature_id(feature_type)
         if feature_id == -1:
             return False
 
-        x, y = self.get_coords_from_index(tile_index)
+        feature_map = getattr(self, 'feature_map', None)
+        if feature_map is None:
+            return False
 
         for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
             adj_index = self.neighbours[tile_index][direction]
-            if adj_index != -1:
-                # TODO: This would need access to the feature map from TerrainMap
-                # Implementation depends on how we structure data flow
-                pass
+            if adj_index != -1 and feature_map[adj_index] == feature_id:
+                return True
 
         return False
 
@@ -5502,80 +5502,75 @@ class ClimateMap:
                         self.river_segments_placed.remove((from_node, to_node))
 
     def remove_river_lake_conflicts(self):
-        """Remove river segments that conflict with newly placed lakes"""
+        """Remove river segments that conflict with newly placed lakes."""
 
-        if not hasattr(self, 'river_segments_placed'):
+        if not hasattr(self, 'river_map'):
             return
 
-        # Check each placed river segment
-        for from_node, to_node in self.river_segments_placed:
+        if hasattr(self, 'river_segments_placed'):
+            placed_segments = list(self.river_segments_placed)
+        else:
+            placed_segments = []
+
+        for from_node, to_node, river_id, flow in list(self.river_map):
             from_x, from_y = self.mc.get_node_coords(from_node)
             to_x, to_y = self.mc.get_node_coords(to_node)
 
-            # Calculate flow direction
             dx = to_x - from_x
             dy = to_y - from_y
 
-            # Handle wrapping
             if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
                 dx = dx - int(copysign(self.mc.iNumPlotsX, dx))
             if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
                 dy = dy - int(copysign(self.mc.iNumPlotsY, dy))
 
-            # Determine which tile edge the river is on
             tile_x = -1
             tile_y = -1
             is_north_river = False
             is_west_river = False
 
-            if abs(dx) > abs(dy):  # Primarily horizontal flow
-                if dx > 0:  # Eastward flow: north_of_rivers on to_tile
+            if abs(dx) > abs(dy):
+                if dx > 0:
                     tile_x = to_x
                     tile_y = to_y
                     is_north_river = True
-                else:  # Westward flow: north_of_rivers on from_tile
+                else:
                     tile_x = from_x
                     tile_y = from_y
                     is_north_river = True
-            else:  # Primarily vertical flow
-                if dy > 0:  # Northward flow: west_of_rivers on from_tile
+            else:
+                if dy > 0:
                     tile_x = from_x
                     tile_y = from_y
                     is_west_river = True
-                else:  # Southward flow: west_of_rivers on to_tile
+                else:
                     tile_x = from_x
                     tile_y = to_y
                     is_west_river = True
 
-            # Check if this river segment conflicts with water
             if tile_x >= 0 and tile_y >= 0:
                 tile_i = tile_y * self.mc.iNumPlotsX + tile_x
 
                 if 0 <= tile_i < self.mc.iNumPlots:
-                    # Check if the tile or relevant neighbours are now water
                     should_remove = False
 
                     if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
                         should_remove = True
                     elif is_north_river:
-                        # Check if south neighbour is water (river would be on water edge)
                         south_neighbour = self.mc.neighbours[tile_i][self.mc.S]
                         if (south_neighbour >= 0 and south_neighbour < self.mc.iNumPlots and
                             self.em.plotTypes[south_neighbour] == PlotTypes.PLOT_OCEAN):
                             should_remove = True
                     elif is_west_river:
-                        # Check if east neighbour is water (river would be on water edge)
                         east_neighbour = self.mc.neighbours[tile_i][self.mc.E]
                         if (east_neighbour >= 0 and east_neighbour < self.mc.iNumPlots and
                             self.em.plotTypes[east_neighbour] == PlotTypes.PLOT_OCEAN):
                             should_remove = True
 
-                    # Remove the river segment if it conflicts
                     if should_remove:
-                        if is_north_river and 0 <= tile_i < len(self.north_of_rivers):
-                            self.north_of_rivers[tile_i] = False
-                        elif is_west_river and 0 <= tile_i < len(self.west_of_rivers):
-                            self.west_of_rivers[tile_i] = False
+                        self._remove_river_segment(from_node, to_node)
+                        if placed_segments and (from_node, to_node) in placed_segments:
+                            self.river_segments_placed.remove((from_node, to_node))
 
     def _remove_river_segment(self, from_node, to_node):
         """Remove the first matching river segment from river_map."""
@@ -5926,6 +5921,9 @@ class TerrainMap:
         self.feature_subtype_map = [-1] * self.mc.iNumPlots
         self.resource_map = [-1] * self.mc.iNumPlots
         self.biome_assignments = [''] * self.mc.iNumPlots
+
+        self.mc.feature_map = self.feature_map
+        self.mc.resource_map = self.resource_map
 
         # Feature clustering tracking
         self.feature_patches = {}  # Track feature patches for clustering
@@ -7583,6 +7581,8 @@ class TerrainMap:
             # Apply clustering and exclusion rules
             if self._should_place_resource(tile_index, resource_def, xml_constraints):
                 self.resource_map[tile_index] = bonus_id
+                xml_constraints = dict(xml_constraints)
+                xml_constraints['base_resource'] = resource_def['base_resource']
                 self._update_exclusion_zones(tile_index, xml_constraints)
                 placed_count += 1
 
@@ -7642,11 +7642,25 @@ class TerrainMap:
 
     def _update_exclusion_zones(self, tile_index, xml_constraints):
         """Update exclusion zones after placing resource"""
-        # TODO: Implementation for tracking exclusion zones
-        pass
+        base_resource = xml_constraints.get('base_resource')
+        if base_resource is None:
+            bonus_id = self.resource_map[tile_index]
+            if bonus_id != -1 and bonus_id != BonusTypes.NO_BONUS:
+                base_resource = self.mc.get_bonus_string_from_id(bonus_id)
+
+        if base_resource is None:
+            return
+
+        if base_resource not in self.placed_resources:
+            self.placed_resources[base_resource] = []
+        self.placed_resources[base_resource].append(tile_index)
+
+        unique_radius = xml_constraints.get('iUnique', 0)
+        if unique_radius > 0:
+            self.resource_exclusion_zones[base_resource] = unique_radius
 
     def _get_resources_by_placement_order(self):
-        """Get resources sorted by XML placement order"""
+        """Get resources sorted by placement order, target quantity, then resource name."""
         resource_list = []
 
         for base_resource, resource_def in self.resource_definitions.items():
@@ -7657,13 +7671,14 @@ class TerrainMap:
             resource_def['base_resource'] = base_resource
             xml_constraints = self.bonus_constraints.get(bonus_id, {})
             placement_order = xml_constraints.get('iPlacementOrder', 99)
-            # TODO: secoondary sort by number of bonuses needed
+            quantity_context = dict(xml_constraints)
+            quantity_context['base_resource'] = base_resource
+            target_quantity = self._calculate_target_quantity(quantity_context)
 
-            resource_list.append((placement_order, resource_def))
+            resource_list.append((placement_order, target_quantity, base_resource, resource_def))
 
-        # Sort by placement order (lower numbers first)
-        resource_list.sort(key=lambda x: x[0])
-        return [resource_def for _, resource_def in resource_list]
+        resource_list.sort(key=lambda x: (x[0], x[1], x[2]))
+        return [resource_def for _, _, _, resource_def in resource_list]
 
     def _get_xml_parameters(self, resource_def):
         """Get XML parameters for resource, with overrides applied"""
@@ -7684,25 +7699,20 @@ class TerrainMap:
         return random.randint(1, 100) <= appearance_chance
 
     def _calculate_target_resource_count(self, xml_params):
-        """Calculate how many instances of this resource to place"""
+        """Calculate how many instances of this resource to place."""
         target_count = 0
 
-        # Calculate from iPlayer (per player)
         player_occurrences = xml_params.get('iPlayer', 0)
         if player_occurrences > 0:
-            if hasattr(self.mc, 'iNumPlayers'):
-                num_players = self.mc.iNumPlayers # TODO: this probably needs to come from gc
-            else:
-                num_players = 8  # Default assumption
+            num_players = self.mc.iNumPlayers
             target_count += (player_occurrences * num_players) // 100
 
-        # Calculate from iTilesPer (fixed per tiles)
         tiles_per = xml_params.get('iTilesPer', 0)
         if tiles_per > 0:
             total_tiles = len(self.terrain_map)
             target_count += total_tiles // tiles_per
 
-        return max(1, target_count)  # At least 1 if any calculation gave >0
+        return max(1, target_count)
 
     def _find_eligible_resource_tiles(self, resource_name, resource_def, xml_params):
         """Find all tiles eligible for this resource"""
@@ -7756,14 +7766,20 @@ class TerrainMap:
             if area_size < min_area_size:
                 return False
 
-        # Check land/water percentage
+        # Check map-wide land/water percentage.
+        # iMinLandPercent is a global requirement for the percentage of all
+        # map plots that are land, not a per-tile proxy.
         min_land_percent = xml_params.get('iMinLandPercent', 0)
         if min_land_percent > 0:
-            is_land = plot_type != PlotTypes.PLOT_OCEAN
-            # TODO: Implement proper land/water distribution logic
-            # For now, just check if it's land when land is required
-            if min_land_percent > 50 and not is_land:
-                return False
+            total_plots = len(self.em.plotTypes)
+            if total_plots > 0:
+                land_plots = 0
+                for current_plot_type in self.em.plotTypes:
+                    if current_plot_type != PlotTypes.PLOT_OCEAN:
+                        land_plots += 1
+                land_percent = (float(land_plots) * 100.0) / float(total_plots)
+                if land_percent < min_land_percent:
+                    return False
 
         return True
 
@@ -7813,8 +7829,13 @@ class TerrainMap:
             if not self._tile_meets_climate_requirements(tile_index, climate_req):
                 return False
         elif condition == 'elevation_range':
-            # TODO: Implement elevation range checking
-            pass
+            elevation_range = rule.get('elevation_range')
+            if elevation_range is None:
+                return True
+            elevation = self.scoring_factors['elevation'][tile_index]
+            lower_bound, upper_bound = elevation_range
+            if not (lower_bound <= elevation <= upper_bound):
+                return False
 
         return True
 
@@ -8152,6 +8173,16 @@ class TerrainMap:
                 else:
                     return -0.5
 
+        elif condition == 'elevation_range':
+            elevation_range = rule.get('elevation_range')
+            if elevation_range is None:
+                return 0.0
+            elevation = self.scoring_factors['elevation'][tile_index]
+            lower_bound, upper_bound = elevation_range
+            if lower_bound <= elevation <= upper_bound:
+                return 1.0
+            return -0.5
+
         elif condition == 'always':
             return 0.0  # Neutral score for always-applicable rules
 
@@ -8161,7 +8192,6 @@ class TerrainMap:
         """Convert terrain ID back to string for comparison"""
         if terrain_id == -1:
             return None
-        # This would need to be implemented in MapConfig with reverse lookup
         return self.mc.get_terrain_string_from_id(terrain_id)
 
     def _get_feature_string_from_id(self, feature_id):
@@ -8314,9 +8344,19 @@ def addFeatures():
 
 def addBonuses():
     """Add bonus resources appropriate to terrain and climate"""
-    # TODO: Implement realistic resource placement using elevationMap
-    # For now, fall back to default implementation
-    CyPythonMgr().allowDefaultImpl()
+    global mapCtx, mc, tm
+
+    if mapCtx is None or mc is None or tm is None:
+        return
+
+    resource_map = getattr(tm, 'resource_map', [])
+    if not resource_map:
+        return
+
+    for i in range(getattr(mc, 'iNumPlots', len(resource_map))):
+        plot = mapCtx.plotByIndex(i)
+        if plot is not None:
+            plot.setBonusType(resource_map[i])
 
 
 def afterGeneration():

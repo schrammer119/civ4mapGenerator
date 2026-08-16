@@ -13,6 +13,21 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 - **Balanced Resources**: Distributed according to XML constraints and terrain types
 - **Gameplay Balance**: Maintains challenge and fairness while preserving realism
 
+## Current Status
+
+Phase 2 of the implementation plan is complete and verified:
+
+- Resource placement, exclusion tracking, ordering, and XML constraint handling are implemented in the live path.
+- Feature adjacency and river cleanup now use the canonical map state instead of stale legacy lookups.
+- The `addBonuses()` path applies the generated bonus map directly to plot instances.
+
+### Verification
+
+The following checks were run successfully in the current workspace:
+
+- `py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 9 tests passed, 0 failed
+- `py tests/test_planetsim.py` -> exit code 0, full generation completed successfully for a 144x96 map with 15 plates
+
 ## Installation
 
 1. Copy `PlanetSim.py` to your Civilization IV map scripts directory:
@@ -61,23 +76,33 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 
 ```
 mapGenerator/
-├── PlanetSim.py            # Main consolidated map script (8300+ lines)
+├── PlanetSim.py                # Main consolidated map script
 ├── tests/
-│   └── test_planetsim.py   # Test harness with visualization
+│   ├── test_planetsim.py       # End-to-end generation and visualization harness
+│   ├── test_phase2_resources.py # Focused Phase 2 regression tests
+│   ├── diagnose_edge_lift.py   # Elevation diagnostics
+│   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
 ├── tools/
-│   ├── CvPythonExtensions.py  # Mock Civ IV API for testing
-│   └── CvUtil.py              # Utility module
-├── docs/                   # Technical documentation
-├── CLAUDE.md               # Technical documentation
-└── README.md               # This file
+│   ├── CvPythonExtensions.py   # Mock Civ IV API for testing
+│   └── CvUtil.py               # Utility module
+├── docs/                      # Technical documentation
+├── CLAUDE.md                  # Technical documentation
+├── FINISH_LINE_TODO.md        # Delivery checklist and outstanding phases
+└── README.md                  # This file
 ```
 
 ### Testing
 
-Run the test harness to generate a map and visualize the results:
+Run the end-to-end generation harness:
 
 ```
 python tests/test_planetsim.py
+```
+
+Run the focused Phase 2 regression suite:
+
+```
+python -m unittest discover -s tests -p test_phase2_resources.py -v
 ```
 
 This generates matplotlib visualizations of:

@@ -82,18 +82,23 @@ The distribution is too narrow to a single line, showing clumps and artifacts. C
 
 ### 2.1 Code TODO Resolution
 
-10+ incomplete items found in codebase:
+Phase 2 is complete and verified in the repository.
 
-- [ ] Line 985: "This would need access to the feature map from TerrainMap" - implement feature map access
-- [ ] Line 5264: Review and verify "southward flow bug" fix is complete
-- [ ] Line 7595: "Implementation for tracking exclusion zones" - complete exclusion zone tracking
-- [ ] Line 7610: "secondary sort by number of bonuses needed" - implement secondary sort logic
-- [ ] Line 7644: "this probably needs to come from gc" - fix iNumPlayers retrieval
-- [ ] Line 7713: "Implement proper land/water distribution logic" for resource placement
-- [ ] Line 7766: "Implement elevation range checking" for terrain constraints
-- [ ] Line 8114: "This would need to be implemented in MapConfig with reverse lookup"
-- [ ] Line 8267: "Implement realistic resource placement using elevationMap"
-- [ ] Line 2686: Verify "map arrays that need to be shifted" logic is correct
+- [x] Line 985: "This would need access to the feature map from TerrainMap" - implement feature map access
+- [x] Line 5264: Review and verify "southward flow bug" fix is complete
+- [x] Line 7595: "Implementation for tracking exclusion zones" - complete exclusion zone tracking
+- [x] Line 7610: "secondary sort by number of bonuses needed" - implement secondary sort logic
+- [x] Line 7644: "this probably needs to come from gc" - fix iNumPlayers retrieval
+- [x] Line 7713: "Implement proper land/water distribution logic" for resource placement
+- [x] Line 7766: "Implement elevation range checking" for terrain constraints
+- [x] Line 8114: "This would need to be implemented in MapConfig with reverse lookup"
+- [x] Line 8267: "Implement realistic resource placement using elevationMap"
+- [x] Line 2686: Verify "map arrays that need to be shifted" logic is correct
+
+**Verification**:
+
+- `py -m unittest discover -s tests -p test_phase2_resources.py -v` -> passed (9 tests)
+- `py tests/test_planetsim.py` -> passed (exit code 0)
 
 **Owner**: Implementation
 
