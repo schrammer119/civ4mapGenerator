@@ -79,6 +79,45 @@ print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(mc.iNumPlots)*100))
 print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(mc.iNumPlots)*100))
 
 
+# === RESOURCE PLACEMENT STATISTICS ===
+print("\n=== RESOURCE PLACEMENT STATISTICS ===")
+
+# Count resources by type if resource_map exists
+if hasattr(tm, 'resource_map') and tm.resource_map is not None:
+    resource_counts = {}
+    for resource_id in tm.resource_map:
+        if resource_id and resource_id > 0:  # Skip NO_BONUS (0)
+            resource_counts[resource_id] = resource_counts.get(resource_id, 0) + 1
+
+    if resource_counts:
+        bonus_name_by_id = dict(gc.bonus_types.items())
+
+        total_resources = sum(resource_counts.values())
+        total_violations = 0
+        print("Total resources placed: %d" % total_resources)
+        print("\nResource distribution by type:")
+        print("ID    Name                       Target  Actual  %s of Total  Violations" % "%")
+        print("-" * 76)
+
+        for res_id in sorted(resource_counts.keys()):
+            count = resource_counts[res_id]
+            pct = (100.0 * count) / total_resources
+            bonus_name = bonus_name_by_id.get(res_id, 'UNKNOWN_%d' % res_id)
+            target = getattr(tm, 'resource_targets', {}).get(bonus_name, 0)
+            bonus_def = {'base_resource': bonus_name}
+            failures = 0
+            for tile_index, placed_id in enumerate(tm.resource_map):
+                if placed_id == res_id:
+                    if not tm._can_have_bonus(tile_index, bonus_def):
+                        failures += 1
+            total_violations += failures
+            print("%-3d   %-25s   %5d   %5d   %9.1f%%   %10d" % (res_id, bonus_name, target, count, pct, failures))
+        print("Total resource violations: %d" % total_violations)
+    else:
+        print("No resources placed on map")
+else:
+    print("Resource map not available - resource placement may not have run")
+
 if ARGS.show:
 
     ## Plots
@@ -787,11 +826,11 @@ if ARGS.show:
             plot_distributed_vegetation(iForest, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
 
     # Add river visualization from river_map
-    
+
     # Track which tiles have which types of rivers
     horizontal_rivers = set()  # north_of_rivers
     vertical_rivers = set()    # west_of_rivers
-    
+
     for from_node, to_node, _, _ in cm.river_map:
         from_x, from_y = mc.get_node_coords(from_node)
         to_x, to_y = mc.get_node_coords(to_node)
@@ -917,7 +956,6 @@ if ARGS.show:
             'Flood Plains': len(iFloodPlains),
             'Forest': len(iForest)
         }
-
         print("\nFeature distribution:")
         total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
         for feature_name, count in feature_counts.items():
@@ -926,6 +964,38 @@ if ARGS.show:
                 print("%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage))
     else:
         print("\nFeature map not available - TerrainMap may not be fully initialized")
+
+    # === RESOURCE VISUALIZATION ===
+    # Add a new figure showing resources with letter overlays
+    if hasattr(tm, 'resource_map') and tm.resource_map is not None:
+        fig_res, ax_res = plt.subplots(figsize=(14, 10))
+
+        # Re-plot terrain as base
+        p_res = ax_res.imshow(terrain_data, origin='lower', cmap=terrain_cmap, vmin=0, vmax=7)
+
+        # Derive letter codes from the live BonusTypes enum rather than a drift-prone hard-coded table.
+        bonus_name_by_id = dict(gc.bonus_types.items())
+        resource_letter_codes = {}
+        for bonus_id, bonus_name in bonus_name_by_id.items():
+            if bonus_id <= 0:
+                continue
+            base = bonus_name.replace('BONUS_', '')
+            resource_letter_codes[bonus_id] = base[:2].upper()
+
+        # Plot resource letter codes on map
+        for tile_i, resource_id in enumerate(tm.resource_map):
+            if resource_id and resource_id > 0:  # Skip empty tiles
+                tile_x = tile_i % mc.iNumPlotsX
+                tile_y = tile_i // mc.iNumPlotsX
+                letter_code = resource_letter_codes.get(resource_id, '??')
+                ax_res.text(tile_x, tile_y, letter_code, ha='center', va='center',
+                          fontsize=6, weight='bold', color='white',
+                          bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.6, edgecolor='yellow', linewidth=0.5))
+
+        ax_res.set_title('Resource Map: Letter Codes on Terrain')
+        ax_res.set_xlabel('X Coordinate')
+        ax_res.set_ylabel('Y Coordinate')
+        plt.tight_layout()
 
     plt.show()
 else:

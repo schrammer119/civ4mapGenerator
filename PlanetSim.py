@@ -431,6 +431,10 @@ class MapConfig:
                 'iMaxLatitude': bonus_info.getMaxLatitude(),
                 'iPlayer': bonus_info.getPercentPerPlayer(),  # XML name with correct API method
                 'iTilesPer': bonus_info.getTilesPer(),
+                'iRandApp1': bonus_info.getRandApp1(),
+                'iRandApp2': bonus_info.getRandApp2(),
+                'iRandApp3': bonus_info.getRandApp3(),
+                'iRandApp4': bonus_info.getRandApp4(),
                 'iMinLandPercent': bonus_info.getMinLandPercent(),
                 'iUnique': bonus_info.getUniqueRange(),
                 'iGroupRange': bonus_info.getGroupRange(),
@@ -5921,6 +5925,7 @@ class TerrainMap:
         self.feature_subtype_map = [-1] * self.mc.iNumPlots
         self.resource_map = [-1] * self.mc.iNumPlots
         self.biome_assignments = [''] * self.mc.iNumPlots
+        self.resource_targets = {}
 
         self.mc.feature_map = self.feature_map
         self.mc.resource_map = self.resource_map
@@ -6586,6 +6591,7 @@ class TerrainMap:
 
             # === CUSTOM PLACEMENT RULES ===
             'placement_rules': [                       # Custom rules beyond XML parameters
+                'bPeak',                               # Allow placement on PLOT_PEAK if defined here
                 {
                     # === FILTERS AND REQUIREMENTS (ALL OPTIONAL) ===
                     'biome_filter': ['biome_names'],   # Only in these biomes
@@ -6609,6 +6615,7 @@ class TerrainMap:
         'BONUS_IRON': {
             'xml_overrides': {},
             'placement_rules': [
+                'bPeak',
                 {
                     'biome_filter': ['temperate_forest', 'taiga', 'steppe'],
                     'weight': 1.5,
@@ -7544,68 +7551,182 @@ class TerrainMap:
         resources_by_order = self._get_resources_by_placement_order()
 
         for resource_def in resources_by_order:
-            self._place_single_resource(resource_def)
+            if resource_def['xml_constraints'].get('bUnique', False):
+                self._add_non_unique_bonus_type(resource_def)
+            else:
+                self._add_unique_bonus_type(resource_def)
 
-    def _place_single_resource(self, resource_def):
+    def _get_resources_by_placement_order(self):
+        """Get resources sorted by placement order, target quantity, then resource name."""
+        resource_list = []
+
+        for base_resource, resource_def in self.resource_definitions.items():
+            bonus_id = self._get_bonus_id(base_resource)
+            if bonus_id == -1:
+                continue
+
+            xml_constraints = self.bonus_constraints.get(bonus_id, {})
+            for key, value in resource_def['xml_overrides'].items():
+                if key in xml_constraints:
+                    xml_constraints[key] = value
+
+            placement_order = xml_constraints.get('iPlacementOrder', 99)
+
+            resource_def['base_resource'] = base_resource
+            resource_def['xml_constraints'] = xml_constraints
+
+            resource_list.append((placement_order, resource_def))
+
+        resource_list.sort(key=lambda x: (x[0], random.randint(0,99)))
+        return [resource_def for _, resource_def in resource_list]
+
+    def _add_non_unique_bonus_type(self, resource_def):
         """Place a single resource type using scoring system"""
         bonus_id = self._get_bonus_id(resource_def['base_resource'])
         if bonus_id == -1:
             return  # Skip missing resources
 
-        xml_constraints = self.bonus_constraints.get(bonus_id, {})
-
-        # Calculate target quantity
-        target_quantity = self._calculate_target_quantity(xml_constraints)
-
-        # Build scored candidate list
-        candidates = []
+        candidate_tiles = []
         for tile_index in range(self.mc.iNumPlots):
-            if not self._meets_hard_constraints(tile_index, resource_def):
-                continue
-
             if self.resource_map[tile_index] != -1:
                 continue  # Already has a resource
+            if not self._can_have_bonus(tile_index, resource_def):
+                continue
+            candidate_tiles.append(tile_index)
 
+        target_quantity = self._calculate_num_bonuses_to_add(resource_def['xml_constraints'], len(candidate_tiles))
+        self.resource_targets[resource_def['base_resource']] = target_quantity
+
+        # TODO: up until this point, we have obeyed the same rules as the core game engine.
+        #       Now we have to consider the additional weights from placement rules in the map script.
+        #       The game engine randomly selects tiles from the candidate list.
+        #       I worry if we select based on highest score, we may end up with a very clustered distribution of resources.
+
+        candidates = []
+        for tile_index in candidate_tiles:
             score = self._calculate_placement_score(tile_index, resource_def)
-            if score > 0.1:  # Minimum threshold
+            if score > 0:
                 candidates.append((tile_index, score))
 
-        # Sort by score and place top candidates
         candidates.sort(key=lambda x: x[1], reverse=True)
 
+        placement_order = candidates
+        land_candidates = []
+        water_candidates = []
+        min_land_percent = xml_constraints.get('iMinLandPercent', 0)
+        if 0 < min_land_percent < 100:
+            terrain_booleans = xml_constraints.get('TerrainBooleans', [])
+            has_land = any(terrain_id in terrain_booleans for terrain_id in (0, 1, 2, 3, 4))
+            has_water = any(terrain_id in terrain_booleans for terrain_id in (5, 6))
+            if has_land and has_water:
+                for tile_index, score in candidates:
+                    terrain_id = self.terrain_map[tile_index]
+                    if terrain_id in (5, 6):
+                        water_candidates.append((tile_index, score))
+                    elif terrain_id in (0, 1, 2, 3, 4):
+                        land_candidates.append((tile_index, score))
+                land_target = int(round(float(target_quantity) * float(min_land_percent) / 100.0))
+                land_target = min(len(land_candidates), max(0, land_target))
+                placement_order = land_candidates[:land_target] + water_candidates
+                if not placement_order:
+                    placement_order = candidates
+
         placed_count = 0
-        for tile_index, score in candidates:
+        for tile_index, score in placement_order:
+            if self._should_place_resource(tile_index, resource_def, xml_constraints):
+                self.resource_map[tile_index] = bonus_id
+                placed_count += 1
+                if placed_count >= target_quantity:
+                    break
+                self._update_exclusion_zones(tile_index, xml_constraints)
+
+                group_range = xml_constraints.get('iGroupRange', 0)
+                group_rand = xml_constraints.get('iGroupRand', 0)
+                if group_range > 0 and group_rand > 0:
+                    for cluster_tile in self._get_tiles_in_radius(tile_index, group_range):
+                        if cluster_tile == tile_index:
+                            continue
+                        if self.resource_map[cluster_tile] != -1:
+                            continue
+                        if not self._can_have_bonus(cluster_tile, resource_def):
+                            continue
+                        if not self._should_place_resource(cluster_tile, resource_def, xml_constraints):
+                            continue
+                        if random.randint(1, 100) <= group_rand:
+                            self.resource_map[cluster_tile] = bonus_id
+                            placed_count += 1
+                            if placed_count >= target_quantity:
+                                break
+                            self._update_exclusion_zones(cluster_tile, xml_constraints)
+                        if placed_count >= target_quantity:
+                            break
             if placed_count >= target_quantity:
                 break
 
-            # Apply clustering and exclusion rules
-            if self._should_place_resource(tile_index, resource_def, xml_constraints):
-                self.resource_map[tile_index] = bonus_id
-                xml_constraints = dict(xml_constraints)
-                xml_constraints['base_resource'] = resource_def['base_resource']
-                self._update_exclusion_zones(tile_index, xml_constraints)
-                placed_count += 1
+    def _add_unique_bonus_type(self, resource_def):
+        # TODO
+        return
 
-    def _calculate_target_quantity(self, xml_constraints):
-        """Calculate target resource quantity from XML parameters"""
-        base_quantity = 0
+    def _can_have_bonus(self, tile_index, resource_def):
+        """Check hard constraints that must be obeyed (boolean gates)"""
+        bonus_id = self._get_bonus_id(resource_def['base_resource'])
+        if bonus_id == -1:
+            return False  # Missing resource definition
 
-        # Player-based quantity
-        player_percent = xml_constraints.get('iPlayer', 0)
-        if player_percent > 0:
-            base_quantity += (self.mc.iNumPlayers * player_percent) // 100
+        xml_constraints = resource_def['xml_constraints']
+        placement_rules = resource_def.get('placement_rules', [])
 
-        # Tile-based quantity
+        plot_type = self.em.plotTypes[tile_index]
+        terrain_id = self.terrain_map[tile_index]
+        feature_id = self.feature_map[tile_index]
+        terrain_booleans = xml_constraints.get('TerrainBooleans', [])
+        feature_booleans = xml_constraints.get('FeatureBooleans', [])
+        feature_terrain_booleans = xml_constraints.get('FeatureTerrainBooleans', [])
+
+        if not 'bPeak' in placement_rules and plot_type == PlotTypes.PLOT_PEAK:
+            return False
+
+        if feature_id != -1:
+            if not feature_id in feature_booleans:
+                return False
+            if not terrain_id in feature_terrain_booleans:
+                return False
+        else:
+            if not terrain_id in terrain_booleans:
+                return False
+
+        # Exclusive plot requirements
+        if xml_constraints.get('bHills', False) and plot_type != PlotTypes.PLOT_HILLS:  # PLOT_HILLS
+            return False
+        if xml_constraints.get('bFlatlands', False) and plot_type != PlotTypes.PLOT_LAND:  # PLOT_LAND
+            return False
+        if xml_constraints.get('bNoRiverSide', False) and self.mc.is_adjacent_to_river(tile_index):
+            return False
+        if xml_constraints.get('bRequiresRiver', False) and not self._is_river_tile(tile_index):
+            return False
+
+        # TODO: min area size (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2030)
+        # TODO: min/max latitude (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2038)
+        # TODO: potential city work gate (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2051)
+
+        return False
+
+    def _calculate_num_bonuses_to_add(self, xml_constraints, num_candidate_tiles):
+        """Calculate target resource quantity from XML parameters."""
+
+        rand_1 = random.randint(0, xml_constraints.get('iRandApp1', 0))
+        rand_2 = random.randint(0, xml_constraints.get('iRandApp2', 0))
+        rand_3 = random.randint(0, xml_constraints.get('iRandApp3', 0))
+        rand_4 = random.randint(0, xml_constraints.get('iRandApp4', 0))
+        base_count = xml_constraints.get('iConstAppearance', 0) + rand_1 + rand_2 + rand_3 + rand_4
+
         tiles_per = xml_constraints.get('iTilesPer', 0)
         if tiles_per > 0:
-            base_quantity += self.mc.iNumPlots // tiles_per
+            land_tiles = num_candidate_tiles // tiles_per
 
-        # Apply appearance probability
-        const_appearance = xml_constraints.get('iConstAppearance', 100)
-        if random.randint(1, 100) > const_appearance:
-            return 0
-
-        return max(1, base_quantity)  # At least one if we're placing
+        players = self.mc.iNumPlayers * xml_constraints.get('iPlayer', 0) // 100
+        bonus_count = (base_count * (land_tiles + players)) // 100
+        return max(1, bonus_count)
 
     def _should_place_resource(self, tile_index, resource_def, xml_constraints):
         """Check clustering and exclusion rules"""
@@ -7658,314 +7779,6 @@ class TerrainMap:
         unique_radius = xml_constraints.get('iUnique', 0)
         if unique_radius > 0:
             self.resource_exclusion_zones[base_resource] = unique_radius
-
-    def _get_resources_by_placement_order(self):
-        """Get resources sorted by placement order, target quantity, then resource name."""
-        resource_list = []
-
-        for base_resource, resource_def in self.resource_definitions.items():
-            bonus_id = self._get_bonus_id(base_resource)
-            if bonus_id == -1:
-                continue
-
-            resource_def['base_resource'] = base_resource
-            xml_constraints = self.bonus_constraints.get(bonus_id, {})
-            placement_order = xml_constraints.get('iPlacementOrder', 99)
-            quantity_context = dict(xml_constraints)
-            quantity_context['base_resource'] = base_resource
-            target_quantity = self._calculate_target_quantity(quantity_context)
-
-            resource_list.append((placement_order, target_quantity, base_resource, resource_def))
-
-        resource_list.sort(key=lambda x: (x[0], x[1], x[2]))
-        return [resource_def for _, _, _, resource_def in resource_list]
-
-    def _get_xml_parameters(self, resource_def):
-        """Get XML parameters for resource, with overrides applied"""
-        base_resource = resource_def['base_resource']
-
-        # Start with XML defaults (loaded from game)
-        xml_params = self.bonus_constraints.get(base_resource, {}).copy()
-
-        # Apply any overrides from resource definition
-        overrides = resource_def.get('xml_overrides', {})
-        xml_params.update(overrides)
-
-        return xml_params
-
-    def _should_resource_appear(self, xml_params):
-        """Check if resource should appear based on iConstAppearance"""
-        appearance_chance = xml_params.get('iConstAppearance', 100)
-        return random.randint(1, 100) <= appearance_chance
-
-    def _calculate_target_resource_count(self, xml_params):
-        """Calculate how many instances of this resource to place."""
-        target_count = 0
-
-        player_occurrences = xml_params.get('iPlayer', 0)
-        if player_occurrences > 0:
-            num_players = self.mc.iNumPlayers
-            target_count += (player_occurrences * num_players) // 100
-
-        tiles_per = xml_params.get('iTilesPer', 0)
-        if tiles_per > 0:
-            total_tiles = len(self.terrain_map)
-            target_count += total_tiles // tiles_per
-
-        return max(1, target_count)
-
-    def _find_eligible_resource_tiles(self, resource_name, resource_def, xml_params):
-        """Find all tiles eligible for this resource"""
-        eligible = []
-
-        for tile_index in range(len(self.terrain_map)):
-            if self.resource_map[tile_index] != BonusTypes.NO_BONUS:  # Skip occupied tiles
-                continue
-
-            if not self._tile_meets_xml_constraints(tile_index, xml_params):
-                continue
-
-            if not self._tile_meets_custom_rules(tile_index, resource_def):
-                continue
-
-            # Check exclusion zones from previous placements
-            if self._tile_in_exclusion_zone(tile_index):
-                continue
-
-            eligible.append(tile_index)
-
-        return eligible
-
-    def _tile_meets_xml_constraints(self, tile_index, xml_params):
-        """Check if tile meets XML-defined constraints"""
-        plot_type = self.em.plotTypes[tile_index]
-
-        # Check plot type constraints
-        if xml_params.get('bHills', False) and plot_type != PlotTypes.PLOT_HILLS:
-            return False
-        if xml_params.get('bFlatlands', False) and plot_type != PlotTypes.PLOT_LAND:
-            return False
-
-        # Check river constraints
-        if xml_params.get('bNoRiverSide', False):
-            if self.mc.is_adjacent_to_river(tile_index):
-                return False
-
-        # Check latitude constraints (distance from equator)
-        min_latitude = xml_params.get('iMinLatitude', 0)
-        max_latitude = xml_params.get('iMaxLatitude', 90)
-        if min_latitude > 0 or max_latitude < 90:
-            latitude = self.mc.get_latitude_for_y(tile_index // self.mc.iNumPlotsX)
-            if not (min_latitude <= latitude <= max_latitude):
-                return False
-
-        # Check minimum area size
-        min_area_size = xml_params.get('iMinAreaSize', 0)
-        if min_area_size > 0:
-            area_size = self.em.continentSizes[self.em.continentID[tile_index]]
-            if area_size < min_area_size:
-                return False
-
-        # Check map-wide land/water percentage.
-        # iMinLandPercent is a global requirement for the percentage of all
-        # map plots that are land, not a per-tile proxy.
-        min_land_percent = xml_params.get('iMinLandPercent', 0)
-        if min_land_percent > 0:
-            total_plots = len(self.em.plotTypes)
-            if total_plots > 0:
-                land_plots = 0
-                for current_plot_type in self.em.plotTypes:
-                    if current_plot_type != PlotTypes.PLOT_OCEAN:
-                        land_plots += 1
-                land_percent = (float(land_plots) * 100.0) / float(total_plots)
-                if land_percent < min_land_percent:
-                    return False
-
-        return True
-
-    def _tile_meets_custom_rules(self, tile_index, resource_def):
-        """Check if tile meets custom placement rules"""
-        placement_rules = resource_def.get('placement_rules', [])
-        if not placement_rules:
-            return True  # No custom rules = all tiles eligible
-
-        # Calculate total weight for all matching rules
-        total_weight = 0.0
-
-        for rule in placement_rules:
-            if self._tile_matches_rule_condition(tile_index, rule):
-                weight = rule.get('weight', 1.0)
-                total_weight += weight
-
-        # If no rules matched, tile is not eligible
-        if total_weight <= 0.0:
-            return False
-
-        # Use total weight as probability (capped at 1.0)
-        probability = min(total_weight, 1.0)
-        return random.random() <= probability
-
-    def _tile_matches_rule_condition(self, tile_index, rule):
-        """Check if tile matches a specific rule condition"""
-        condition = rule['condition']
-
-        if condition == 'always':
-            return True
-        elif condition == 'terrain_match':
-            terrain_filter = rule.get('terrain_filter', [])
-            if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
-                return False
-        elif condition == 'feature_match':
-            feature_filter = rule.get('feature_filter', [])
-            current_feature = self.feature_map[tile_index]
-            if feature_filter and current_feature not in feature_filter:
-                return False
-        elif condition == 'biome_match':
-            biome_filter = rule.get('biome_filter', [])
-            if biome_filter and self.biome_assignments[tile_index] not in biome_filter:
-                return False
-        elif condition == 'climate_match':
-            climate_req = rule.get('climate_requirements', {})
-            if not self._tile_meets_climate_requirements(tile_index, climate_req):
-                return False
-        elif condition == 'elevation_range':
-            elevation_range = rule.get('elevation_range')
-            if elevation_range is None:
-                return True
-            elevation = self.scoring_factors['elevation'][tile_index]
-            lower_bound, upper_bound = elevation_range
-            if not (lower_bound <= elevation <= upper_bound):
-                return False
-
-        return True
-
-    def _tile_meets_climate_requirements(self, tile_index, climate_req):
-        """Check if tile meets climate requirements"""
-        if not climate_req:
-            return True
-
-        temp = self.cm.temperature_percentiles[tile_index]
-        precip = self.cm.rainfall_percentiles[tile_index]
-
-        temp_range = climate_req.get('temp_range')
-        if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
-            return False
-
-        precip_range = climate_req.get('precip_range')
-        if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
-            return False
-
-        # Check other climate factors if specified
-        if 'wind_range' in climate_req:
-            wind = self.scoring_factors['wind_speed'][tile_index]
-            wind_range = climate_req['wind_range']
-            if not (wind_range[0] <= wind <= wind_range[1]):
-                return False
-
-        if 'pressure_range' in climate_req:
-            pressure = self.scoring_factors['pressure'][tile_index]
-            pressure_range = climate_req['pressure_range']
-            if not (pressure_range[0] <= pressure <= pressure_range[1]):
-                return False
-
-        if 'elevation_range' in climate_req:
-            elevation = self.scoring_factors['elevation'][tile_index]
-            elevation_range = climate_req['elevation_range']
-            if not (elevation_range[0] <= elevation <= elevation_range[1]):
-                return False
-
-        return True
-
-    def _tile_in_exclusion_zone(self, tile_index):
-        """Check if tile is in exclusion zone of already placed resources"""
-        for resource_type, exclusion_radius in self.resource_exclusion_zones.items():
-            for placed_tile in self.placed_resources.get(resource_type, []):
-                distance = self.mc.get_wrapped_distance(tile_index, placed_tile)
-                if distance < exclusion_radius:
-                    return True
-        return False
-
-    def _place_resource_with_constraints(self, resource_name, resource_def, xml_params, eligible_tiles, target_count):
-        """Place resource instances with all XML constraints applied"""
-        base_resource = resource_def['base_resource']
-        placed_count = 0
-
-        # Handle bArea constraint (single continent restriction)
-        if xml_params.get('bArea', False):
-            eligible_tiles = self._restrict_to_single_continent(resource_name, eligible_tiles)
-
-        # Set up exclusion zone tracking
-        unique_radius = xml_params.get('iUnique', 0)
-        if unique_radius > 0:
-            self.resource_exclusion_zones[base_resource] = unique_radius
-
-        # Place primary instances
-        primary_placements = []
-        for _ in range(target_count):
-            if not eligible_tiles:
-                break
-
-            # Select placement tile
-            placement_tile = random.choice(eligible_tiles)
-
-            # Remove tiles in exclusion zone
-            if unique_radius > 0:
-                eligible_tiles = [t for t in eligible_tiles
-                                if self.mc.get_wrapped_distance(t, placement_tile) >= unique_radius]
-            else:
-                eligible_tiles.remove(placement_tile)
-
-            # Place the resource
-            self.resource_map[placement_tile] = base_resource
-            primary_placements.append(placement_tile)
-            placed_count += 1
-
-        # Handle clustering (iGroupRange/iGroupRand)
-        group_range = xml_params.get('iGroupRange', 0)
-        group_rand = xml_params.get('iGroupRand', 0)
-
-        if group_range > 0 and group_rand > 0:
-            for primary_tile in primary_placements:
-                cluster_tiles = self._get_tiles_in_radius(primary_tile, group_range)
-
-                for cluster_tile in cluster_tiles:
-                    if (cluster_tile != primary_tile and
-                        self.resource_map[cluster_tile] == BonusTypes.NO_BONUS and
-                        random.randint(1, 100) <= group_rand):
-
-                        # Check if cluster tile meets basic constraints
-                        if (cluster_tile in range(len(self.terrain_map)) and
-                            self._tile_meets_xml_constraints(cluster_tile, xml_params)):
-
-                            self.resource_map[cluster_tile] = base_resource
-                            placed_count += 1
-
-        # Track placed resources
-        if base_resource not in self.placed_resources:
-            self.placed_resources[base_resource] = []
-        self.placed_resources[base_resource].extend(primary_placements)
-
-        return placed_count
-
-    def _restrict_to_single_continent(self, resource_name, eligible_tiles):
-        """Restrict resource to single continent (bArea constraint)"""
-        if resource_name in self.continent_assignments:
-            # Already assigned to a continent
-            assigned_continent = self.continent_assignments[resource_name]
-            return [t for t in eligible_tiles if self.em.continentID[t] == assigned_continent]
-        else:
-            # Choose a continent with most eligible tiles
-            continent_counts = {}
-            for tile in eligible_tiles:
-                continent_id = self.em.continentID[tile]
-                continent_counts[continent_id] = continent_counts.get(continent_id, 0) + 1
-
-            if continent_counts:
-                best_continent = max([(count, continent) for continent, count in continent_counts.items()])[1]
-                self.continent_assignments[resource_name] = best_continent
-                return [t for t in eligible_tiles if self.em.continentID[t] == best_continent]
-            else:
-                return eligible_tiles
 
     def _log_warning(self, message):
         """Log warning once per unique message"""
@@ -8055,6 +7868,8 @@ class TerrainMap:
 
         # Evaluate each placement rule
         for rule in resource_def.get('placement_rules', []):
+            if rule == 'bPeak':
+                continue # not used here
             rule_score = self._evaluate_placement_rule(tile_index, rule)
             weight = rule.get('weight', 1.0)
             score_modifier += rule_score * weight * 0.1  # Scale to reasonable range
@@ -8066,6 +7881,8 @@ class TerrainMap:
         score_modifier = 0.0
 
         for rule in resource_def.get('placement_rules', []):
+            if rule == 'bPeak':
+                continue # not used here
             climate_reqs = rule.get('climate_requirements', {})
             if not climate_reqs:
                 continue
@@ -8101,6 +7918,8 @@ class TerrainMap:
         tile_biome = self.biome_assignments[tile_index]
 
         for rule in resource_def.get('placement_rules', []):
+            if rule == 'bPeak':
+                continue # not used here
             biome_filter = rule.get('biome_filter', [])
             if biome_filter:
                 if tile_biome in biome_filter:
@@ -8109,36 +7928,6 @@ class TerrainMap:
                     score_modifier -= 0.1
 
         return max(-0.2, min(0.2, score_modifier))
-
-    def _meets_hard_constraints(self, tile_index, resource_def):
-        """Check hard constraints that must be obeyed (boolean gates)"""
-        bonus_id = self._get_bonus_id(resource_def['base_resource'])
-        if bonus_id == -1:
-            return False  # Missing resource definition
-
-        xml_constraints = self.bonus_constraints.get(bonus_id, {})
-
-        # Water/Land compatibility - check terrain compatibility instead
-        plot_type = self.em.plotTypes[tile_index]
-        terrain_id = self.terrain_map[tile_index]
-        terrain_booleans = xml_constraints.get('TerrainBooleans', [])
-
-        # If resource has terrain restrictions and current terrain isn't allowed
-        if terrain_booleans and terrain_id not in terrain_booleans:
-            return False
-
-        # Exclusive plot requirements
-        if xml_constraints.get('bHills', False) and plot_type != 1:  # PLOT_HILLS
-            return False
-        if xml_constraints.get('bFlatlands', False) and plot_type != 2:  # PLOT_LAND
-            return False
-
-        # River requirements (this is for features, not usually bonuses)
-        if xml_constraints.get('bRequiresRiver', False):
-            if not self._is_river_tile(tile_index):
-                return False
-
-        return True
 
     def _evaluate_placement_rule(self, tile_index, rule):
         """Evaluate a single placement rule and return score modifier"""

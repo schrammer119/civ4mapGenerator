@@ -15,11 +15,13 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 
 ## Current Status
 
-Phase 2 of the implementation plan is complete and verified:
+Phase 2 is complete and verified, and Phase 3 resource verification/visualization is complete in the current workspace:
 
-- Resource placement, exclusion tracking, ordering, and XML constraint handling are implemented in the live path.
-- Feature adjacency and river cleanup now use the canonical map state instead of stale legacy lookups.
+- Resource placement wiring is verified end-to-end: `TerrainMap.GenerateTerrain()` calls `_place_resources()`, and the generated `resource_map` is consumed by the bonus application path.
+- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are implemented in the live path.
+- Feature adjacency and river cleanup use the canonical map state instead of stale legacy lookups.
 - The `addBonuses()` path applies the generated bonus map directly to plot instances.
+- `test_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
 
 ### Verification
 
@@ -27,6 +29,7 @@ The following checks were run successfully in the current workspace:
 
 - `py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 9 tests passed, 0 failed
 - `py tests/test_planetsim.py` -> exit code 0, full generation completed successfully for a 144x96 map with 15 plates
+- Output included a resource summary showing 1907 resources placed across the map and no placement exceptions
 
 ## Installation
 
@@ -111,7 +114,8 @@ This generates matplotlib visualizations of:
 - Climate maps (temperature, rainfall, wind patterns)
 - River system and watersheds
 - Biome distribution with statistical analysis
-- Feature and resource placement
+- Feature placement
+- Resource placement with letter-code overlays on the final map and console resource statistics
 
 ### Requirements
 

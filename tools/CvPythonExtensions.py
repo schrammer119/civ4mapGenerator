@@ -1,5 +1,8 @@
 # https://civ4bug.sourceforge.net/PythonAPI/
 
+import os
+import xml.etree.ElementTree as ET
+
 ############################################ Type Lists ############################################
 
 class PlotTypes:
@@ -99,41 +102,132 @@ class CardinalDirectionTypes:
     CARDINALDIRECTION_WEST = 3
     NO_CARDINALDIRECTION = 4
 
+
+def _tag_name(tag):
+    if tag is None:
+        return ''
+    if tag.startswith('{'):
+        return tag.split('}', 1)[1]
+    return tag
+
+
+def _xml_path_for(filename):
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples', filename))
+
+
+_XML_CACHE = {}
+
+
+def _load_xml_entries(filename, entry_tag):
+    cache_key = (filename, entry_tag)
+    if cache_key not in _XML_CACHE:
+        xml_path = _xml_path_for(filename)
+        root = ET.parse(xml_path).getroot()
+        entries = []
+        for element in root.iter():
+            if _tag_name(element.tag) == entry_tag:
+                entries.append(element)
+        _XML_CACHE[cache_key] = entries
+    return _XML_CACHE[cache_key]
+
+
+def _child_text(element, tag_name):
+    if element is None:
+        return ''
+    for child in list(element):
+        if _tag_name(child.tag) == tag_name:
+            text = (child.text or '').strip()
+            return text
+    return ''
+
+
+def _int_list_from(parent, child_tag):
+    values = []
+    if parent is None:
+        return values
+    for child in list(parent):
+        if _tag_name(child.tag) == child_tag:
+            try:
+                values.append(int((child.text or '0').strip()))
+            except ValueError:
+                values.append(0)
+    return values
+
+
+def _parse_bool_list(parent, item_tag, type_tag, bool_tag, type_lookup):
+    items = []
+    if parent is None:
+        return items
+    for entry in list(parent):
+        if _tag_name(entry.tag) != item_tag:
+            continue
+        type_name = _child_text(entry, type_tag)
+        enabled = _child_text(entry, bool_tag)
+        if not type_name:
+            continue
+        if enabled and int(enabled) == 1:
+            if type_name in type_lookup:
+                items.append(type_lookup[type_name])
+    return items
+
+
+def _build_type_maps():
+    terrain_entries = _load_xml_entries('CIV4TerrainInfos.xml', 'TerrainInfo')
+    feature_entries = _load_xml_entries('CIV4FeatureInfos.xml', 'FeatureInfo')
+    bonus_entries = _load_xml_entries('CIV4BonusInfos.xml', 'BonusInfo')
+
+    terrain_types = {}
+    feature_types = {}
+    bonus_types = {}
+
+    for index, element in enumerate(terrain_entries):
+        terrain_type = _child_text(element, 'Type')
+        if terrain_type:
+            terrain_types[index] = terrain_type
+    for index, element in enumerate(feature_entries):
+        feature_type = _child_text(element, 'Type')
+        if feature_type:
+            feature_types[index] = feature_type
+    for index, element in enumerate(bonus_entries):
+        bonus_type = _child_text(element, 'Type')
+        if bonus_type:
+            bonus_types[index] = bonus_type
+
+    return terrain_types, feature_types, bonus_types
+
+
 ############################################ Classes ###############################################
 
 
 class CyGlobalContext:
     """Mock CyGlobalContext for testing"""
     def __init__(self):
-        self.num_terrains = 8
-        self.num_features = 5
-        self.num_bonuses = 32  # Updated count
         self.num_players = 4
+        self.terrain_types, self.feature_types, self.bonus_types = _build_type_maps()
+        self.num_terrains = len(self.terrain_types)
+        self.num_features = len(self.feature_types)
+        self.num_bonuses = len(self.bonus_types)
 
-        # Build lookup dictionary from existing enum classes
         self._string_to_enum = {}
-        self.terrain_types = {}
-        self.feature_types = {}
-        self.bonus_types = {}
-        enum_classes = [TerrainTypes, FeatureTypes, BonusTypes]
+        for value, name in list(self.terrain_types.items()):
+            self._string_to_enum[name] = value
+        for value, name in list(self.feature_types.items()):
+            self._string_to_enum[name] = value
+        for value, name in list(self.bonus_types.items()):
+            self._string_to_enum[name] = value
 
-        for enum_class in enum_classes:
+        for enum_class in [TerrainTypes, FeatureTypes, BonusTypes]:
             for attr_name in dir(enum_class):
-                if not attr_name.startswith('_'):  # Skip private attributes
-                    attr_value = getattr(enum_class, attr_name)
-                    if isinstance(attr_value, int):  # Only include integer constants
-                        self._string_to_enum[attr_name] = attr_value
-                        if enum_class is TerrainTypes:
-                            self.terrain_types[attr_value] = attr_name
-                        elif enum_class is FeatureTypes:
-                            self.feature_types[attr_value] = attr_name
-                        elif enum_class is BonusTypes:
-                            self.bonus_types[attr_value] = attr_name
+                if attr_name.startswith('_'):
+                    continue
+                attr_value = getattr(enum_class, attr_name)
+                if isinstance(attr_value, int):
+                    self._string_to_enum.setdefault(attr_name, attr_value)
 
     def getInfoTypeForString(self, info_string):
         """
         Returns the integer enum value for a given info type string.
-        Uses pre-built lookup from existing enum classes.
+        Uses the XML-derived lookup for the file order in the example data.
         """
         return self._string_to_enum.get(info_string, -1)
 
@@ -248,58 +342,51 @@ class CyTerrainInfo:
     def __init__(self, terrain_type, terrain_id):
         self.terrain_type = terrain_type
         self.terrain_id = terrain_id
+        self.terrain_data = {}
 
-        # Complete terrain data from XML
-        self.terrain_data = {
-            'TERRAIN_GRASS': {
-                'yields': [2, 0, 0], 'river_yield': [0, 0, 1], 'water': False,
-                'impassable': False, 'found': True, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 0, 'defense': 0
-            },
-            'TERRAIN_PLAINS': {
-                'yields': [1, 1, 0], 'river_yield': [0, 0, 1], 'water': False,
-                'impassable': False, 'found': True, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 0, 'defense': 0
-            },
-            'TERRAIN_DESERT': {
-                'yields': [0, 0, 0], 'river_yield': [0, 0, 1], 'water': False,
-                'impassable': False, 'found': True, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 0, 'defense': 0
-            },
-            'TERRAIN_TUNDRA': {
-                'yields': [1, 0, 0], 'river_yield': [0, 0, 1], 'water': False,
-                'impassable': False, 'found': True, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 25, 'defense': 0
-            },
-            'TERRAIN_SNOW': {
-                'yields': [0, 0, 0], 'river_yield': [0, 0, 1], 'water': False,
-                'impassable': False, 'found': True, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 50, 'defense': 0
-            },
-            'TERRAIN_COAST': {
-                'yields': [1, 0, 2], 'river_yield': [0, 0, 0], 'water': True,
-                'impassable': False, 'found': False, 'found_coast': True,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 0, 'defense': 0
-            },
-            'TERRAIN_OCEAN': {
-                'yields': [1, 0, 1], 'river_yield': [0, 0, 0], 'water': True,
-                'impassable': False, 'found': False, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 1,
-                'see_through': 1, 'build_modifier': 0, 'defense': 0
-            },
-            'TERRAIN_PEAK': {
-                'yields': [0, 0, 0], 'river_yield': [0, 0, 0], 'water': True,
-                'impassable': False, 'found': False, 'found_coast': False,
-                'found_fresh_water': False, 'movement': 1, 'see_from': 0,
-                'see_through': 0, 'build_modifier': 0, 'defense': 0
+        terrain_entries = _load_xml_entries('CIV4TerrainInfos.xml', 'TerrainInfo')
+        for element in terrain_entries:
+            type_name = _child_text(element, 'Type')
+            if type_name != terrain_type:
+                continue
+            yields = _int_list_from(element.find('Yields'), 'iYield') if element.find('Yields') is not None else []
+            river_yield = _int_list_from(element.find('RiverYieldChange'), 'iYield') if element.find('RiverYieldChange') is not None else []
+            if len(yields) < 3:
+                yields.extend([0] * (3 - len(yields)))
+            if len(river_yield) < 3:
+                river_yield.extend([0] * (3 - len(river_yield)))
+
+            self.terrain_data[terrain_type] = {
+                'yields': yields,
+                'river_yield': river_yield,
+                'water': _child_text(element, 'bWater') == '1',
+                'impassable': _child_text(element, 'bImpassable') == '1',
+                'found': _child_text(element, 'bFound') == '1',
+                'found_coast': _child_text(element, 'bFoundCoast') == '1',
+                'found_fresh_water': _child_text(element, 'bFoundFreshWater') == '1',
+                'movement': int(_child_text(element, 'iMovement') or 1),
+                'see_from': int(_child_text(element, 'iSeeFrom') or 1),
+                'see_through': int(_child_text(element, 'iSeeThrough') or 1),
+                'build_modifier': int(_child_text(element, 'iBuildModifier') or 0),
+                'defense': int(_child_text(element, 'iDefense') or 0),
             }
-        }
+            break
+
+        if not self.terrain_data:
+            self.terrain_data[terrain_type] = {
+                'yields': [0, 0, 0],
+                'river_yield': [0, 0, 0],
+                'water': False,
+                'impassable': False,
+                'found': False,
+                'found_coast': False,
+                'found_fresh_water': False,
+                'movement': 1,
+                'see_from': 1,
+                'see_through': 1,
+                'build_modifier': 0,
+                'defense': 0,
+            }
 
     def getType(self):
         return self.terrain_type
@@ -350,55 +437,80 @@ class CyFeatureInfo:
     def __init__(self, feature_type, feature_id):
         self.feature_type = feature_type
         self.feature_id = feature_id
+        self.feature_data = {}
 
-        # Complete feature data from XML
-        self.feature_data = {
-            FeatureTypes.FEATURE_ICE: {
-                'yields': [0, 0, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
-                'movement': 1, 'see_through': 0, 'health_percent': 0, 'defense': 0,
-                'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
-                'no_coast': False, 'no_river': False, 'no_adjacent': False,
-                'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
-                'impassable': True, 'no_city': False, 'no_improvement': False,
-                'terrain_booleans': [5, 6]  # COAST, OCEAN
-            },
-            FeatureTypes.FEATURE_JUNGLE: {
-                'yields': [1, -1, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
-                'movement': 2, 'see_through': 1, 'health_percent': -25, 'defense': 50,
-                'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
-                'no_coast': False, 'no_river': False, 'no_adjacent': False,
-                'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
-                'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_booleans': [0]  # GRASS
-            },
-            FeatureTypes.FEATURE_OASIS: {
-                'yields': [3, 0, 2], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
-                'movement': 2, 'see_through': 1, 'health_percent': 0, 'defense': 0,
-                'appearance': 500, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
-                'no_coast': True, 'no_river': True, 'no_adjacent': True,
-                'requires_flatlands': True, 'requires_river': False, 'adds_fresh_water': True,
-                'impassable': False, 'no_city': True, 'no_improvement': True,
-                'terrain_booleans': [2]  # DESERT
-            },
-            FeatureTypes.FEATURE_FLOOD_PLAINS: {
-                'yields': [3, 0, 0], 'river_yield': [0, 0, 1], 'hills_yield': [0, 0, 0],
-                'movement': 1, 'see_through': 0, 'health_percent': -40, 'defense': 0,
-                'appearance': 10000, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
-                'no_coast': False, 'no_river': False, 'no_adjacent': False,
-                'requires_flatlands': True, 'requires_river': True, 'adds_fresh_water': False,
-                'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_booleans': [2]  # DESERT
-            },
-            FeatureTypes.FEATURE_FOREST: {
-                'yields': [0, 1, 0], 'river_yield': [0, 0, 0], 'hills_yield': [0, 0, 0],
-                'movement': 2, 'see_through': 1, 'health_percent': 0, 'defense': 50,
-                'appearance': 0, 'disappearance': 0, 'growth': 0, 'turn_damage': 0,
-                'no_coast': False, 'no_river': False, 'no_adjacent': False,
-                'requires_flatlands': False, 'requires_river': False, 'adds_fresh_water': False,
-                'impassable': False, 'no_city': False, 'no_improvement': False,
-                'terrain_booleans': [0, 1, 3, 4]  # GRASS, PLAINS, TUNDRA, SNOW
+        terrain_type_map = {name: idx for idx, name in _build_type_maps()[0].items()}
+        feature_entries = _load_xml_entries('CIV4FeatureInfos.xml', 'FeatureInfo')
+        for element in feature_entries:
+            type_name = _child_text(element, 'Type')
+            if type_name != feature_type:
+                continue
+            yield_changes = _int_list_from(element.find('YieldChanges'), 'iYieldChange') if element.find('YieldChanges') is not None else []
+            river_yield = _int_list_from(element.find('RiverYieldChange'), 'iYield') if element.find('RiverYieldChange') is not None else []
+            hills_yield = _int_list_from(element.find('HillsYieldChange'), 'iYield') if element.find('HillsYieldChange') is not None else []
+            if len(yield_changes) < 3:
+                yield_changes.extend([0] * (3 - len(yield_changes)))
+            if len(river_yield) < 3:
+                river_yield.extend([0] * (3 - len(river_yield)))
+            if len(hills_yield) < 3:
+                hills_yield.extend([0] * (3 - len(hills_yield)))
+
+            terrain_booleans = _parse_bool_list(
+                element.find('TerrainBooleans'),
+                'TerrainBoolean',
+                'TerrainType',
+                'bTerrain',
+                terrain_type_map
+            )
+            self.feature_data[feature_id] = {
+                'yields': yield_changes,
+                'river_yield': river_yield,
+                'hills_yield': hills_yield,
+                'movement': int(_child_text(element, 'iMovement') or 1),
+                'see_through': int(_child_text(element, 'iSeeThrough') or 0),
+                'health_percent': int(_child_text(element, 'iHealthPercent') or 0),
+                'defense': int(_child_text(element, 'iDefense') or 0),
+                'appearance': int(_child_text(element, 'iAppearance') or 0),
+                'disappearance': int(_child_text(element, 'iDisappearance') or 0),
+                'growth': int(_child_text(element, 'iGrowth') or 0),
+                'turn_damage': int(_child_text(element, 'iTurnDamage') or 0),
+                'no_coast': _child_text(element, 'bNoCoast') == '1',
+                'no_river': _child_text(element, 'bNoRiver') == '1',
+                'no_adjacent': _child_text(element, 'bNoAdjacent') == '1',
+                'requires_flatlands': _child_text(element, 'bRequiresFlatlands') == '1',
+                'requires_river': _child_text(element, 'bRequiresRiver') == '1',
+                'adds_fresh_water': _child_text(element, 'bAddsFreshWater') == '1',
+                'impassable': _child_text(element, 'bImpassable') == '1',
+                'no_city': _child_text(element, 'bNoCity') == '1',
+                'no_improvement': _child_text(element, 'bNoImprovement') == '1',
+                'terrain_booleans': terrain_booleans,
             }
-        }
+            break
+
+        if not self.feature_data:
+            self.feature_data[feature_id] = {
+                'yields': [0, 0, 0],
+                'river_yield': [0, 0, 0],
+                'hills_yield': [0, 0, 0],
+                'movement': 1,
+                'see_through': 0,
+                'health_percent': 0,
+                'defense': 0,
+                'appearance': 0,
+                'disappearance': 0,
+                'growth': 0,
+                'turn_damage': 0,
+                'no_coast': False,
+                'no_river': False,
+                'no_adjacent': False,
+                'requires_flatlands': False,
+                'requires_river': False,
+                'adds_fresh_water': False,
+                'impassable': False,
+                'no_city': False,
+                'no_improvement': False,
+                'terrain_booleans': [],
+            }
 
     def getType(self):
         return self.feature_type
@@ -480,307 +592,85 @@ class CyBonusInfo:
     def __init__(self, bonus_type, bonus_id):
         self.bonus_type = bonus_type
         self.bonus_id = bonus_id
+        self.bonus_data = {}
 
-        # Complete bonus data from XML
-        self.bonus_data = {
-            'BONUS_ALUMINUM': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 10, 'health': 0, 'happiness': 0,
-                'placement_order': 2, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [1, 2, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_COAL': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 0,
-                'placement_order': 2, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [0, 1, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_COPPER': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 0,
-                'placement_order': 1, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 120, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [0, 1, 2, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_HORSE': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 10, 'health': 0, 'happiness': 0,
-                'placement_order': 1, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_IRON': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 10, 'health': 0, 'happiness': 0,
-                'placement_order': 1, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 120, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [0, 1, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_MARBLE': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 2, 'const_appearance': 80, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 4,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1, 2, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_OIL': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 10, 'health': 0, 'happiness': 0,
-                'placement_order': 2, 'const_appearance': 100, 'min_area_size': 10,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [2, 3, 4, 5, 6], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_STONE': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 0,
-                'placement_order': 2, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [0, 1, 2, 3], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_URANIUM': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 0,
-                'placement_order': 2, 'const_appearance': 100, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [10, 10, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [1, 2, 3, 4], 'feature_booleans': [4], 'feature_terrain_booleans': [0, 1, 2, 3, 4]
-            },
-            'BONUS_BANANA': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 4, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 16, 'min_land_percent': 0, 'unique': 2,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [], 'feature_booleans': [1], 'feature_terrain_booleans': [0]
-            },
-            'BONUS_CLAM': {
-                'yields': [1, 0, 1], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 6, 'const_appearance': 50, 'min_area_size': 10,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 32, 'min_land_percent': 0, 'unique': 1,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': False,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [5], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_CORN': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_COW': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_CRAB': {
-                'yields': [1, 0, 1], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 6, 'const_appearance': 50, 'min_area_size': 10,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 32, 'min_land_percent': 0, 'unique': 1,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': False,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [5], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_DEER': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 4, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 30, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 16, 'min_land_percent': 0, 'unique': 2,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': True,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [3], 'feature_booleans': [4], 'feature_terrain_booleans': [3]
-            },
-            'BONUS_FISH': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 6, 'const_appearance': 50, 'min_area_size': 10,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 32, 'min_land_percent': 0, 'unique': 1,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': False,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [5, 6], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_PIG': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_RICE': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 70, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0], 'feature_booleans': [3], 'feature_terrain_booleans': [0]
-            },
-            'BONUS_SHEEP': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1, 2, 3], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1, 2, 3]
-            },
-            'BONUS_WHEAT': {
-                'yields': [1, 0, 0], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 0, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 200, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_DYE': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [], 'feature_booleans': [1], 'feature_terrain_booleans': [0]
-            },
-            'BONUS_FUR': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 50, 'area': True, 'hills': True,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [3, 4], 'feature_booleans': [4], 'feature_terrain_booleans': [3, 4]
-            },
-            'BONUS_GEMS': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [3, 4], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_GOLD': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [1, 2], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_INCENSE': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 50, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [2], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_IVORY': {
-                'yields': [0, 1, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 40, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 50, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_SILK': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 50, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [], 'feature_booleans': [4], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_SILVER': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [3, 4], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_SPICES': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 60, 'rands': [25, 25, 0, 0],
-                'player': 100, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 50, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [], 'feature_booleans': [1, 4], 'feature_terrain_booleans': [0, 1]
-            },
-            'BONUS_SUGAR': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': False,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [1], 'feature_booleans': [1], 'feature_terrain_booleans': [0]
-            },
-            'BONUS_WINE': {
-                'yields': [0, 0, 1], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': 5, 'const_appearance': 50, 'min_area_size': 3,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 67, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 1, 'group_rand': 25, 'area': True, 'hills': True,
-                'flatlands': True, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [0, 1, 2, 3, 4], 'feature_booleans': [], 'feature_terrain_booleans': [0, 1, 2, 3, 4]
-            },
-            'BONUS_WHALE': {
-                'yields': [1, 0, 1], 'ai_trade_modifier': 0, 'health': 1, 'happiness': 0,
-                'placement_order': 6, 'const_appearance': 50, 'min_area_size': 10,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [25, 25, 0, 0],
-                'player': 0, 'tiles_per': 32, 'min_land_percent': 0, 'unique': 1,
-                'group_range': 0, 'group_rand': 0, 'area': True, 'hills': False,
-                'flatlands': False, 'no_river_side': False, 'normalize': True,
-                'terrain_booleans': [6], 'feature_booleans': [], 'feature_terrain_booleans': []
-            },
-            'BONUS_MUSIC': {
-                'yields': [0, 0, 0], 'ai_trade_modifier': 0, 'health': 0, 'happiness': 1,
-                'placement_order': -1, 'const_appearance': 0, 'min_area_size': -1,
-                'min_latitude': 0, 'max_latitude': 90, 'rands': [0, 0, 0, 0],
-                'player': 0, 'tiles_per': 0, 'min_land_percent': 0, 'unique': 0,
-                'group_range': 0, 'group_rand': 0, 'area': False, 'hills': False,
-                'flatlands': False, 'no_river_side': False, 'normalize': False,
-                'terrain_booleans': [], 'feature_booleans': [], 'feature_terrain_booleans': []
+        terrain_type_map = {name: idx for idx, name in _build_type_maps()[0].items()}
+        feature_type_map = {name: idx for idx, name in _build_type_maps()[1].items()}
+        bonus_entries = _load_xml_entries('CIV4BonusInfos.xml', 'BonusInfo')
+        for element in bonus_entries:
+            type_name = _child_text(element, 'Type')
+            if type_name != bonus_type:
+                continue
+            yield_changes = _int_list_from(element.find('YieldChanges'), 'iYieldChange') if element.find('YieldChanges') is not None else []
+            if len(yield_changes) < 3:
+                yield_changes.extend([0] * (3 - len(yield_changes)))
+
+            rands = [0, 0, 0, 0]
+            rands_element = element.find('Rands')
+            if rands_element is not None:
+                for idx in range(1, 5):
+                    value = _child_text(rands_element, 'iRandApp%s' % idx)
+                    if value:
+                        try:
+                            rands[idx - 1] = int(value)
+                        except ValueError:
+                            pass
+
+            self.bonus_data[bonus_type] = {
+                'yields': yield_changes,
+                'ai_trade_modifier': int(_child_text(element, 'iAITradeModifier') or 0),
+                'health': int(_child_text(element, 'iHealth') or 0),
+                'happiness': int(_child_text(element, 'iHappiness') or 0),
+                'placement_order': int(_child_text(element, 'iPlacementOrder') or 0),
+                'const_appearance': int(_child_text(element, 'iConstAppearance') or 0),
+                'min_area_size': int(_child_text(element, 'iMinAreaSize') or 0),
+                'min_latitude': int(_child_text(element, 'iMinLatitude') or 0),
+                'max_latitude': int(_child_text(element, 'iMaxLatitude') or 90),
+                'rands': rands,
+                'player': int(_child_text(element, 'iPlayer') or 0),
+                'tiles_per': int(_child_text(element, 'iTilesPer') or 0),
+                'min_land_percent': int(_child_text(element, 'iMinLandPercent') or 0),
+                'unique': int(_child_text(element, 'iUnique') or 0),
+                'group_range': int(_child_text(element, 'iGroupRange') or 0),
+                'group_rand': int(_child_text(element, 'iGroupRand') or 0),
+                'area': _child_text(element, 'bArea') == '1',
+                'hills': _child_text(element, 'bHills') == '1',
+                'flatlands': _child_text(element, 'bFlatlands') == '1',
+                'no_river_side': _child_text(element, 'bNoRiverSide') == '1',
+                'normalize': _child_text(element, 'bNormalize') == '1',
+                'terrain_booleans': _parse_bool_list(element.find('TerrainBooleans'), 'TerrainBoolean', 'TerrainType', 'bTerrain', terrain_type_map),
+                'feature_booleans': _parse_bool_list(element.find('FeatureBooleans'), 'FeatureBoolean', 'FeatureType', 'bFeature', feature_type_map),
+                'feature_terrain_booleans': _parse_bool_list(element.find('FeatureTerrainBooleans'), 'FeatureTerrainBoolean', 'TerrainType', 'bFeatureTerrain', terrain_type_map),
             }
-        }
+            break
+
+        if not self.bonus_data:
+            self.bonus_data[bonus_type] = {
+                'yields': [0, 0, 0],
+                'ai_trade_modifier': 0,
+                'health': 0,
+                'happiness': 0,
+                'placement_order': 0,
+                'const_appearance': 0,
+                'min_area_size': 0,
+                'min_latitude': 0,
+                'max_latitude': 90,
+                'rands': [0, 0, 0, 0],
+                'player': 0,
+                'tiles_per': 0,
+                'min_land_percent': 0,
+                'unique': 0,
+                'group_range': 0,
+                'group_rand': 0,
+                'area': False,
+                'hills': False,
+                'flatlands': False,
+                'no_river_side': False,
+                'normalize': False,
+                'terrain_booleans': [],
+                'feature_booleans': [],
+                'feature_terrain_booleans': [],
+            }
 
     def getType(self):
         return self.bonus_type

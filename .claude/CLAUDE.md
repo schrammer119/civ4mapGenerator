@@ -4,7 +4,7 @@ You are a senior python game developer collaborating with me on a project. We ar
 
 ## Project Status Summary
 
-**CURRENT STATE**: **PHASE 2 COMPLETE AND VERIFIED**
+**CURRENT STATE**: **PHASE 2 COMPLETE AND VERIFIED; PHASE 3 RESOURCE VERIFICATION & VISUALIZATION COMPLETE**
 
 **IMPLEMENTATION STATUS**:
 
@@ -13,21 +13,23 @@ You are a senior python game developer collaborating with me on a project. We ar
   - ✅ Climate modeling with ocean currents and atmospheric circulation
   - ✅ Terrain/biome assignment with realistic feature placement
   - ✅ Resource placement system: live placement, exclusion tracking, ordering, XML constraints, and land-percent checks are working
+  - ✅ Resource verification: `TerrainMap.GenerateTerrain()` successfully calls `_place_resources()`, and `tm.resource_map` is populated during generation
+  - ✅ Resource diagnostics: `test_planetsim.py` prints a per-resource distribution table and overlays letter codes on the final map when run with `--show`
   - ✅ River system generation: flow validation and cleanup now operate on canonical `river_map` state
   - ✅ Civ IV API integration: `addBonuses()`, `addFeatures()`, and `addRivers()` are wired to the generated map state
 - ✅ **Testing Infrastructure**: Comprehensive end-to-end harness and focused regression coverage
-- ✅ **Regression Validation**: `py -m unittest discover -s tests -p test_phase2_resources.py -v` passed with 9 tests; `py tests/test_planetsim.py` passed as a full smoke run
+- ✅ **Regression Validation**: `py -m unittest discover -s tests -p test_phase2_resources.py -v` passed with 9 tests; `py tests/test_planetsim.py` passed as a full smoke run and printed a complete resource summary for a 144x96 map
 
 **MODULES CONSOLIDATED**: MapConfig, ElevationMap, ClimateMap, TerrainMap, Wrappers all integrated into PlanetSim.py
 
 **KNOWN ISSUES**:
 
-- Remaining work is in Phase 3+ (resource visualization, gameplay balance, in-game testing, and polish), not in the core Phase 2 implementation itself.
-- Optional resource balancing and in-game validation remain to be done before a release candidate.
+- Remaining work is in Phase 3+ (resource balancing and in-game validation), not in the core placement logic itself.
+- Optional resource balancing and manual in-game validation remain before a release candidate.
 
 **NEXT STEPS** (see FINISH_LINE_TODO.md for complete checklist):
 
-- Phase 3: Resource visualization and balance validation
+- Phase 3.3: Optional in-game balance validation
 - Phase F: civ-weighted start locations and world assumptions
 - Phase 5: In-game testing and stability checks
 - Phase 6: Final polish and release
