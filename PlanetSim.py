@@ -744,15 +744,19 @@ class MapConfig:
                 v = -v
             return u + v
 
-    def get_node_index(self, x, y):
-        """Convert node coordinates to flat index."""
-        return y * self.iNumPlotsX + x
-
-    def get_node_coords(self, node_index):
-        """Convert flat node index to coordinates."""
-        x = node_index % self.iNumPlotsX
-        y = node_index // self.iNumPlotsX
+    def get_coords_from_index(self, index):
+        """Convert flat index to x,y coordinates"""
+        if index < 0 or index >= self.iNumPlots:
+            return -1, -1
+        y = index // self.iNumPlotsX
+        x = index % self.iNumPlotsX
         return x, y
+
+    def get_index_from_coords(self, x, y):
+        """Convert x,y coordinates to flat index"""
+        if not self.coordinates_in_bounds(x, y):
+            return -1
+        return y * self.iNumPlotsX + x
 
     def is_node_valid_for_flow(self, node_x, node_y, flow_direction=None):
         """
@@ -871,7 +875,7 @@ class MapConfig:
 
     def get_node_intersecting_tiles_from_index(self, node_index):
         """Get intersecting tiles from node index"""
-        node_x, node_y = self.get_node_coords(node_index)
+        node_x, node_y = self.get_coords_from_index(node_index)
         return self.get_node_intersecting_tiles(node_x, node_y)
 
     def _extract_terrain_booleans_feature(self, feature_info):
@@ -994,18 +998,6 @@ class MapConfig:
                 return True
 
         return False
-
-    def get_coords_from_index(self, index):
-        """Convert flat index to x,y coordinates"""
-        y = index // self.iNumPlotsX
-        x = index % self.iNumPlotsX
-        return x, y
-
-    def get_index_from_coords(self, x, y):
-        """Convert x,y coordinates to flat index"""
-        if not self.coordinates_in_bounds(x, y):
-            return -1
-        return y * self.iNumPlotsX + x
 
 
 class ElevationMap:
@@ -4343,7 +4335,7 @@ class ClimateMap:
             if self.em.plotTypes[node_i] == PlotTypes.PLOT_OCEAN:
                 # quick exit for NW ocean tiles (leave elev at 0.0)
                 continue
-            node_x, node_y = self.mc.get_node_coords(node_i)
+            node_x, node_y = self.mc.get_coords_from_index(node_i)
 
             # Node (x,y) is intersection of tiles (x,y), (x+1,y), (x+1,y-1), (x,y-1)
             tile_coords = [(1, 0), (1, -1), (0, -1)]
@@ -4394,7 +4386,7 @@ class ClimateMap:
 
         # Calculate flow directions with spillover and ocean outlet detection
         for node_i in xrange(len(self.node_elevations)):
-            node_x, node_y = self.mc.get_node_coords(node_i)
+            node_x, node_y = self.mc.get_coords_from_index(node_i)
 
             if not self.mc.is_node_valid_for_flow(node_x, node_y):
                 continue
@@ -4417,7 +4409,7 @@ class ClimateMap:
 
             candidates = []
             for neighbour_x, neighbour_y in neighbours:
-                neighbour_i = self.mc.get_node_index(neighbour_x, neighbour_y)
+                neighbour_i = self.mc.get_index_from_coords(neighbour_x, neighbour_y)
                 true_slope = current_elevation - self.node_elevations[neighbour_i]
 
                 # Add position-based perturbation that doesn't modify actual elevation
@@ -5335,8 +5327,8 @@ class ClimateMap:
         Place a river segment with proper directional validation.
         Fixed the southward flow bug.
         """
-        from_x, from_y = self.mc.get_node_coords(from_node)
-        to_x, to_y = self.mc.get_node_coords(to_node)
+        from_x, from_y = self.mc.get_coords_from_index(from_node)
+        to_x, to_y = self.mc.get_coords_from_index(to_node)
 
         # Calculate flow direction
         dx = to_x - from_x
@@ -5519,8 +5511,8 @@ class ClimateMap:
             placed_segments = []
 
         for from_node, to_node, river_id, flow in list(self.river_map):
-            from_x, from_y = self.mc.get_node_coords(from_node)
-            to_x, to_y = self.mc.get_node_coords(to_node)
+            from_x, from_y = self.mc.get_coords_from_index(from_node)
+            to_x, to_y = self.mc.get_coords_from_index(to_node)
 
             dx = to_x - from_x
             dy = to_y - from_y
@@ -6816,8 +6808,8 @@ class TerrainMap:
 
         # Calculate river adjacency using the canonical river_map representation
         for from_node, to_node, _, _ in self.cm.river_map:
-            from_x, from_y = self.cm.mc.get_node_coords(from_node)
-            to_x, to_y = self.cm.mc.get_node_coords(to_node)
+            from_x, from_y = self.cm.mc.get_coords_from_index(from_node)
+            to_x, to_y = self.cm.mc.get_coords_from_index(to_node)
 
             dx = to_x - from_x
             dy = to_y - from_y
@@ -6844,7 +6836,7 @@ class TerrainMap:
 
             tile_i = tile_y * self.mc.iNumPlotsX + tile_x
             if 0 <= tile_i < self.mc.iNumPlots:
-                river_adjacency_map[tile_i] = True
+                river_adjacency_map[tile_i] = True # TODO this only seems to capture one side of the river
 
         # Calculate coast adjacency
         for i in xrange(self.mc.iNumPlots):
@@ -6878,10 +6870,10 @@ class TerrainMap:
                                       (-1,-2), (0,-2), (1,-2)]
                     for direction in xrange(12):
                         dx, dy = fat_neighbours[direction]
-                        x, y = self.mc.get_node_coords(i)
+                        x, y = self.mc.get_coords_from_index(i)
                         adj_x = (x + dx) % self.mc.iNumPlotsX if self.mc.wrapX else x + dx
                         adj_y = (y + dy) % self.mc.iNumPlotsY if self.mc.wrapY else y + dy
-                        adj_i = self.mc.get_node_index(adj_x, adj_y)
+                        adj_i = self.mc.get_index_from_coords(adj_x, adj_y)
                         if adj_i != -1 and self.em.plotTypes[adj_i] != PlotTypes.PLOT_OCEAN and self.em.plotTypes[adj_i] != PlotTypes.PLOT_PEAK:
                             self.isPotentialCityWork[i] = True
                             break
@@ -6898,8 +6890,8 @@ class TerrainMap:
             return False
 
         for from_node, to_node, _, _ in self.cm.river_map:
-            from_x, from_y = self.cm.mc.get_node_coords(from_node)
-            to_x, to_y = self.cm.mc.get_node_coords(to_node)
+            from_x, from_y = self.cm.mc.get_coords_from_index(from_node)
+            to_x, to_y = self.cm.mc.get_coords_from_index(to_node)
 
             dx = to_x - from_x
             dy = to_y - from_y
@@ -7776,7 +7768,7 @@ class TerrainMap:
                 candidates.append((tile_index, score))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
-
+        xml_constraints = resource_def['xml_constraints']
         placement_order = candidates
         land_candidates = []
         water_candidates = []
@@ -8253,8 +8245,8 @@ def addRivers():
     global mc, em, cm, tm
 
     for from_node, to_node, river_id, _ in cm.river_map:
-        from_x, from_y = mc.get_node_coords(from_node)
-        to_x, to_y = mc.get_node_coords(to_node)
+        from_x, from_y = mc.get_coords_from_index(from_node)
+        to_x, to_y = mc.get_coords_from_index(to_node)
 
         # Calculate flow direction
         dx = to_x - from_x

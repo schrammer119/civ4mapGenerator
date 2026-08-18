@@ -311,8 +311,8 @@ if ARGS.show:
         downstream_node = cm.flow_directions[node_i]
         if downstream_node >= 0 and downstream_node < mc.iNumPlots:
             # Get node coordinates
-            x_i, y_i = mc.get_node_coords(node_i)
-            x_j, y_j = mc.get_node_coords(downstream_node)
+            x_i, y_i = mc.get_coords_from_index(node_i)
+            x_j, y_j = mc.get_coords_from_index(downstream_node)
 
             # Calculate direction vector from node_i to downstream_node with wrapping
             dx, dy = mc.get_wrapped_distance(x_j, y_j, x_i, y_i)
@@ -330,7 +330,7 @@ if ARGS.show:
     arrow_colors = np.full((mc.iNumPlotsY, mc.iNumPlotsX), mc.iNumPlots + 1)
     for node_i in range(mc.iNumPlots):
         if cm.flow_directions[node_i] >= 0:  # Only for nodes with valid flow
-            x_i, y_i = mc.get_node_coords(node_i)
+            x_i, y_i = mc.get_coords_from_index(node_i)
             watershed_id = cm.watershed_ids[node_i]
             if watershed_id == -1 or (watershed_id in cm.watershed_database and cm.watershed_database[watershed_id]['selected']):
                 arrow_colors[y_i, x_i] = watershed_id
@@ -354,7 +354,7 @@ if ARGS.show:
     for watershed_id, data in cm.watershed_database.items():
         if data['selected']:
             outlet_node = data['outlet_node']
-            x_outlet, y_outlet = mc.get_node_coords(outlet_node)
+            x_outlet, y_outlet = mc.get_coords_from_index(outlet_node)
             outlet_x.append(x_outlet + 0.5)  # Apply same offset as flow vectors
             outlet_y.append(y_outlet - 0.5)
 
@@ -832,8 +832,8 @@ if ARGS.show:
     vertical_rivers = set()    # west_of_rivers
 
     for from_node, to_node, _, _ in cm.river_map:
-        from_x, from_y = mc.get_node_coords(from_node)
-        to_x, to_y = mc.get_node_coords(to_node)
+        from_x, from_y = mc.get_coords_from_index(from_node)
+        to_x, to_y = mc.get_coords_from_index(to_node)
 
         dx = to_x - from_x
         dy = to_y - from_y

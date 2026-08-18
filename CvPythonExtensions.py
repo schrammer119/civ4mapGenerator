@@ -112,7 +112,7 @@ def _tag_name(tag):
 
 
 def _xml_path_for(filename):
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples', filename))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), 'examples', filename))
 
 
 _XML_CACHE = {}
