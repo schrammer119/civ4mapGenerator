@@ -383,7 +383,7 @@ class MapConfig:
         """Load terrain constraints from XML TerrainInfos"""
         constraints = {}
 
-        for i in range(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.gc.getNumTerrainInfos()):
             terrain_info = self.gc.getTerrainInfo(i)
             terrain_type = terrain_info.getType()
 
@@ -398,7 +398,7 @@ class MapConfig:
         """Load feature constraints from XML FeatureInfos"""
         constraints = {}
 
-        for i in range(self.gc.getNumFeatureInfos()):
+        for i in xrange(self.gc.getNumFeatureInfos()):
             feature_info = self.gc.getFeatureInfo(i)
             feature_type = feature_info.getType()
 
@@ -418,7 +418,7 @@ class MapConfig:
         """Load bonus constraints from XML BonusInfos"""
         constraints = {}
 
-        for i in range(self.gc.getNumBonusInfos()):
+        for i in xrange(self.gc.getNumBonusInfos()):
             bonus_info = self.gc.getBonusInfo(i)
             bonus_type = bonus_info.getType()
 
@@ -460,7 +460,7 @@ class MapConfig:
         """Pre-calculates and caches neighbour relationships for all tiles for performance."""
         self.neighbours = {}
         for i in xrange(self.iNumPlots):
-            self.neighbours[i] = [self._get_neighbour_tile(i, direction) for direction in range(9)]
+            self.neighbours[i] = [self._get_neighbour_tile(i, direction) for direction in xrange(9)]
 
     def _get_neighbour_tile(self, i, direction):
         """Gets the index of a neighbouring tile in a given direction, handling wrapping."""
@@ -705,7 +705,7 @@ class MapConfig:
     class Perlin2D:
         """2D Perlin noise generator."""
         def __init__(self, seed=None):
-            self.p = list(range(256))
+            self.p = list(xrange(256))
             if seed is not None:
                 random.seed(seed)
             random.shuffle(self.p)
@@ -878,7 +878,7 @@ class MapConfig:
         """Extract terrain compatibility from FeatureInfo"""
         terrain_list = []
 
-        for i in range(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.gc.getNumTerrainInfos()):
             if feature_info.isTerrain(i):
                 terrain_list.append(i)
 
@@ -888,7 +888,7 @@ class MapConfig:
         """Extract terrain compatibility from BonusInfo"""
         terrain_list = []
 
-        for i in range(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.gc.getNumTerrainInfos()):
             if bonus_info.isTerrain(i):
                 terrain_list.append(i)
 
@@ -898,7 +898,7 @@ class MapConfig:
         """Extract feature compatibility from BonusInfo"""
         feature_list = []
 
-        for i in range(self.gc.getNumFeatureInfos()):
+        for i in xrange(self.gc.getNumFeatureInfos()):
             if bonus_info.isFeature(i):
                 feature_list.append(i)
 
@@ -908,7 +908,7 @@ class MapConfig:
         """Extract feature-terrain compatibility from BonusInfo"""
         feature_terrain_list = []
 
-        for i in range(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.gc.getNumTerrainInfos()):
             if bonus_info.isFeatureTerrain(i):
                 feature_terrain_list.append(i)
 
@@ -988,7 +988,7 @@ class MapConfig:
         if feature_map is None:
             return False
 
-        for direction in range(1, 9):  # N, S, E, W, NE, NW, SE, SW
+        for direction in xrange(1, 9):  # N, S, E, W, NE, NW, SE, SW
             adj_index = self.neighbours[tile_index][direction]
             if adj_index != -1 and feature_map[adj_index] == feature_id:
                 return True
@@ -1003,6 +1003,8 @@ class MapConfig:
 
     def get_index_from_coords(self, x, y):
         """Convert x,y coordinates to flat index"""
+        if not self.coordinates_in_bounds(x, y):
+            return -1
         return y * self.iNumPlotsX + x
 
 
@@ -1139,7 +1141,7 @@ class ElevationMap:
             has_available = False
 
             # Process neighbours in random order for organic growth
-            neighbour_dirs = list(range(1, 9))
+            neighbour_dirs = list(xrange(1, 9))
             random.shuffle(neighbour_dirs)
 
             for dir_idx in neighbour_dirs:
@@ -1172,14 +1174,14 @@ class ElevationMap:
     def _place_continent_seeds(self):
         """Place initial seeds for continental plate growth"""
         # Create shuffled coordinate lists for random placement
-        x_coords = list(range(self.mc.iNumPlotsX))
-        y_coords = list(range(self.mc.iNumPlotsY))
+        x_coords = list(xrange(self.mc.iNumPlotsX))
+        y_coords = list(xrange(self.mc.iNumPlotsY))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
         growth_queue = deque()
 
-        for continent_id in range(self.mc.plateCount):
+        for continent_id in xrange(self.mc.plateCount):
             # Place primary seed
             main_x = x_coords[continent_id]
             main_y = y_coords[continent_id]
@@ -1381,8 +1383,8 @@ class ElevationMap:
     @profile
     def _generate_hotspot_plumes(self):
         """Generate hotspot plume locations"""
-        x_coords = list(range(self.mc.iNumPlotsX))
-        y_coords = list(range(self.mc.iNumPlotsY))
+        x_coords = list(xrange(self.mc.iNumPlotsX))
+        y_coords = list(xrange(self.mc.iNumPlotsY))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
@@ -2453,7 +2455,7 @@ class ElevationMap:
         # Combine octaves
         combined_noise = []
         for i in xrange(self.mc.iNumPlots):
-            noise_value = sum(perlin_noise[octave][i] for octave in range(3))
+            noise_value = sum(perlin_noise[octave][i] for octave in xrange(3))
             combined_noise.append(noise_value)
 
         combined_noise = self.mc.normalize_map(combined_noise)
@@ -3244,8 +3246,8 @@ class ClimateMap:
     @profile
     def _precompute_ocean_connectivity(self):
         """Precompute connectivity and conductances for ocean tiles"""
-        neighbours = [[] for _ in range(self.mc.iNumPlots)]
-        conduct = [[] for _ in range(self.mc.iNumPlots)]
+        neighbours = [[] for _ in xrange(self.mc.iNumPlots)]
+        conduct = [[] for _ in xrange(self.mc.iNumPlots)]
         sumK = [0.0] * self.mc.iNumPlots
 
         for i in xrange(self.mc.iNumPlots):
@@ -3434,7 +3436,7 @@ class ClimateMap:
         """
 
         # Initialize distance map: 0 for ocean, infinity for land
-        self.oceanDistanceMap = [(self.mc.iNumPlots, 0)[self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN] for i in range(self.mc.iNumPlots)]
+        self.oceanDistanceMap = [(self.mc.iNumPlots, 0)[self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN] for i in xrange(self.mc.iNumPlots)]
 
         # Flood fill to identify connected ocean basins
         initial_ocean_tiles = []
@@ -4525,7 +4527,7 @@ class ClimateMap:
             if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
                 continue
             ocean_neighbour = False
-            for dir in range(1,9):
+            for dir in xrange(1,9):
                 neighbour_i = self.mc.neighbours[tile_i][dir]
                 if 0 <= neighbour_i < self.mc.iNumPlots and self.em.plotTypes[neighbour_i] == PlotTypes.PLOT_OCEAN:
                     ocean_neighbour = True
@@ -5775,7 +5777,7 @@ class ClimateMap:
     def _calculate_percentiles(self):
         """Calculate percentiles for land tiles only"""
         # Get land-only data
-        land_indices = [i for i in range(self.mc.iNumPlots) if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+        land_indices = [i for i in xrange(self.mc.iNumPlots) if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
         land_temps = [self.TemperatureMap[i] for i in land_indices]
         land_rainfall = [self.RainfallMap[i] for i in land_indices]
 
@@ -5792,7 +5794,7 @@ class ClimateMap:
             self.rainfall_percentiles[land_idx] = rain_percentiles_land[i]
 
         # Ocean temps for ocean biomes
-        ocean_indices = [i for i in range(self.mc.iNumPlots) if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN]
+        ocean_indices = [i for i in xrange(self.mc.iNumPlots) if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN]
         ocean_temps = [self.TemperatureMap[i] for i in ocean_indices]
         temp_percentiles_ocean = self._build_percentile_map(ocean_temps)
         self.temperature_percentiles_water = [0.0] * self.mc.iNumPlots
@@ -5808,7 +5810,7 @@ class ClimateMap:
                 return []
 
         # Create list of (value, original_index) pairs
-        indexed_values = [(data_map[i], i) for i in range(len(data_map))]
+        indexed_values = [(data_map[i], i) for i in xrange(len(data_map))]
 
         # Sort by value
         indexed_values.sort(key=lambda x: x[0])
@@ -5840,7 +5842,7 @@ class ClimateMap:
         print("ClimateMap: Ballooning climate percentiles with factor %.2f..." % calibration_factor)
 
         # Get land-only indices for processing
-        land_indices = [i for i in range(self.mc.iNumPlots)
+        land_indices = [i for i in xrange(self.mc.iNumPlots)
                     if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
 
         if not land_indices:
@@ -5926,6 +5928,11 @@ class TerrainMap:
         self.resource_map = [-1] * self.mc.iNumPlots
         self.biome_assignments = [''] * self.mc.iNumPlots
         self.resource_targets = {}
+        self.landAreaID = [-1] * self.mc.iNumPlots
+        self.landAreaSizes = {}
+        self.world_ids = [-1] * self.mc.iNumPlots
+        self.world_sizes = {}
+        self.isPotentialCityWork = [False] * self.mc.iNumPlots
 
         self.mc.feature_map = self.feature_map
         self.mc.resource_map = self.resource_map
@@ -5964,6 +5971,8 @@ class TerrainMap:
 
         # Pass 1: Assign biomes to all tiles (land and water)
         self._assign_biomes()
+        self._calculateLandIDs()
+        self._calculate_world_ids()
 
         # Pass 2: Place primary features based on biome definitions
         self._place_primary_features()
@@ -6589,9 +6598,13 @@ class TerrainMap:
                 'FeatureTerrainBooleans': {'TERRAIN_TYPES': bool}, # Only on these terrain types if feature present
             },
 
+            # === CUSTOM PLACEMENT DEFINES ===
+            'placement_defs': [                        # Custom defines beyond XML parameters
+                'bPeak',                               # Allow placement on PLOT_PEAK if defined here
+            ],
+
             # === CUSTOM PLACEMENT RULES ===
             'placement_rules': [                       # Custom rules beyond XML parameters
-                'bPeak',                               # Allow placement on PLOT_PEAK if defined here
                 {
                     # === FILTERS AND REQUIREMENTS (ALL OPTIONAL) ===
                     'biome_filter': ['biome_names'],   # Only in these biomes
@@ -6614,6 +6627,7 @@ class TerrainMap:
         # Example:
         'BONUS_IRON': {
             'xml_overrides': {},
+            'placement_defs': ['bPeak'],
             'placement_rules': [
                 'bPeak',
                 {
@@ -6629,130 +6643,162 @@ class TerrainMap:
         self.resource_definitions = {
             'BONUS_ALUMINUM': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_COAL': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_COPPER': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_HORSE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_IRON': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_MARBLE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_OIL': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_STONE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_URANIUM': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_BANANA': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_CLAM': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_CORN': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_COW': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_CRAB': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_DEER': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_FISH': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_PIG': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_RICE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_SHEEP': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_WHEAT': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_DYE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_FUR': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_GEMS': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_GOLD': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_INCENSE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_IVORY': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_SILK': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_SILVER': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_SPICES': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_SUGAR': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_WINE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
             'BONUS_WHALE': {
                 'xml_overrides': {},
+                'placement_defs': [],
                 'placement_rules': []
             },
 
@@ -6801,17 +6847,47 @@ class TerrainMap:
                 river_adjacency_map[tile_i] = True
 
         # Calculate coast adjacency
-        for i in range(self.mc.iNumPlots):
+        for i in xrange(self.mc.iNumPlots):
             if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
                 coast_adjacency_map[i] = True
                 continue
 
             # Check adjacent tiles for ocean
-            for direction in range(1, 9):
+            for direction in xrange(1, 9):
                 adj_index = self.mc.neighbours[i][direction]
                 if adj_index != -1 and self.em.plotTypes[adj_index] == PlotTypes.PLOT_OCEAN:
                     coast_adjacency_map[i] = True
                     break
+
+        # Calculate city workable map
+        for i in xrange(self.mc.iNumPlots):
+            # determine if their is a workable tile in the fat cross (21 tiles around the city)
+            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN or self.em.plotTypes[i] == PlotTypes.PLOT_PEAK:
+                # check direct neighbours first
+                for direction in xrange(1, 9):
+                    adj_index = self.mc.neighbours[i][direction]
+                    if adj_index != -1 and self.em.plotTypes[adj_index] != PlotTypes.PLOT_OCEAN and self.em.plotTypes[adj_index] != PlotTypes.PLOT_PEAK:
+                        self.isPotentialCityWork[i] = True
+                        break
+
+                # continue to fat cross if no workable tile found in direct neighbours
+                if not self.isPotentialCityWork[i]:
+                    fat_neighbours = [(2,-1), (2,0), (2,1),
+                                      (-2,-1), (-2,0), (-2,1),
+                                      (-1,2), (0,2), (1,2),
+                                      (-1,-2), (0,-2), (1,-2)]
+                    for direction in xrange(12):
+                        dx, dy = fat_neighbours[direction]
+                        x, y = self.mc.get_node_coords(i)
+                        adj_x = (x + dx) % self.mc.iNumPlotsX if self.mc.wrapX else x + dx
+                        adj_y = (y + dy) % self.mc.iNumPlotsY if self.mc.wrapY else y + dy
+                        adj_i = self.mc.get_node_index(adj_x, adj_y)
+                        if adj_i != -1 and self.em.plotTypes[adj_i] != PlotTypes.PLOT_OCEAN and self.em.plotTypes[adj_i] != PlotTypes.PLOT_PEAK:
+                            self.isPotentialCityWork[i] = True
+                            break
+            else:
+                # tile can be a city
+                self.isPotentialCityWork[i] = True
 
         # Set the calculated maps in MapConfig
         self.mc.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
@@ -6856,10 +6932,10 @@ class TerrainMap:
 
     def _build_biome_grid(self):
         """Build the 20x20 fuzzy biome grid"""
-        for temp_idx in range(self.BIOME_GRID_SIZE):
+        for temp_idx in xrange(self.BIOME_GRID_SIZE):
             temp_percentile = temp_idx / float(self.BIOME_GRID_SIZE - 1)
 
-            for precip_idx in range(self.BIOME_GRID_SIZE):
+            for precip_idx in xrange(self.BIOME_GRID_SIZE):
                 precip_percentile = precip_idx / float(self.BIOME_GRID_SIZE - 1)
 
                 # Find all biomes that could exist in this climate zone
@@ -6904,7 +6980,7 @@ class TerrainMap:
         """Assign biomes to all tiles (land and water) using fuzzy logic + secondary factors"""
         # Store temporary assignments for neighbour calculation
         self._temp_biome_assignments = {}
-        shuffle_list = list(range(len(self.terrain_map)))
+        shuffle_list = list(xrange(self.mc.iNumPlots))
         random.shuffle(shuffle_list)
 
         for tile_index in shuffle_list:
@@ -6973,7 +7049,7 @@ class TerrainMap:
 
     def _is_coastal_water(self, tile_index):
         """Check if water tile is adjacent to land (coastal water)"""
-        for direction in range(1, 9):
+        for direction in xrange(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if neighbour_idx >= 0:
                 neighbour_plot = self.em.plotTypes[neighbour_idx]
@@ -7001,7 +7077,7 @@ class TerrainMap:
         same_biome_neighbours = 0
         total_neighbours = 0
 
-        for direction in range(1, 9):  # All 8 directions
+        for direction in xrange(1, 9):  # All 8 directions
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if neighbour_idx >= 0 and neighbour_idx < len(self._temp_biome_assignments):
                 neighbour_biome = self._temp_biome_assignments.get(neighbour_idx, None)
@@ -7044,6 +7120,97 @@ class TerrainMap:
             else:                  # Cold-Wet
                 return 'tundra'  # Tundra/no feature
 
+    def _calculateLandIDs(self):
+        """
+        Identifies accessible land areas and sizes.
+        """
+
+        # Identify ocean basins and calculate sizes
+        land_area_counter = 0
+
+        # Flood fill to identify connected ocean basins
+        for i in xrange(self.mc.iNumPlots):
+            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN and self.em.plotTypes[i] != PlotTypes.PLOT_PEAK:
+                if self.landAreaID[i] == -1:
+                    land_area_size = self._floodFillLandArea(i, land_area_counter)
+                    self.landAreaSizes[land_area_counter] = land_area_size
+                    land_area_counter += 1
+
+    def _floodFillLandArea(self, start_tile, land_area_id):
+        """
+        Flood fill to identify connected land area and return its size.
+        """
+        if self.landAreaID[start_tile] != -1:  # Already processed
+            return 0
+
+        land_area_size = 0
+        stack = [start_tile]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.landAreaID[current] != -1 or
+                self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN or
+                self.em.plotTypes[current] == PlotTypes.PLOT_PEAK):
+                continue
+
+            # Mark as part of this basin
+            self.landAreaID[current] = land_area_id
+            land_area_size += 1
+
+            # Add neighbours to stack
+            for dir in xrange(1,9):
+                neighbour = self.mc.neighbours[current][dir]
+                if (neighbour >= 0 and
+                    self.landAreaID[neighbour] == -1 and
+                    self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN and
+                    self.em.plotTypes[neighbour] != PlotTypes.PLOT_PEAK):
+                    stack.append(neighbour)
+
+        return land_area_size
+
+    def _calculate_world_ids(self):
+        """Calculate world IDs for all tiles based on biome assignments"""
+
+        world_id_counter = 0
+        for i in xrange(self.mc.iNumPlots):
+            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN or self.terrain_map[i] == TerrainTypes.TERRAIN_COAST:
+                if self.world_ids[i] == -1:
+                    continent_size = self._floodFillWorlds(i, world_id_counter)
+                    self.world_sizes[world_id_counter] = continent_size
+                    world_id_counter += 1
+
+    def _floodFillWorlds(self, start_index, world_id):
+        """Flood fill algorithm to assign world IDs to connected land and coast tiles"""
+        if self.world_ids[start_index] != -1:  # Already processed
+            return 0
+
+        world_size = 0
+        stack = [start_index]
+
+        while stack:
+            current = stack.pop()
+
+            if (current < 0 or
+                self.world_ids[current] != -1 or
+                (self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN and self.terrain_map[current] != TerrainTypes.TERRAIN_COAST)):
+                continue
+
+            # Mark as part of this basin
+            self.world_ids[current] = world_id
+            world_size += 1
+
+            # Add neighbours to stack
+            for dir in xrange(1,9):
+                neighbour = self.mc.neighbours[current][dir]
+                if (neighbour >= 0 and
+                    self.world_ids[neighbour] == -1 and
+                    (self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN or self.terrain_map[neighbour] == TerrainTypes.TERRAIN_COAST)):
+                    stack.append(neighbour)
+
+        return world_size
+
     @profile
     def _place_primary_features(self):
         """Place primary biome features according to coverage and placement rules"""
@@ -7057,7 +7224,7 @@ class TerrainMap:
             for lake in self.cm.lake_data['lakes']:
                 self.lake_tiles.update(lake['final_tiles'])
 
-        for tile_index in range(len(self.terrain_map)):
+        for tile_index in xrange(self.mc.iNumPlots):
             biome_name = self.biome_assignments[tile_index]
             biome_def = self.biome_definitions[biome_name]
             feature_def = biome_def['feature']
@@ -7154,7 +7321,7 @@ class TerrainMap:
         feature_neighbours = 0
         total_neighbours = 0
 
-        for direction in range(1, 9):
+        for direction in xrange(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
                 if self.feature_map[neighbour_idx] == feature_id:
@@ -7215,7 +7382,7 @@ class TerrainMap:
 
         # Add neighbouring tiles with the same feature
         feature_id = self.gc.getInfoTypeForString(feature_type)
-        for direction in range(1, 9):
+        for direction in xrange(1, 9):
             neighbour_idx = self.mc.neighbours[tile_index][direction]
             if (neighbour_idx >= 0 and
                 neighbour_idx < len(self.feature_map) and
@@ -7233,7 +7400,7 @@ class TerrainMap:
             patch_size += 1
 
             # Add neighbours of current tile
-            for direction in range(1, 9):
+            for direction in xrange(1, 9):
                 neighbour_idx = self.mc.neighbours[current][direction]
                 if (neighbour_idx >= 0 and
                     neighbour_idx not in visited and
@@ -7342,7 +7509,7 @@ class TerrainMap:
         """Find tiles that meet the rule conditions"""
         eligible = []
 
-        for tile_index in range(len(self.terrain_map)):
+        for tile_index in xrange(self.mc.iNumPlots):
             if self._tile_meets_rule_conditions(tile_index, rule, base_feature):
                 eligible.append(tile_index)
 
@@ -7429,7 +7596,7 @@ class TerrainMap:
         target_count = int(len(eligible_tiles) * density)
         placed_features = []
 
-        for _ in range(target_count * 3):  # Try multiple times
+        for _ in xrange(target_count * 3):  # Try multiple times
             if len(placed_features) >= target_count:
                 break
 
@@ -7461,7 +7628,7 @@ class TerrainMap:
         target_clusters = max(1, int(len(eligible_tiles) * density / cluster_size))
         feature_id = self.gc.getInfoTypeForString(feature_type)
 
-        for _ in range(target_clusters):
+        for _ in xrange(target_clusters):
             # Pick random center
             center = random.choice(eligible_tiles)
             if self.feature_map[center] != self.gc.getInfoTypeForString("NO_FEATURE"):
@@ -7496,8 +7663,8 @@ class TerrainMap:
         center_x = center_tile % self.mc.iNumPlotsX
         center_y = center_tile // self.mc.iNumPlotsX
 
-        for dy in range(-radius, radius + 1):
-            for dx in range(-radius, radius + 1):
+        for dy in xrange(-radius, radius + 1):
+            for dx in xrange(-radius, radius + 1):
                 if dx * dx + dy * dy <= radius * radius:
                     x = (center_x + dx) % self.mc.iNumPlotsX
                     y = center_y + dy
@@ -7518,7 +7685,7 @@ class TerrainMap:
         3. Assuming automatic placement on XML-compatible terrains, manual on others
         """
 
-        for tile_index in range(len(self.terrain_map)):
+        for tile_index in xrange(self.mc.iNumPlots):
             # Check if terrain will get automatic floodplains from game engine
             if self._tile_meets_rule_conditions(tile_index, {}, 'FEATURE_FLOOD_PLAINS'):
                 # Game engine will automatically place floodplains here
@@ -7529,7 +7696,7 @@ class TerrainMap:
         # Use our custom rules for non-XML terrains
         for rule in feature_def['placement_rules']:
             eligible = []
-            for tile_index in range(len(self.terrain_map)):
+            for tile_index in xrange(self.mc.iNumPlots):
                 if self._tile_meets_rule_conditions(tile_index, rule, 'FEATURE_FLOOD_PLAINS', True):
                     eligible.append(tile_index)
 
@@ -7587,7 +7754,7 @@ class TerrainMap:
             return  # Skip missing resources
 
         candidate_tiles = []
-        for tile_index in range(self.mc.iNumPlots):
+        for tile_index in xrange(self.mc.iNumPlots):
             if self.resource_map[tile_index] != -1:
                 continue  # Already has a resource
             if not self._can_have_bonus(tile_index, resource_def):
@@ -7664,7 +7831,7 @@ class TerrainMap:
                 break
 
     def _add_unique_bonus_type(self, resource_def):
-        # TODO
+        # TODO same as non_unique, but tied to an area. See addUniqueBonusType at C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvMapGenerator.cpp:711
         return
 
     def _can_have_bonus(self, tile_index, resource_def):
@@ -7675,6 +7842,7 @@ class TerrainMap:
 
         xml_constraints = resource_def['xml_constraints']
         placement_rules = resource_def.get('placement_rules', [])
+        placement_defs = resource_def.get('placement_defs', [])
 
         plot_type = self.em.plotTypes[tile_index]
         terrain_id = self.terrain_map[tile_index]
@@ -7683,7 +7851,7 @@ class TerrainMap:
         feature_booleans = xml_constraints.get('FeatureBooleans', [])
         feature_terrain_booleans = xml_constraints.get('FeatureTerrainBooleans', [])
 
-        if not 'bPeak' in placement_rules and plot_type == PlotTypes.PLOT_PEAK:
+        if not 'bPeak' in placement_defs and plot_type == PlotTypes.PLOT_PEAK:
             return False
 
         if feature_id != -1:
@@ -7705,11 +7873,29 @@ class TerrainMap:
         if xml_constraints.get('bRequiresRiver', False) and not self._is_river_tile(tile_index):
             return False
 
-        # TODO: min area size (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2030)
-        # TODO: min/max latitude (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2038)
-        # TODO: potential city work gate (see C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvPlot.cpp:2051)
+        if TerrainTypes.TERRAIN_OCEAN in terrain_booleans:
+            area_size = self.mc.iNumPlots
+        elif TerrainTypes.TERRAIN_COAST in terrain_booleans:
+            area_size = self.world_sizes.get(self.world_ids(tile_index), 0)
+        elif 'bPeak' in placement_defs:
+            area_size = self.em.continentSizes.get(self.em.continentID[tile_index], 0)
+        else:
+            area_size = self.landAreaSizes.get(self.landAreaID[tile_index], 0)
 
-        return False
+        if area_size < xml_constraints.get('iMinAreaSize', 0):
+            return False
+
+        x, y = self.mc.get_coords_from_index(tile_index)
+        latitude = abs(self.mc.get_latitude_for_y(y))
+        min_lat = xml_constraints.get('iMinLatitude', 0)
+        max_lat = xml_constraints.get('iMaxLatitude', 90)
+        if latitude < min_lat or latitude > max_lat:
+            return False
+
+        if not self.isPotentialCityWork[tile_index]:
+            return False
+
+        return True
 
     def _calculate_num_bonuses_to_add(self, xml_constraints, num_candidate_tiles):
         """Calculate target resource quantity from XML parameters."""
@@ -7746,8 +7932,8 @@ class TerrainMap:
 
         x, y = self.mc.get_coords_from_index(tile_index)
 
-        for dx in range(-radius, radius + 1):
-            for dy in range(-radius, radius + 1):
+        for dx in xrange(-radius, radius + 1):
+            for dy in xrange(-radius, radius + 1):
                 if dx == 0 and dy == 0:
                     continue
 
@@ -7868,8 +8054,6 @@ class TerrainMap:
 
         # Evaluate each placement rule
         for rule in resource_def.get('placement_rules', []):
-            if rule == 'bPeak':
-                continue # not used here
             rule_score = self._evaluate_placement_rule(tile_index, rule)
             weight = rule.get('weight', 1.0)
             score_modifier += rule_score * weight * 0.1  # Scale to reasonable range
@@ -7881,8 +8065,6 @@ class TerrainMap:
         score_modifier = 0.0
 
         for rule in resource_def.get('placement_rules', []):
-            if rule == 'bPeak':
-                continue # not used here
             climate_reqs = rule.get('climate_requirements', {})
             if not climate_reqs:
                 continue
@@ -7918,8 +8100,6 @@ class TerrainMap:
         tile_biome = self.biome_assignments[tile_index]
 
         for rule in resource_def.get('placement_rules', []):
-            if rule == 'bPeak':
-                continue # not used here
             biome_filter = rule.get('biome_filter', [])
             if biome_filter:
                 if tile_biome in biome_filter:
@@ -8126,7 +8306,7 @@ def addRivers():
 def addFeatures():
     """Add features (forests, jungles, etc.) based on climate"""
     global mapCtx, mc, tm
-    for i in range(mc.iNumPlots):
+    for i in xrange(mc.iNumPlots):
         plot = mapCtx.plotByIndex(i)
         plot.setFeatureType(tm.feature_map[i], tm.feature_subtype_map[i])
 
@@ -8142,7 +8322,7 @@ def addBonuses():
     if not resource_map:
         return
 
-    for i in range(getattr(mc, 'iNumPlots', len(resource_map))):
+    for i in xrange(mc.iNumPlots):
         plot = mapCtx.plotByIndex(i)
         if plot is not None:
             plot.setBonusType(resource_map[i])
