@@ -54,7 +54,7 @@
             "label": "Python: PlanetSim smoke test",
             "type": "process",
             "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-            "args": ["tests/test_planetsim.py"],
+            "args": ["tests/run_planetsim.py"],
             "options": {
                 "cwd": "${workspaceFolder}",
                 "env": {

@@ -39,7 +39,7 @@ The pipeline uses plate generation, elevation effects, climate and rainfall perc
 Run headlessly in PowerShell:
 
 ```powershell
-$env:MPLBACKEND="Agg"; py tests/test_planetsim.py
+$env:MPLBACKEND="Agg"; py tests/run_planetsim.py
 $env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v
 ```
 

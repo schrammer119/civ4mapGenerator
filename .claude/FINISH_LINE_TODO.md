@@ -28,14 +28,14 @@ Core consolidation is complete, but resource verification, start-location logic,
 **Verification evidence**:
 
 - `TerrainMap.GenerateTerrain()` calls `_place_resources()` in the live generation path.
-- The latest `py tests/test_planetsim.py` run completed the 144x96 mock map with 15 plates but reported no resources placed.
+- The latest `py tests/run_planetsim.py` run completed the 144x96 mock map with 15 plates but reported no resources placed.
 - The focused suite currently runs 19 tests and reports 14 errors, including missing `xml_constraints`/`xml_overrides` fixture fields and an outdated helper signature.
 
 **Owner**: Implementation
 
 ### 3.2 Add Test Visualization for Resources
 
-- [x] Update `test_planetsim.py` to visualize resource placement on map
+- [x] Update `run_planetsim.py` to visualize resource placement on map
 - [x] Add terminal output showing resource distribution statistics
 - [x] Create matplotlib plot of resource density by terrain type
 - [x] Output resource conflict/constraint violations if any

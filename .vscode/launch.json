@@ -21,7 +21,7 @@
             "name": "PlanetSim: smoke test",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/test_planetsim.py",
+            "program": "${workspaceFolder}/tests/run_planetsim.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": ["--show"],

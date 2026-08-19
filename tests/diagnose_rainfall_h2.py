@@ -254,7 +254,7 @@ def main():
         import numpy as np
         shape = (mc.iNumPlotsY, mc.iNumPlotsX)
 
-        # Panel A reproduces test_planetsim.py's rainfall plot exactly
+        # Panel A reproduces run_planetsim.py's rainfall plot exactly
         # (fixed clim=(0.0, 1.0)) to check whether that visualization choice,
         # rather than the underlying field, is what produces the "1-2 wet
         # tiles" appearance.
@@ -266,7 +266,7 @@ def main():
 
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         im0 = axes[0].imshow(rain_arr, origin="lower", cmap="Blues", vmin=0.0, vmax=1.0)
-        axes[0].set_title("RainfallMap, clim=(0,1)\n(matches test_planetsim.py)")
+        axes[0].set_title("RainfallMap, clim=(0,1)\n(matches run_planetsim.py)")
         fig.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
         im1 = axes[1].imshow(rain_arr, origin="lower", cmap="Blues", vmin=0.0, vmax=p99)

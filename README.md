@@ -21,14 +21,14 @@ The generation pipeline runs in the development harness, but resource placement 
 - Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are implemented in the live path, but the focused tests currently use an older resource-definition shape and fail before exercising several helpers.
 - Feature adjacency and river cleanup use the canonical map state instead of stale legacy lookups.
 - The `addBonuses()` path applies the generated bonus map directly to plot instances.
-- `test_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
+- `run_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
 
 ### Verification
 
 Latest local verification:
 
 - `$env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 19 tests run, 14 errors
-- `$env:MPLBACKEND="Agg"; py tests/test_planetsim.py` -> exit code 0; the mock map completed at 144x96 with 15 plates
+- `$env:MPLBACKEND="Agg"; py tests/run_planetsim.py` -> exit code 0; the mock map completed at 144x96 with 15 plates
 - The smoke run reported `No resources placed on map`; the previous 1907-resource result is historical and should not be used as current verification.
 
 ## Installation
@@ -81,7 +81,7 @@ Latest local verification:
 mapGenerator/
 ├── PlanetSim.py                # Main consolidated map script
 ├── tests/
-│   ├── test_planetsim.py       # End-to-end generation and visualization harness
+│   ├── run_planetsim.py       # End-to-end generation and visualization harness
 │   ├── test_phase2_resources.py # Focused Phase 2 regression tests
 │   ├── diagnose_edge_lift.py   # Elevation diagnostics
 │   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
@@ -114,7 +114,7 @@ The VS Code workspace automatically runs the setup task when opened, selects
 Run the end-to-end generation harness in a headless environment:
 
 ```
-$env:MPLBACKEND="Agg"; py tests/test_planetsim.py
+$env:MPLBACKEND="Agg"; py tests/run_planetsim.py
 ```
 
 Run the focused Phase 2 regression suite:
