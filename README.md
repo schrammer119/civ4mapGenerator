@@ -15,21 +15,21 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 
 ## Current Status
 
-Phase 2 is complete and verified, and Phase 3 resource verification/visualization is complete in the current workspace:
+The generation pipeline runs in the development harness, but resource placement and its regression tests need repair before Phase 3 can be called complete.
 
 - Resource placement wiring is verified end-to-end: `TerrainMap.GenerateTerrain()` calls `_place_resources()`, and the generated `resource_map` is consumed by the bonus application path.
-- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are implemented in the live path.
+- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are implemented in the live path, but the focused tests currently use an older resource-definition shape and fail before exercising several helpers.
 - Feature adjacency and river cleanup use the canonical map state instead of stale legacy lookups.
 - The `addBonuses()` path applies the generated bonus map directly to plot instances.
 - `test_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
 
 ### Verification
 
-The following checks were run successfully in the current workspace:
+Latest local verification:
 
-- `py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 9 tests passed, 0 failed
-- `py tests/test_planetsim.py` -> exit code 0, full generation completed successfully for a 144x96 map with 15 plates
-- Output included a resource summary showing 1907 resources placed across the map and no placement exceptions
+- `$env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 19 tests run, 14 errors
+- `$env:MPLBACKEND="Agg"; py tests/test_planetsim.py` -> exit code 0; the mock map completed at 144x96 with 15 plates
+- The smoke run reported `No resources placed on map`; the previous 1907-resource result is historical and should not be used as current verification.
 
 ## Installation
 
@@ -85,9 +85,8 @@ mapGenerator/
 │   ├── test_phase2_resources.py # Focused Phase 2 regression tests
 │   ├── diagnose_edge_lift.py   # Elevation diagnostics
 │   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
-├── tools/
-│   ├── CvPythonExtensions.py   # Mock Civ IV API for testing
-│   └── CvUtil.py               # Utility module
+├── CvPythonExtensions.py       # Mock Civ IV API for testing
+├── CvUtil.py                   # Utility module
 ├── docs/                      # Technical documentation
 ├── CLAUDE.md                  # Technical documentation
 ├── FINISH_LINE_TODO.md        # Delivery checklist and outstanding phases
@@ -96,16 +95,32 @@ mapGenerator/
 
 ### Testing
 
-Run the end-to-end generation harness:
+Create the development environment from PowerShell:
 
 ```
-python tests/test_planetsim.py
+.\scripts\setup-venv.ps1
+```
+
+Activate it for the current shell when needed:
+
+```
+. .\scripts\activate.ps1
+```
+
+The VS Code workspace automatically runs the setup task when opened, selects
+`.venv`, and enables unittest discovery. The setup task is also available as
+`Python: Setup development environment` from the Tasks menu.
+
+Run the end-to-end generation harness in a headless environment:
+
+```
+$env:MPLBACKEND="Agg"; py tests/test_planetsim.py
 ```
 
 Run the focused Phase 2 regression suite:
 
 ```
-python -m unittest discover -s tests -p test_phase2_resources.py -v
+$env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v
 ```
 
 This generates matplotlib visualizations of:
@@ -117,11 +132,13 @@ This generates matplotlib visualizations of:
 - Feature placement
 - Resource placement with letter-code overlays on the final map and console resource statistics
 
+The default harness run prints diagnostics and does not open plots. Add `--show` for interactive plots. The current harness does not assign civilization starting locations or implement old-world/new-world classification; those remain open work in [FINISH_LINE_TODO.md](.claude/FINISH_LINE_TODO.md).
+
 ### Requirements
 
-- Civilization IV: Beyond the Sword
-- Python 2.4+ (included with Civ IV)
-- For testing: Python 3.6+, numpy, matplotlib
+- Civilization IV: Beyond the Sword for the shipped `PlanetSim.py` map script
+- Python 3.6+ for this development workspace
+- NumPy and Matplotlib, installed from `requirements.txt` by the setup script
 
 ## Usage
 

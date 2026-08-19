@@ -1,106 +1,15 @@
 # PlanetSim - Finish Line TODO
 
-Core consolidation is complete, but several incomplete migrations and missing implementations must be addressed before shipping.
-
-## Phase 0: Fix Incomplete Code Migrations (BLOCKING)
-
-Must complete before moving to other phases. These are in-progress refactors that broke validation.
-
-### 0.1 Complete River Generation Migration
-
-- [x] Remove incomplete band-aid: delete `north_of_rivers` and `west_of_rivers` array initialization
-- [x] Update `_remove_river_segment()` to search and remove from `river_map` directly instead of tracking arrays
-- [x] Update validation logic to check `river_map` for existing segments instead of separate tracking
-- [x] Verify `place_validated_river_segment()` properly updates `river_map`
-- [x] Re-run test suite to confirm river generation still works
-
-**Owner**: Code fix
-
-### 0.2 Verify Test Passes After Migration
-
-- [x] Run `python test_planetsim.py` to confirm no AttributeError
-- [x] Verify rivers are generated and visible in output
-- [x] Check that no segmentation issues occur in test
-
-**Owner**: Testing
+Core consolidation is complete, but resource verification, start-location logic, and in-game validation remain incomplete.
 
 ---
 
-## Phase 1: Project Structure & Tooling Cleanup
+## Phases Complete
 
-### 1.1 Reorganize Project Layout
-
-- [x] Create `tests/` folder and move test utilities there
-- [x] Create `tools/` folder for mock API and utilities
-- [x] Create `docs/` folder for technical documentation
-- [x] Move test scripts to `tests/`
-- [x] Update import paths to reflect new structure
-
-**Owner**: Code organization
-
-### 1.2 Fix .gitignore
-
-- [x] Add .vscode/ to tracked files (currently ignored but useful for team)
-- [x] Remove overly broad patterns that ignore useful files
-- [x] Add patterns for build artifacts, **pycache**, .pyc files
-- [x] Add patterns for logs and temporary test outputs
-- [x] Keep examples/ ignored for large reference XML
-
-**Owner**: Git configuration
-
----
-
-## Phase H: Fix generation behaviour from human feedback
-
-### Phase H.1: Continents have too much edge lift
-
-Causes river basins to mainly flow inland to lakes. Peaks appear mainly at land/ocean borders.
-
-- [x] Determine cause of edge lift in elevationMap generation
-- [x] Determine if edge lift can be reduced with tuning knobs
-- [x] If not, elevate the issue into a re-think of the elevationMap generation algorithm
-
-### Phase H.2: Rainfall is not distributed correctly
-
-All rainfall tends to logarithmically occur on one or two tiles. This has been looked into before, but it seems is still an issue.
-
-- [x] Determine why rainfall is not distributing as the algorithm intends
-- [x] Determine if rainfall distribution can be fixed with tuning knobs
-- [x] If not, elevate the issue into a re-think of the rainfall distribution algorithm
-
-### Phase H.3: Temperature Percentile vs Rainfall Percentile distribution
-
-The distribution is too narrow to a single line, showing clumps and artifacts. Could be related to the rainfall distribution issue (Phase H.2).
-
-- [x] Determine why temperature vs rainfall distribution is not producing a smooth curve
-- [x] Determine if the distribution can be fixed with tuning knobs
-- [x] If not, elevate the issue into a re-think of the temperature and rainfall algorithms
-
----
-
-## Phase 2: Resolve Code TODOs & Missing Implementations
-
-### 2.1 Code TODO Resolution
-
-Phase 2 is complete and verified in the repository.
-
-- [x] Line 985: "This would need access to the feature map from TerrainMap" - implement feature map access
-- [x] Line 5264: Review and verify "southward flow bug" fix is complete
-- [x] Line 7595: "Implementation for tracking exclusion zones" - complete exclusion zone tracking
-- [x] Line 7610: "secondary sort by number of bonuses needed" - implement secondary sort logic
-- [x] Line 7644: "this probably needs to come from gc" - fix iNumPlayers retrieval
-- [x] Line 7713: "Implement proper land/water distribution logic" for resource placement
-- [x] Line 7766: "Implement elevation range checking" for terrain constraints
-- [x] Line 8114: "This would need to be implemented in MapConfig with reverse lookup"
-- [x] Line 8267: "Implement realistic resource placement using elevationMap"
-- [x] Line 2686: Verify "map arrays that need to be shifted" logic is correct
-
-**Verification**:
-
-- `py -m unittest discover -s tests -p test_phase2_resources.py -v` -> passed (9 tests)
-- `py tests/test_planetsim.py` -> passed (exit code 0)
-
-**Owner**: Implementation
+- Phase 0: Fix Incomplete Code Migrations (BLOCKING)
+- Phase 1: Project Structure & Tooling Cleanup
+- Phase H: Fix generation behaviour from human feedback
+- Phase 2: Resolve Code TODOs & Missing Implementations (historical status; current tests need re-verification)
 
 ---
 
@@ -109,16 +18,18 @@ Phase 2 is complete and verified in the repository.
 ### 3.1 Finish Resource Placement Implementation
 
 - [x] Verify addBonuses() calls TerrainMap.\_place_resources() instead of fallback
-- [x] Confirm XML constraint loading is complete (35+ resource types)
-- [x] Test resource distribution respects elevation/biome/terrain rules
-- [x] Check that strategic resources are appropriately scarce
-- [x] Verify luxury and food resources are evenly distributed
+- [x] Confirm XML constraint loading is wired to the live path
+- [ ] Repair focused resource-test fixtures/API expectations
+- [ ] Confirm the smoke harness places resources
+- [ ] Test resource distribution respects elevation/biome/terrain rules
+- [ ] Check that strategic resources are appropriately scarce
+- [ ] Verify luxury and food resources are evenly distributed
 
 **Verification evidence**:
 
 - `TerrainMap.GenerateTerrain()` calls `_place_resources()` in the live generation path.
-- `py tests/test_planetsim.py` printed a resource table with 1907 placements across 16 resource types without exceptions.
-- The distribution includes uranium, banana, cow, deer, and other bonuses in realistic land-appropriate spreads.
+- The latest `py tests/test_planetsim.py` run completed the 144x96 mock map with 15 plates but reported no resources placed.
+- The focused suite currently runs 19 tests and reports 14 errors, including missing `xml_constraints`/`xml_overrides` fixture fields and an outdated helper signature.
 
 **Owner**: Implementation
 
@@ -130,7 +41,7 @@ Phase 2 is complete and verified in the repository.
 - [x] Output resource conflict/constraint violations if any
 - [x] Add biome-specific resource checklist (e.g., farms in grassland, etc.)
 
-**Current state**: The resource overlay uses short letter codes on the final terrain map; the script prints a distribution table for every run and shows the overlay when `--show` is enabled.
+**Current state**: The resource overlay uses short letter codes on the final terrain map when resources exist; the script prints a distribution table or an explicit no-resources message. Plots are shown only with `--show`.
 
 **Owner**: Testing/visualization
 
@@ -285,7 +196,7 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 
 ## Standing Directives
 
-1. **Phase 0 is Blocking**: Complete river_map migration before any other work. Do not add more band-aids.
+1. **Resource verification is blocking**: Repair the focused suite and explain the zero-resource smoke result before claiming resource placement is complete.
 2. **Stability First**: If balancing requires parameter tweaks, document them in code comments and commit history.
 3. **Test Before Shipping**: Every phase must include real testing, not just code review.
 4. **Complete Over Perfect**: Focus on completing the work correctly rather than optimization. Performance tuning is Phase 5+.

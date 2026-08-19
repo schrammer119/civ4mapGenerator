@@ -5,12 +5,56 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python 2.7 Debugger: Current File",
+            "name": "PlanetSim: unit tests",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "module": "unittest",
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "args": ["-B"]
+            "args": ["discover", "-s", "tests", "-p", "test_phase2_resources.py", "-v"],
+            "env": {
+                "MPLBACKEND": "Agg"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "PlanetSim: smoke test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test_planetsim.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": ["--show"],
+            "env": {
+                "MPLBACKEND": "Agg"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "PlanetSim: rainfall diagnostic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/diagnose_rainfall_h2.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": ["--save"],
+            "env": {
+                "MPLBACKEND": "Agg"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "PlanetSim: edge-lift diagnostic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/diagnose_edge_lift.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [],
+            "env": {
+                "MPLBACKEND": "Agg"
+            },
+            "justMyCode": true
         }
     ]
 }

@@ -6823,20 +6823,75 @@ class TerrainMap:
                 if dx > 0:
                     tile_x = to_x
                     tile_y = to_y
+                    tile_opposite_x = tile_x
+                    tile_opposite_y = tile_y - 1
+                    top_right_x = tile_x + 1
+                    top_right_y = tile_y
+                    top_left_x = tile_x - 1
+                    top_left_y = tile_y
+                    bottom_right_x = tile_opposite_x + 1
+                    bottom_right_y = tile_opposite_y
+                    bottom_left_x = tile_opposite_x - 1
+                    bottom_left_y = tile_opposite_y
                 else:
                     tile_x = from_x
                     tile_y = from_y
+                    tile_opposite_x = tile_x
+                    tile_opposite_y = tile_y - 1
+                    top_right_x = tile_x + 1
+                    top_right_y = tile_y
+                    top_left_x = tile_x - 1
+                    top_left_y = tile_y
+                    bottom_right_x = tile_opposite_x + 1
+                    bottom_right_y = tile_opposite_y
+                    bottom_left_x = tile_opposite_x - 1
+                    bottom_left_y = tile_opposite_y
             else:
                 if dy > 0:
                     tile_x = from_x
                     tile_y = from_y
+                    tile_opposite_x = tile_x + 1
+                    tile_opposite_y = tile_y
+                    top_right_x = tile_opposite_x
+                    top_right_y = tile_opposite_y + 1
+                    top_left_x = tile_x
+                    top_left_y = tile_y + 1
+                    bottom_right_x = tile_opposite_x
+                    bottom_right_y = tile_opposite_y - 1
+                    bottom_left_x = tile_x
+                    bottom_left_y = tile_y - 1
                 else:
                     tile_x = from_x
-                    tile_y = to_y
+                    tile_y = from_y - 1
+                    tile_opposite_x = tile_x + 1
+                    tile_opposite_y = tile_y
+                    top_right_x = tile_opposite_x
+                    top_right_y = tile_opposite_y + 1
+                    top_left_x = tile_x
+                    top_left_y = tile_y + 1
+                    bottom_right_x = tile_opposite_x
+                    bottom_right_y = tile_opposite_y - 1
+                    bottom_left_x = tile_x
+                    bottom_left_y = tile_y - 1
 
-            tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-            if 0 <= tile_i < self.mc.iNumPlots:
-                river_adjacency_map[tile_i] = True # TODO this only seems to capture one side of the river
+            tile_i = self.mc.get_index_from_coords(tile_x, tile_y)
+            tile_opposite_i = self.mc.get_index_from_coords(tile_opposite_x, tile_opposite_y)
+            top_right_i = self.mc.get_index_from_coords(top_right_x, top_right_y)
+            top_left_i = self.mc.get_index_from_coords(top_left_x, top_left_y)
+            bottom_right_i = self.mc.get_index_from_coords(bottom_right_x, bottom_right_y)
+            bottom_left_i = self.mc.get_index_from_coords(bottom_left_x, bottom_left_y)
+            if -1 < tile_i and self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[tile_i] = True
+            if -1 < tile_opposite_i and self.em.plotTypes[tile_opposite_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[tile_opposite_i] = True
+            if -1 < top_right_i and self.em.plotTypes[top_right_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[top_right_i] = True
+            if -1 < top_left_i and self.em.plotTypes[top_left_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[top_left_i] = True
+            if -1 < bottom_right_i and self.em.plotTypes[bottom_right_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[bottom_right_i] = True
+            if -1 < bottom_left_i and self.em.plotTypes[bottom_left_i] != PlotTypes.PLOT_OCEAN:
+                river_adjacency_map[bottom_left_i] = True
 
         # Calculate coast adjacency
         for i in xrange(self.mc.iNumPlots):
