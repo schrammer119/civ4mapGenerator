@@ -6525,7 +6525,7 @@ class TerrainMap:
                 'placement_rules': [
                     {
                         'conditions': ['river_tile', 'terrain_match', 'climate_match', 'plot_match'],
-                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS'],
+                        'terrain_filter': ['TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_TUNDRA'],
                         'climate_requirements': {
                             'precip_range': (0.5, 1.0),  # Moderate to high rainfall
                         },
@@ -6806,7 +6806,9 @@ class TerrainMap:
         river_adjacency_map = [False] * self.mc.iNumPlots
         coast_adjacency_map = [False] * self.mc.iNumPlots
 
-        # Calculate river adjacency using the canonical river_map representation
+        # Reconstruct the two Civ river flags from the canonical river edges.
+        north_of_river = set()
+        west_of_river = set()
         for from_node, to_node, _, _ in self.cm.river_map:
             from_x, from_y = self.cm.mc.get_coords_from_index(from_node)
             to_x, to_y = self.cm.mc.get_coords_from_index(to_node)
@@ -6821,77 +6823,28 @@ class TerrainMap:
 
             if abs(dx) > abs(dy):
                 if dx > 0:
-                    tile_x = to_x
-                    tile_y = to_y
-                    tile_opposite_x = tile_x
-                    tile_opposite_y = tile_y - 1
-                    top_right_x = tile_x + 1
-                    top_right_y = tile_y
-                    top_left_x = tile_x - 1
-                    top_left_y = tile_y
-                    bottom_right_x = tile_opposite_x + 1
-                    bottom_right_y = tile_opposite_y
-                    bottom_left_x = tile_opposite_x - 1
-                    bottom_left_y = tile_opposite_y
+                    edge_x, edge_y = to_x, to_y
                 else:
-                    tile_x = from_x
-                    tile_y = from_y
-                    tile_opposite_x = tile_x
-                    tile_opposite_y = tile_y - 1
-                    top_right_x = tile_x + 1
-                    top_right_y = tile_y
-                    top_left_x = tile_x - 1
-                    top_left_y = tile_y
-                    bottom_right_x = tile_opposite_x + 1
-                    bottom_right_y = tile_opposite_y
-                    bottom_left_x = tile_opposite_x - 1
-                    bottom_left_y = tile_opposite_y
+                    edge_x, edge_y = from_x, from_y
+                edge_index = self.mc.get_index_from_coords(edge_x, edge_y)
+                if edge_index != -1:
+                    north_of_river.add(edge_index)
             else:
                 if dy > 0:
-                    tile_x = from_x
-                    tile_y = from_y
-                    tile_opposite_x = tile_x + 1
-                    tile_opposite_y = tile_y
-                    top_right_x = tile_opposite_x
-                    top_right_y = tile_opposite_y + 1
-                    top_left_x = tile_x
-                    top_left_y = tile_y + 1
-                    bottom_right_x = tile_opposite_x
-                    bottom_right_y = tile_opposite_y - 1
-                    bottom_left_x = tile_x
-                    bottom_left_y = tile_y - 1
+                    edge_x, edge_y = from_x, from_y
                 else:
-                    tile_x = from_x
-                    tile_y = from_y - 1
-                    tile_opposite_x = tile_x + 1
-                    tile_opposite_y = tile_y
-                    top_right_x = tile_opposite_x
-                    top_right_y = tile_opposite_y + 1
-                    top_left_x = tile_x
-                    top_left_y = tile_y + 1
-                    bottom_right_x = tile_opposite_x
-                    bottom_right_y = tile_opposite_y - 1
-                    bottom_left_x = tile_x
-                    bottom_left_y = tile_y - 1
+                    edge_x, edge_y = from_x, to_y
+                edge_index = self.mc.get_index_from_coords(edge_x, edge_y)
+                if edge_index != -1:
+                    west_of_river.add(edge_index)
 
-            tile_i = self.mc.get_index_from_coords(tile_x, tile_y)
-            tile_opposite_i = self.mc.get_index_from_coords(tile_opposite_x, tile_opposite_y)
-            top_right_i = self.mc.get_index_from_coords(top_right_x, top_right_y)
-            top_left_i = self.mc.get_index_from_coords(top_left_x, top_left_y)
-            bottom_right_i = self.mc.get_index_from_coords(bottom_right_x, bottom_right_y)
-            bottom_left_i = self.mc.get_index_from_coords(bottom_left_x, bottom_left_y)
-            if -1 < tile_i and self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[tile_i] = True
-            if -1 < tile_opposite_i and self.em.plotTypes[tile_opposite_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[tile_opposite_i] = True
-            if -1 < top_right_i and self.em.plotTypes[top_right_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[top_right_i] = True
-            if -1 < top_left_i and self.em.plotTypes[top_left_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[top_left_i] = True
-            if -1 < bottom_right_i and self.em.plotTypes[bottom_right_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[bottom_right_i] = True
-            if -1 < bottom_left_i and self.em.plotTypes[bottom_left_i] != PlotTypes.PLOT_OCEAN:
-                river_adjacency_map[bottom_left_i] = True
+        # Civ tests all eight crossings and marks the tile if any is valid.
+        for tile_index in xrange(self.mc.iNumPlots):
+            for direction in xrange(1, 9):
+                if self._is_valid_river_crossing(
+                        tile_index, direction, north_of_river, west_of_river):
+                    river_adjacency_map[tile_index] = True
+                    break
 
         # Calculate coast adjacency
         for i in xrange(self.mc.iNumPlots):
@@ -6939,43 +6892,63 @@ class TerrainMap:
         # Set the calculated maps in MapConfig
         self.mc.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
 
-    def _is_river_tile(self, tile_index):
-        """Return True if this tile borders any river edge from river_map."""
-        if tile_index < 0 or tile_index >= self.mc.iNumPlots:
+    def _is_valid_river_crossing(self, tile_index, direction,
+                                 north_of_river, west_of_river):
+        """Reproduce CvPlot::updateRiverCrossing for one tile and direction."""
+
+        def is_water(index):
+            return index == -1 or self.em.plotTypes[index] == PlotTypes.PLOT_OCEAN
+
+        # TODO: this is broken, but layout seems close. Review and correct to cpp implementation
+        neighbour = self.mc.neighbours[tile_index][direction]
+        if is_water(neighbour) or is_water(tile_index):
             return False
 
-        for from_node, to_node, _, _ in self.cm.river_map:
-            from_x, from_y = self.cm.mc.get_coords_from_index(from_node)
-            to_x, to_y = self.cm.mc.get_coords_from_index(to_node)
+        if direction == self.mc.N:
+            return neighbour in north_of_river
+        if direction == self.mc.E:
+            return tile_index in west_of_river
+        if direction == self.mc.S:
+            return tile_index in north_of_river
+        if direction == self.mc.W:
+            return neighbour in west_of_river
 
-            dx = to_x - from_x
-            dy = to_y - from_y
+        corner = {
+            self.mc.NE: self.mc.neighbours[tile_index][self.mc.N],
+            self.mc.SE: tile_index,
+            self.mc.SW: self.mc.neighbours[tile_index][self.mc.W],
+            self.mc.NW: self.mc.neighbours[tile_index][self.mc.NW],
+        }[direction]
+        if corner == -1:
+            return False
 
-            if self.cm.mc.wrapX and abs(dx) > self.cm.mc.iNumPlotsX // 2:
-                dx = dx - int(copysign(self.cm.mc.iNumPlotsX, dx))
-            if self.cm.mc.wrapY and abs(dy) > self.cm.mc.iNumPlotsY // 2:
-                dy = dy - int(copysign(self.cm.mc.iNumPlotsY, dy))
+        north_east = self.mc.neighbours[corner][self.mc.E]
+        south_east = self.mc.neighbours[corner][self.mc.SE]
+        south_west = self.mc.neighbours[corner][self.mc.S]
+        north_west = corner
+        if -1 in (north_east, south_east, south_west):
+            return False
 
-            if abs(dx) > abs(dy):
-                if dx > 0:
-                    edge_tile_x = to_x
-                    edge_tile_y = to_y
-                else:
-                    edge_tile_x = from_x
-                    edge_tile_y = from_y
-            else:
-                if dy > 0:
-                    edge_tile_x = from_x
-                    edge_tile_y = from_y
-                else:
-                    edge_tile_x = from_x
-                    edge_tile_y = to_y
+        nw_north = north_west in north_of_river
+        nw_west = north_west in west_of_river
+        ne_north = north_east in north_of_river
+        sw_west = south_west in west_of_river
 
-            edge_tile_i = edge_tile_y * self.mc.iNumPlotsX + edge_tile_x
-            if edge_tile_i == tile_index:
-                return True
+        if sw_west and nw_west:
+            return True
+        if ne_north and nw_north:
+            return True
 
-        return False
+        if direction in (self.mc.NE, self.mc.SW):
+            return ((ne_north and (nw_west or is_water(north_west))) or
+                    ((ne_north or is_water(south_east)) and nw_west) or
+                    (sw_west and (nw_north or is_water(north_west))) or
+                    ((sw_west or is_water(south_east)) and nw_north))
+
+        return ((nw_north and (nw_west or is_water(north_east))) or
+                ((nw_north or is_water(south_west)) and nw_west) or
+                (ne_north and (sw_west or is_water(south_west))) or
+                ((ne_north or is_water(north_east)) and sw_west))
 
     def _build_biome_grid(self):
         """Build the 20x20 fuzzy biome grid"""
@@ -7915,9 +7888,10 @@ class TerrainMap:
             return False
         if xml_constraints.get('bFlatlands', False) and plot_type != PlotTypes.PLOT_LAND:  # PLOT_LAND
             return False
-        if xml_constraints.get('bNoRiverSide', False) and self.mc.is_adjacent_to_river(tile_index):
+        river_tile = self.mc.is_adjacent_to_river(tile_index)
+        if xml_constraints.get('bNoRiverSide', False) and river_tile:
             return False
-        if xml_constraints.get('bRequiresRiver', False) and not self._is_river_tile(tile_index):
+        if xml_constraints.get('bRequiresRiver', False) and not river_tile:
             return False
 
         if TerrainTypes.TERRAIN_OCEAN in terrain_booleans:

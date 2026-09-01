@@ -141,6 +141,15 @@ def _child_text(element, tag_name):
     return ''
 
 
+def _find_child(element, tag_name):
+    if element is None:
+        return None
+    for child in list(element):
+        if _tag_name(child.tag) == tag_name:
+            return child
+    return None
+
+
 def _int_list_from(parent, child_tag):
     values = []
     if parent is None:
@@ -349,8 +358,10 @@ class CyTerrainInfo:
             type_name = _child_text(element, 'Type')
             if type_name != terrain_type:
                 continue
-            yields = _int_list_from(element.find('Yields'), 'iYield') if element.find('Yields') is not None else []
-            river_yield = _int_list_from(element.find('RiverYieldChange'), 'iYield') if element.find('RiverYieldChange') is not None else []
+            yields_element = _find_child(element, 'Yields')
+            river_yield_element = _find_child(element, 'RiverYieldChange')
+            yields = _int_list_from(yields_element, 'iYield')
+            river_yield = _int_list_from(river_yield_element, 'iYield')
             if len(yields) < 3:
                 yields.extend([0] * (3 - len(yields)))
             if len(river_yield) < 3:
@@ -445,9 +456,12 @@ class CyFeatureInfo:
             type_name = _child_text(element, 'Type')
             if type_name != feature_type:
                 continue
-            yield_changes = _int_list_from(element.find('YieldChanges'), 'iYieldChange') if element.find('YieldChanges') is not None else []
-            river_yield = _int_list_from(element.find('RiverYieldChange'), 'iYield') if element.find('RiverYieldChange') is not None else []
-            hills_yield = _int_list_from(element.find('HillsYieldChange'), 'iYield') if element.find('HillsYieldChange') is not None else []
+            yield_changes_element = _find_child(element, 'YieldChanges')
+            river_yield_element = _find_child(element, 'RiverYieldChange')
+            hills_yield_element = _find_child(element, 'HillsYieldChange')
+            yield_changes = _int_list_from(yield_changes_element, 'iYieldChange')
+            river_yield = _int_list_from(river_yield_element, 'iYield')
+            hills_yield = _int_list_from(hills_yield_element, 'iYield')
             if len(yield_changes) < 3:
                 yield_changes.extend([0] * (3 - len(yield_changes)))
             if len(river_yield) < 3:
@@ -456,12 +470,13 @@ class CyFeatureInfo:
                 hills_yield.extend([0] * (3 - len(hills_yield)))
 
             terrain_booleans = _parse_bool_list(
-                element.find('TerrainBooleans'),
+                _find_child(element, 'TerrainBooleans'),
                 'TerrainBoolean',
                 'TerrainType',
                 'bTerrain',
                 terrain_type_map
             )
+            1
             self.feature_data[feature_id] = {
                 'yields': yield_changes,
                 'river_yield': river_yield,
@@ -601,12 +616,13 @@ class CyBonusInfo:
             type_name = _child_text(element, 'Type')
             if type_name != bonus_type:
                 continue
-            yield_changes = _int_list_from(element.find('YieldChanges'), 'iYieldChange') if element.find('YieldChanges') is not None else []
+            yield_changes_element = _find_child(element, 'YieldChanges')
+            yield_changes = _int_list_from(yield_changes_element, 'iYieldChange')
             if len(yield_changes) < 3:
                 yield_changes.extend([0] * (3 - len(yield_changes)))
 
             rands = [0, 0, 0, 0]
-            rands_element = element.find('Rands')
+            rands_element = _find_child(element, 'Rands')
             if rands_element is not None:
                 for idx in range(1, 5):
                     value = _child_text(rands_element, 'iRandApp%s' % idx)
@@ -638,9 +654,9 @@ class CyBonusInfo:
                 'flatlands': _child_text(element, 'bFlatlands') == '1',
                 'no_river_side': _child_text(element, 'bNoRiverSide') == '1',
                 'normalize': _child_text(element, 'bNormalize') == '1',
-                'terrain_booleans': _parse_bool_list(element.find('TerrainBooleans'), 'TerrainBoolean', 'TerrainType', 'bTerrain', terrain_type_map),
-                'feature_booleans': _parse_bool_list(element.find('FeatureBooleans'), 'FeatureBoolean', 'FeatureType', 'bFeature', feature_type_map),
-                'feature_terrain_booleans': _parse_bool_list(element.find('FeatureTerrainBooleans'), 'FeatureTerrainBoolean', 'TerrainType', 'bFeatureTerrain', terrain_type_map),
+                'terrain_booleans': _parse_bool_list(_find_child(element, 'TerrainBooleans'), 'TerrainBoolean', 'TerrainType', 'bTerrain', terrain_type_map),
+                'feature_booleans': _parse_bool_list(_find_child(element, 'FeatureBooleans'), 'FeatureBoolean', 'FeatureType', 'bFeature', feature_type_map),
+                'feature_terrain_booleans': _parse_bool_list(_find_child(element, 'FeatureTerrainBooleans'), 'FeatureTerrainBoolean', 'TerrainType', 'bFeatureTerrain', terrain_type_map),
             }
             break
 

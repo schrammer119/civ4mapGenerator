@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 
 if "--show" not in sys.argv and not os.environ.get("DISPLAY"):
     mpl.use("Agg")
+else:
+    mpl.use("TkAgg")
 
 if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
