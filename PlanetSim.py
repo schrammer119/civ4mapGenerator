@@ -3081,6 +3081,9 @@ class ClimateMap:
         self.rainfallConvectiveBaseTemp = 0.0
         self.rainfallConvectiveMaxTemp = 0.0
 
+        self.temperature_percentiles = [0.0] * self.mc.iNumPlots
+        self.rainfall_percentiles = [0.0] * self.mc.iNumPlots
+
         # River system maps
         self.node_elevations = [0.0] * self.mc.iNumPlots
         self.flow_directions = [-1] * self.mc.iNumPlots
@@ -5777,10 +5780,6 @@ class ClimateMap:
         temp_percentiles_land = self._build_percentile_map(land_temps)
         rain_percentiles_land = self._build_percentile_map(land_rainfall)
 
-        # Map back to full grid
-        self.temperature_percentiles = [0.0] * self.mc.iNumPlots
-        self.rainfall_percentiles = [0.0] * self.mc.iNumPlots
-
         for i, land_idx in enumerate(land_indices):
             self.temperature_percentiles[land_idx] = temp_percentiles_land[i]
             self.rainfall_percentiles[land_idx] = rain_percentiles_land[i]
@@ -6600,14 +6599,14 @@ class TerrainMap:
                 {
                     # === FILTERS AND REQUIREMENTS (ALL OPTIONAL) ===
                     'biome_filter': ['biome_names'],   # Only in these biomes
-                    'temp_range': (float, float),      # Temperature percentile requirements
-                    'precip_range': (float, float),    # Precipitation percentile requirements
-                    'wind_range': (float, float),      # Wind speed requirements
-                    'pressure_range': (float, float),  # Pressure requirements
-                    'elevation_range': (float, float), # Elevation percentile requirements
+                    'temp_range': (float, float),      # Temperature percentile requirements (0-1)
+                    'precip_range': (float, float),    # Precipitation percentile requirements (0-1)
+                    'wind_range': (float, float),      # Wind speed  (0-65ish)
+                    'pressure_range': (float, float),  # Pressure requirements (around 101300 Pa)
+                    'elevation_range': (float, float), # Elevation requirements  (0-1)
 
                     # === PLACEMENT MODIFIERS ===
-                    'weight': float,                   # Weight for this rule (higher = more likely)
+                    'weight': float,                   # Weight for this rule (higher = more likely, 0-1)
                 }
             ]
         },
@@ -6621,10 +6620,9 @@ class TerrainMap:
             'xml_overrides': {},
             'placement_defs': ['bPeak'],
             'placement_rules': [
-                'bPeak',
                 {
                     'biome_filter': ['temperate_forest', 'taiga', 'steppe'],
-                    'weight': 1.5,
+                    'weight': 0.9,
                 }
             ]
         },
@@ -7792,8 +7790,8 @@ class TerrainMap:
         candidates = []
         for tile_index in candidate_tiles:
             score = self._calculate_placement_score(tile_index, resource_def)
-            if score > 0:
-                candidates.append((tile_index, score))
+            score = (1.0 + score) * random.random()
+            candidates.append((tile_index, score))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
         xml_constraints = resource_def['xml_constraints']
@@ -7842,8 +7840,6 @@ class TerrainMap:
                         if random.randint(1, 100) <= group_rand:
                             self.resource_map[cluster_tile] = bonus_id
                             placed_count += 1
-                            if placed_count >= target_quantity:
-                                break
                             self._update_exclusion_zones(cluster_tile, xml_constraints)
                         if placed_count >= target_quantity:
                             break
@@ -8022,161 +8018,105 @@ class TerrainMap:
 
     def _calculate_placement_score(self, tile_index, resource_def):
         """Calculate placement score (0.0 to 1.0, higher = better)"""
-        score = 0.5  # Base score
+        score = 0.0  # Base score
 
         # Apply soft constraint modifiers
         score += self._score_xml_constraints(tile_index, resource_def)
         score += self._score_custom_constraints(tile_index, resource_def)
-        score += self._score_climate_fit(tile_index, resource_def)
-        score += self._score_biome_fit(tile_index, resource_def)
+        score /= 2.0
 
         return max(0.0, min(1.0, score))  # Clamp to [0,1]
 
     def _score_xml_constraints(self, tile_index, resource_def):
-        """Score based on XML preferences (+/- 0.3 max)"""
+        """Score based on XML preferences (0-1)"""
         score_modifier = 0.0
 
         bonus_id = self._get_bonus_id(resource_def['base_resource'])
         if bonus_id == -1:
-            return -0.5  # Heavy penalty for missing resources
+            return 0.0
 
         xml_constraints = self.bonus_constraints.get(bonus_id, {})
-        x, y = self.mc.get_coords_from_index(tile_index)
+        _, y = self.mc.get_coords_from_index(tile_index)
 
         # Latitude preference
         latitude = abs(self.mc.get_latitude_for_y(y))
         min_lat = xml_constraints.get('iMinLatitude', 0)
         max_lat = xml_constraints.get('iMaxLatitude', 90)
 
-        if min_lat <= latitude <= max_lat:
-            score_modifier += 0.15
-        else:
-            score_modifier -= 0.1  # Penalty but not elimination
+        if latitude < min_lat or latitude > max_lat:
+            return 0.0
+        score_modifier = (1 - math.cos(math.radians((latitude - min_lat) * (360.0 / (max_lat - min_lat))))) / 2.0
 
         # Terrain preference
         terrain_id = self.terrain_map[tile_index]
         terrain_booleans = xml_constraints.get('TerrainBooleans', [])
         if terrain_id in terrain_booleans:
-            score_modifier += 0.1
+            score_modifier += 0.2
         elif terrain_booleans:  # Has preferences but this isn't one
-            score_modifier -= 0.05
+            score_modifier -= 0.2
 
         # Feature preference
         feature_id = self.feature_map[tile_index]
         feature_booleans = xml_constraints.get('FeatureBooleans', [])
         if feature_id in feature_booleans:
-            score_modifier += 0.1
+            score_modifier += 0.2
 
-        return score_modifier
+        return max(0.0, min(1.0, score_modifier))  # Clamp to [0,1]
 
     def _score_custom_constraints(self, tile_index, resource_def):
-        """Score based on custom placement rules (+/- 0.3 max)"""
+        """Score based on custom placement rules (0-1)"""
         score_modifier = 0.0
 
         # Evaluate each placement rule
         for rule in resource_def.get('placement_rules', []):
             rule_score = self._evaluate_placement_rule(tile_index, rule)
-            weight = rule.get('weight', 1.0)
-            score_modifier += rule_score * weight * 0.1  # Scale to reasonable range
+            score_modifier += rule_score
+        score_modifier /= len(resource_def.get('placement_rules', [])) if resource_def.get('placement_rules', []) else 1
 
-        return max(-0.3, min(0.3, score_modifier))
-
-    def _score_climate_fit(self, tile_index, resource_def):
-        """Score based on climate requirements (+/- 0.2 max)"""
-        score_modifier = 0.0
-
-        for rule in resource_def.get('placement_rules', []):
-            climate_reqs = rule.get('climate_requirements', {})
-            if not climate_reqs:
-                continue
-
-            # Temperature fit
-            temp_range = climate_reqs.get('temp_range')
-            if temp_range:
-                temp_percentile = self.cm.temperature_percentiles[tile_index]
-                if temp_range[0] <= temp_percentile <= temp_range[1]:
-                    score_modifier += 0.1
-                else:
-                    # Graduated penalty based on distance from range
-                    distance = min(abs(temp_percentile - temp_range[0]),
-                                 abs(temp_percentile - temp_range[1]))
-                    score_modifier -= distance * 0.1
-
-            # Rainfall fit
-            precip_range = climate_reqs.get('precip_range')
-            if precip_range:
-                precip_percentile = self.cm.rainfall_percentiles[tile_index]
-                if precip_range[0] <= precip_percentile <= precip_range[1]:
-                    score_modifier += 0.1
-                else:
-                    distance = min(abs(precip_percentile - precip_range[0]),
-                                 abs(precip_percentile - precip_range[1]))
-                    score_modifier -= distance * 0.1
-
-        return max(-0.2, min(0.2, score_modifier))
-
-    def _score_biome_fit(self, tile_index, resource_def):
-        """Score based on biome preferences (+/- 0.2 max)"""
-        score_modifier = 0.0
-        tile_biome = self.biome_assignments[tile_index]
-
-        for rule in resource_def.get('placement_rules', []):
-            biome_filter = rule.get('biome_filter', [])
-            if biome_filter:
-                if tile_biome in biome_filter:
-                    score_modifier += 0.15
-                else:
-                    score_modifier -= 0.1
-
-        return max(-0.2, min(0.2, score_modifier))
+        return max(0.0, min(1.0, score_modifier))
 
     def _evaluate_placement_rule(self, tile_index, rule):
         """Evaluate a single placement rule and return score modifier"""
-        condition = rule.get('condition', 'always')
+        weight = rule.get('weight', 1.0)
 
-        if condition == 'terrain_match':
-            terrain_filter = rule.get('terrain_filter', [])
-            if terrain_filter:
-                terrain_id = self.terrain_map[tile_index]
-                terrain_string = self._get_terrain_string_from_id(terrain_id)
-                if terrain_string in terrain_filter:
-                    return 1.0
-                else:
-                    return -0.5
-
-        elif condition == 'feature_match':
-            feature_filter = rule.get('feature_filter', [])
-            if feature_filter:
-                feature_id = self.feature_map[tile_index]
-                feature_string = self._get_feature_string_from_id(feature_id)
-                if feature_string in feature_filter:
-                    return 1.0
-                else:
-                    return -0.5
-
-        elif condition == 'biome_match':
-            biome_filter = rule.get('biome_filter', [])
-            if biome_filter:
-                tile_biome = self.biome_assignments[tile_index]
-                if tile_biome in biome_filter:
-                    return 1.0
-                else:
-                    return -0.5
-
-        elif condition == 'elevation_range':
-            elevation_range = rule.get('elevation_range')
-            if elevation_range is None:
-                return 0.0
-            elevation = self.scoring_factors['elevation'][tile_index]
-            lower_bound, upper_bound = elevation_range
-            if lower_bound <= elevation <= upper_bound:
-                return 1.0
-            return -0.5
-
-        elif condition == 'always':
-            return 0.0  # Neutral score for always-applicable rules
-
-        return 0.0
+        for condition_key, range_values in rule.items():
+            if condition_key == 'biome_filter':
+                biome_filter = range_values
+                if biome_filter:
+                    tile_biome = self.biome_assignments[tile_index]
+                    if tile_biome not in biome_filter:
+                        return 0.0
+            elif condition_key == 'temp_range':
+                temp_range = range_values
+                if temp_range:
+                    temp_percentile = self.cm.temperature_percentiles[tile_index]
+                    if temp_percentile < temp_range[0] or temp_percentile > temp_range[1]:
+                        return 0.0
+            elif condition_key == 'precip_range':
+                precip_range = range_values
+                if precip_range:
+                    precip_percentile = self.cm.rainfall_percentiles[tile_index]
+                    if precip_percentile < precip_range[0] or precip_percentile > precip_range[1]:
+                        return 0.0
+            elif condition_key == 'wind_range':
+                wind_range = range_values
+                if wind_range:
+                    wind_speed = self.cm.WindSpeeds[tile_index]
+                    if wind_speed < wind_range[0] or wind_speed > wind_range[1]:
+                        return 0.0
+            elif condition_key == 'pressure_range':
+                pressure_range = range_values
+                if pressure_range:
+                    atmospheric_pressure = self.cm.atmospheric_pressure[tile_index]
+                    if atmospheric_pressure < pressure_range[0] or atmospheric_pressure > pressure_range[1]:
+                        return 0.0
+            elif condition_key == 'elevation_range':
+                elevation_range = range_values
+                if elevation_range:
+                    elevation = self.em.aboveSeaLevelMap[tile_index]
+                    if elevation < elevation_range[0] or elevation > elevation_range[1]:
+                        return 0.0
+        return weight
 
     def _get_terrain_string_from_id(self, terrain_id):
         """Convert terrain ID back to string for comparison"""
