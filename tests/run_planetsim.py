@@ -106,7 +106,11 @@ if hasattr(tm, 'resource_map') and tm.resource_map is not None:
             pct = (100.0 * count) / total_resources
             bonus_name = bonus_name_by_id.get(res_id, 'UNKNOWN_%d' % res_id)
             target = getattr(tm, 'resource_targets', {}).get(bonus_name, 0)
-            bonus_def = {'base_resource': bonus_name}
+            bonus_def = dict(tm.resource_definitions.get(bonus_name, {}))
+            bonus_def.setdefault('base_resource', bonus_name)
+            bonus_def.setdefault(
+                'xml_constraints', tm.bonus_constraints.get(res_id, {})
+            )
             failures = 0
             for tile_index, placed_id in enumerate(tm.resource_map):
                 if placed_id == res_id:

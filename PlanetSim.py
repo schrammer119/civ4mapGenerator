@@ -5921,6 +5921,8 @@ class TerrainMap:
         self.resource_targets = {}
         self.landAreaID = [-1] * self.mc.iNumPlots
         self.landAreaSizes = {}
+        self.bonusAreaID = [-1] * self.mc.iNumPlots
+        self.bonusAreaSizes = {}
         self.world_ids = [-1] * self.mc.iNumPlots
         self.world_sizes = {}
         self.isPotentialCityWork = [False] * self.mc.iNumPlots
@@ -5964,6 +5966,7 @@ class TerrainMap:
         self._assign_biomes()
         self._calculateLandIDs()
         self._calculate_world_ids()
+        self._calculate_bonus_area_ids()
 
         # Pass 2: Place primary features based on biome definitions
         self._place_primary_features()
@@ -6836,9 +6839,9 @@ class TerrainMap:
                 if edge_index != -1:
                     west_of_river.add(edge_index)
 
-        # Civ tests all eight crossings and marks the tile if any is valid.
+        # Civ's river-side eligibility is based on the four cardinal edges.
         for tile_index in xrange(self.mc.iNumPlots):
-            for direction in xrange(1, 9):
+            for direction in (self.mc.N, self.mc.E, self.mc.S, self.mc.W):
                 if self._is_valid_river_crossing(
                         tile_index, direction, north_of_river, west_of_river):
                     river_adjacency_map[tile_index] = True
@@ -7153,6 +7156,39 @@ class TerrainMap:
                     land_area_size = self._floodFillLandArea(i, land_area_counter)
                     self.landAreaSizes[land_area_counter] = land_area_size
                     land_area_counter += 1
+
+    def _calculate_bonus_area_ids(self):
+        """Calculate contiguous land and water areas for iMinAreaSize."""
+        self.bonusAreaID = [-1] * self.mc.iNumPlots
+        self.bonusAreaSizes = {}
+        area_id = 0
+
+        for start_tile in xrange(self.mc.iNumPlots):
+            if self.bonusAreaID[start_tile] != -1:
+                continue
+
+            area_is_water = self.em.plotTypes[start_tile] == PlotTypes.PLOT_OCEAN
+            stack = [start_tile]
+            area_size = 0
+            while stack:
+                current = stack.pop()
+                if self.bonusAreaID[current] != -1:
+                    continue
+                if (self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN) != area_is_water:
+                    continue
+
+                self.bonusAreaID[current] = area_id
+                area_size += 1
+                for direction in xrange(1, 9):
+                    neighbour = self.mc.neighbours[current][direction]
+                    if neighbour < 0 or self.bonusAreaID[neighbour] != -1:
+                        continue
+                    neighbour_is_water = self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN
+                    if neighbour_is_water == area_is_water:
+                        stack.append(neighbour)
+
+            self.bonusAreaSizes[area_id] = area_size
+            area_id += 1
 
     def _floodFillLandArea(self, start_tile, land_area_id):
         """
@@ -7736,7 +7772,7 @@ class TerrainMap:
         resources_by_order = self._get_resources_by_placement_order()
 
         for resource_def in resources_by_order:
-            if resource_def['xml_constraints'].get('bUnique', False):
+            if resource_def['xml_constraints'].get('bArea', False):
                 self._add_non_unique_bonus_type(resource_def)
             else:
                 self._add_unique_bonus_type(resource_def)
@@ -7782,48 +7818,33 @@ class TerrainMap:
         target_quantity = self._calculate_num_bonuses_to_add(resource_def['xml_constraints'], len(candidate_tiles))
         self.resource_targets[resource_def['base_resource']] = target_quantity
 
-        # TODO: up until this point, we have obeyed the same rules as the core game engine.
-        #       Now we have to consider the additional weights from placement rules in the map script.
-        #       The game engine randomly selects tiles from the candidate list.
-        #       I worry if we select based on highest score, we may end up with a very clustered distribution of resources.
-
         candidates = []
         for tile_index in candidate_tiles:
             score = self._calculate_placement_score(tile_index, resource_def)
-            score = (1.0 + score) * random.random()
-            candidates.append((tile_index, score))
+            if score == 0.0:
+                Tscore = float('inf')
+            elif score == 1.0:
+                Tscore = 1.0
+            else:
+                Tscore = math.log(random.random()) / math.log(1.0 - score) + 1.0
+            candidates.append((tile_index, Tscore))
 
-        candidates.sort(key=lambda x: x[1], reverse=True)
+        candidates.sort(key=lambda x: x[1], reverse=False)
         xml_constraints = resource_def['xml_constraints']
-        placement_order = candidates
-        land_candidates = []
-        water_candidates = []
-        min_land_percent = xml_constraints.get('iMinLandPercent', 0)
-        if 0 < min_land_percent < 100:
-            terrain_booleans = xml_constraints.get('TerrainBooleans', [])
-            has_land = any(terrain_id in terrain_booleans for terrain_id in (0, 1, 2, 3, 4))
-            has_water = any(terrain_id in terrain_booleans for terrain_id in (5, 6))
-            if has_land and has_water:
-                for tile_index, score in candidates:
-                    terrain_id = self.terrain_map[tile_index]
-                    if terrain_id in (5, 6):
-                        water_candidates.append((tile_index, score))
-                    elif terrain_id in (0, 1, 2, 3, 4):
-                        land_candidates.append((tile_index, score))
-                land_target = int(round(float(target_quantity) * float(min_land_percent) / 100.0))
-                land_target = min(len(land_candidates), max(0, land_target))
-                placement_order = land_candidates[:land_target] + water_candidates
-                if not placement_order:
-                    placement_order = candidates
-
+        land_count = 0
+        total_count = 0
         placed_count = 0
-        for tile_index, score in placement_order:
-            if self._should_place_resource(tile_index, resource_def, xml_constraints):
+        for tile_index, score in candidates:
+            if self._should_place_resource(
+                    tile_index, resource_def, xml_constraints, land_count, total_count):
                 self.resource_map[tile_index] = bonus_id
                 placed_count += 1
+                total_count += 1
+                if self.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+                    land_count += 1
+                self._update_exclusion_zones(tile_index, xml_constraints)
                 if placed_count >= target_quantity:
                     break
-                self._update_exclusion_zones(tile_index, xml_constraints)
 
                 group_range = xml_constraints.get('iGroupRange', 0)
                 group_rand = xml_constraints.get('iGroupRand', 0)
@@ -7835,11 +7856,15 @@ class TerrainMap:
                             continue
                         if not self._can_have_bonus(cluster_tile, resource_def):
                             continue
-                        if not self._should_place_resource(cluster_tile, resource_def, xml_constraints):
+                        if not self._should_place_resource(
+                                cluster_tile, resource_def, xml_constraints, land_count, total_count):
                             continue
                         if random.randint(1, 100) <= group_rand:
                             self.resource_map[cluster_tile] = bonus_id
                             placed_count += 1
+                            total_count += 1
+                            if self.em.plotTypes[cluster_tile] != PlotTypes.PLOT_OCEAN:
+                                land_count += 1
                             self._update_exclusion_zones(cluster_tile, xml_constraints)
                         if placed_count >= target_quantity:
                             break
@@ -7879,10 +7904,9 @@ class TerrainMap:
             if not terrain_id in terrain_booleans:
                 return False
 
-        # Exclusive plot requirements
-        if xml_constraints.get('bHills', False) and plot_type != PlotTypes.PLOT_HILLS:  # PLOT_HILLS
+        if plot_type == PlotTypes.PLOT_HILLS and not xml_constraints.get('bHills', False):
             return False
-        if xml_constraints.get('bFlatlands', False) and plot_type != PlotTypes.PLOT_LAND:  # PLOT_LAND
+        if plot_type == PlotTypes.PLOT_LAND and not xml_constraints.get('bFlatlands', False):
             return False
         river_tile = self.mc.is_adjacent_to_river(tile_index)
         if xml_constraints.get('bNoRiverSide', False) and river_tile:
@@ -7890,14 +7914,7 @@ class TerrainMap:
         if xml_constraints.get('bRequiresRiver', False) and not river_tile:
             return False
 
-        if TerrainTypes.TERRAIN_OCEAN in terrain_booleans:
-            area_size = self.mc.iNumPlots
-        elif TerrainTypes.TERRAIN_COAST in terrain_booleans:
-            area_size = self.world_sizes.get(self.world_ids(tile_index), 0)
-        elif 'bPeak' in placement_defs:
-            area_size = self.em.continentSizes.get(self.em.continentID[tile_index], 0)
-        else:
-            area_size = self.landAreaSizes.get(self.landAreaID[tile_index], 0)
+        area_size = self.bonusAreaSizes.get(self.bonusAreaID[tile_index], 0)
 
         if area_size < xml_constraints.get('iMinAreaSize', 0):
             return False
@@ -7924,6 +7941,7 @@ class TerrainMap:
         base_count = xml_constraints.get('iConstAppearance', 0) + rand_1 + rand_2 + rand_3 + rand_4
 
         tiles_per = xml_constraints.get('iTilesPer', 0)
+        land_tiles = 0
         if tiles_per > 0:
             land_tiles = num_candidate_tiles // tiles_per
 
@@ -7931,8 +7949,27 @@ class TerrainMap:
         bonus_count = (base_count * (land_tiles + players)) // 100
         return max(1, bonus_count)
 
-    def _should_place_resource(self, tile_index, resource_def, xml_constraints):
+    def _should_place_resource(self, tile_index, resource_def, xml_constraints,
+                               land_count=None, total_count=None):
         """Check clustering and exclusion rules"""
+
+        if self.resource_map[tile_index] != -1:
+            return False
+
+        min_land_percent = xml_constraints.get('iMinLandPercent', 0)
+        if (min_land_percent > 0 and
+                self.em.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN):
+            if land_count is None or total_count is None:
+                bonus_id = self._get_bonus_id(resource_def['base_resource'])
+                land_count = sum(
+                    1 for index, placed_bonus in enumerate(self.resource_map)
+                    if placed_bonus == bonus_id and
+                    self.em.plotTypes[index] != PlotTypes.PLOT_OCEAN
+                )
+                total_count = self.resource_map.count(bonus_id)
+            if land_count * 100 // (total_count + 1) < min_land_percent:
+                return False
+
         # Check unique radius (exclusion zones)
         unique_radius = xml_constraints.get('iUnique', 0)
         if unique_radius > 0:
@@ -7942,25 +7979,28 @@ class TerrainMap:
         return True
 
     def _has_resource_in_radius(self, tile_index, resource_type, radius):
-        """Check if resource exists within radius"""
+        """Check same-type resources in the same area using Civ plot distance."""
         bonus_id = self._get_bonus_id(resource_type)
         if bonus_id == -1:
             return False
 
-        x, y = self.mc.get_coords_from_index(tile_index)
+        tile_x, tile_y = self.mc.get_coords_from_index(tile_index)
+        area_id = self.bonusAreaID[tile_index]
+        for placed_tile in self.placed_resources.get(resource_type, []):
+            if self.resource_map[placed_tile] != bonus_id:
+                continue
+            if self.bonusAreaID[placed_tile] != area_id:
+                continue
 
-        for dx in xrange(-radius, radius + 1):
-            for dy in xrange(-radius, radius + 1):
-                if dx == 0 and dy == 0:
-                    continue
-
-                check_x, check_y = self.mc.wrap_coordinates(x + dx, y + dy)
-                if not self.mc.coordinates_in_bounds(check_x, check_y):
-                    continue
-
-                check_index = self.mc.get_index_from_coords(check_x, check_y)
-                if self.resource_map[check_index] == bonus_id:
-                    return True
+            placed_x, placed_y = self.mc.get_coords_from_index(placed_tile)
+            dx, dy = self.mc.get_wrapped_distance(
+                tile_x, tile_y, placed_x, placed_y
+            )
+            dx = abs(dx)
+            dy = abs(dy)
+            plot_distance = max(dx, dy) + min(dx, dy) // 2
+            if plot_distance <= radius:
+                return True
 
         return False
 
