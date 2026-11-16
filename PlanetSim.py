@@ -7404,7 +7404,7 @@ class TerrainMap:
             'placement_rules': [                       # Custom rules beyond XML parameters
                 {
                     # === FILTERS AND REQUIREMENTS (ALL OPTIONAL) ===
-                    'biome_filter': ['biome_names'],   # Only in these biomes
+                    'biome_filter': ['biome_names'],   # Prefer matching biomes
                     'temp_range': (float, float),      # Temperature percentile requirements (0-1)
                     'precip_range': (float, float),    # Precipitation percentile requirements (0-1)
                     'wind_range': (float, float),      # Wind speed  (0-65ish)

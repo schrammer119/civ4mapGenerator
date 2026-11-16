@@ -535,6 +535,23 @@ class ResourceTests(unittest.TestCase):
         terrain_map.em.aboveSeaLevelMap[0] = 0.7501
         self.assertEqual(0.0, terrain_map._evaluate_placement_rule(0, rule))
 
+    def test_biome_filter_is_a_soft_placement_preference(self):
+        terrain_map = self.make_terrain_map(width=2, height=1)
+        terrain_map.biome_assignments = ["preferred", "fallback"]
+        terrain_map._score_xml_constraints = lambda tile_index, resource_def: 0.2
+        resource_def = {
+            "base_resource": "BONUS_MARBLE",
+            "placement_rules": [
+                {"biome_filter": ["preferred"], "weight": 0.9},
+            ],
+        }
+
+        preferred_score = terrain_map._calculate_placement_score(0, resource_def)
+        fallback_score = terrain_map._calculate_placement_score(1, resource_def)
+
+        self.assertGreater(preferred_score, fallback_score)
+        self.assertGreater(fallback_score, 0.0)
+
     def test_active_resource_path_maps_no_bonus_and_valid_bonus_ids(self):
         plots = [FakePlot(), FakePlot()]
         old_mgr = getattr(PlanetSim, "CyPythonMgr", None)

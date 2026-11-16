@@ -10,50 +10,8 @@ Core consolidation is complete, but resource verification, start-location logic,
 - Phase 1: Project Structure & Tooling Cleanup
 - Phase H: Fix generation behaviour from human feedback
 - Phase 2: Resolve Code TODOs & Missing Implementations (historical status; current tests need re-verification)
-
----
-
-## Phase 3: Complete Resource & Bonus Placement with Visualization
-
-### 3.1 Finish Resource Placement Implementation
-
-- [x] Verify addBonuses() calls TerrainMap.\_place_resources() instead of fallback
-- [x] Confirm XML constraint loading is wired to the live path
-- [x] Repair focused resource-test fixtures/API expectations
-- [x] Confirm the smoke harness places resources
-- [ ] Test resource distribution respects elevation/biome/terrain rules
-- [ ] Check that strategic resources are appropriately scarce
-- [ ] Verify luxury and food resources are evenly distributed
-
-**Verification evidence**:
-
-- `TerrainMap.GenerateTerrain()` calls `_place_resources()` in the live generation path.
-- The latest `pixi run -e dev generate` run completed the 144x96 mock map with 15 plates, placed 383 resources, and reported zero placement violations.
-- `pixi run -e dev unit` passes 30 tests and 13 subtests under pytest.
-
-**Owner**: Implementation
-
-### 3.2 Add Test Visualization for Resources
-
-- [x] Update `run_planetsim.py` to visualize resource placement on map
-- [x] Add terminal output showing resource distribution statistics
-- [x] Create matplotlib plot of resource density by terrain type
-- [x] Output resource conflict/constraint violations if any
-- [x] Add biome-specific resource checklist (e.g., farms in grassland, etc.)
-
-**Current state**: The resource overlay uses short letter codes on the final terrain map when resources exist; the script prints a distribution table or an explicit no-resources message. Plots are shown only with `--show`.
-
-**Owner**: Testing/visualization
-
-### 3.3 Verify Resource Balancing
-
-- [ ] Play test game with custom map and check resource accessibility
-- [ ] Verify no civilizations start without access to food
-- [ ] Check strategic resources aren't clustered unfairly
-- [ ] Ensure luxury resources create trade opportunities
-- [ ] Document any balance issues for adjustment phase
-
-**Owner**: Balance testing
+- Phase 3: Complete Resource & Bonus Placement with Visualization
+- Phase 4: Unit Testing Framework
 
 ---
 
@@ -76,31 +34,19 @@ based on civilization.
 Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
 
 - [ ] Implement a determination of which landmasses are "old" and which is "new".
+- [ ] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
 - [ ] Implement a placement rule for resources and civilizations based on landmass assignment.
 - [ ] Add unit tests to verify classifications and placements.
 
----
+### F.3 Add game options API
 
-## Phase 4: Unit Testing Framework (OPTIONAL - If Time Permits)
+The game options API allows mods to define custom options that can influence map generation, resource placement, and civilization behavior.
 
-### 4.1 Create Focused Unit Tests
-
-- [ ] Add tests for coordinate wrapping edge cases
-- [ ] Test elevation thresholds and plot type assignment
-- [ ] Test climate percentile calculations
-- [ ] Test biome boundary conditions
-- [ ] Add property-based tests for determinism (same seed = same map)
-
-**Owner**: Testing
-
-### 4.2 CI/CD-Ready Test Suite
-
-- [ ] Organize tests in `tests/` directory with clear naming
-- [x] Add a Pixi `unit` task that runs the pytest suite
-- [x] Ensure unit tests and headless generation run without matplotlib display
-- [ ] Add performance benchmarking
-
-**Owner**: Testing infrastructure
+- [ ] Implement a system to define and register custom game options.
+- [ ] Ensure options can be accessed during map generation and resource placement.
+- [ ] Add validation for option values and types.
+- [ ] Integrate options into map generation logic.
+- [ ] Add unit tests to verify correct handling and application of game options.
 
 ---
 

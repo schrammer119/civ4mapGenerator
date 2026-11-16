@@ -25,7 +25,7 @@ BIOME_TARGETS = {
 BIOME_TARGET_TOLERANCE_PP = 15.0
 
 
-def generate_biome_shares(seed):
+def generate_planetsim_map(seed):
     random.seed(seed)
     gc = PlanetSim.CyGlobalContext()
     map_config = MapConfig(gc, gc.getMap())
@@ -35,6 +35,27 @@ def generate_biome_shares(seed):
     climate_map.GenerateClimateMap()
     terrain_map = TerrainMap(gc, map_config, elevation_map, climate_map)
     terrain_map.GenerateTerrain()
+    return elevation_map, climate_map, terrain_map
+
+
+def generate_map_snapshot(seed):
+    elevation_map, climate_map, terrain_map = generate_planetsim_map(seed)
+    return (
+        tuple(elevation_map.elevationMap),
+        tuple(elevation_map.plotTypes),
+        tuple(climate_map.TemperatureMap),
+        tuple(climate_map.RainfallMap),
+        tuple(climate_map.river_map),
+        tuple(terrain_map.biome_assignments),
+        tuple(terrain_map.terrain_map),
+        tuple(terrain_map.feature_map),
+        tuple(terrain_map.feature_subtype_map),
+        tuple(terrain_map.resource_map),
+    )
+
+
+def generate_biome_shares(seed):
+    elevation_map, _, terrain_map = generate_planetsim_map(seed)
 
     land_biomes = [
         terrain_map.biome_assignments[index]
@@ -48,6 +69,16 @@ def generate_biome_shares(seed):
 
 
 class TerrainBehaviorTests(unittest.TestCase):
+    def test_same_seed_generates_identical_map_outputs(self):
+        random_state = random.getstate()
+        try:
+            first_snapshot = generate_map_snapshot(37)
+            second_snapshot = generate_map_snapshot(37)
+        finally:
+            random.setstate(random_state)
+
+        self.assertEqual(first_snapshot, second_snapshot)
+
     def test_climate_fitness_respects_inclusive_range_and_center_preference(self):
         terrain_map = object.__new__(TerrainMap)
         biome = {
