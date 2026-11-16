@@ -4960,29 +4960,29 @@ class ClimateMap:
             self.mc.RiverTargetCountStandard
         )
 
-        # Phase 1: Enhanced elevation and flow modeling
+        # Enhanced elevation and flow modeling
         self.calculate_enhanced_node_elevations()
         distances_from_outlets = self.calculate_spillover_flow_directions()
 
-        # Phase 2: Process tiles and calculate enhanced flows
+        # Process tiles and calculate enhanced flows
         self.process_tiles_for_watersheds()
         self.calculate_enhanced_flow_accumulation(distances_from_outlets)
 
-        # Phase 3: Strategic selection with glacial allocation
+        # Strategic selection with glacial allocation
         selected_watersheds = self.allocate_rivers_strategically(target_rivers)
 
-        # Phase 4: Build optimized river systems
+        # Build optimized river systems
         self.river_segments_placed = []  # Track placed segments for later cleanup
         self.build_optimized_river_systems(selected_watersheds)
 
-        # Phase 5: Advanced lake system (MUST happen before river cleanup)
+        # Advanced lake system (MUST happen before river cleanup)
         self.lake_data = self.generate_advanced_lake_system(selected_watersheds)
 
-        # Phase 6: Clean up rivers that conflict with lakes
+        # Clean up rivers that conflict with lakes
         self.remove_invalid_lake_outflows()
         self.remove_river_lake_conflicts()
 
-        # Phase 7: Add local rainfall from generated lakes
+        # Add local rainfall from generated lakes
         self.add_lake_moisture()
 
     @profile
@@ -5443,13 +5443,13 @@ class ClimateMap:
             # Select by categories
             continent_selected = []
 
-            # Phase 1: Glacial rivers
+            # Glacial rivers
             glacial_selected = self.select_glacial_rivers_for_continent(
                 continent_watersheds, glacial_count
             )
             continent_selected.extend(glacial_selected)
 
-            # Phase 2: Longest rivers (from remaining watersheds)
+            # Longest rivers (from remaining watersheds)
             remaining_watersheds = [
                 ws_id
                 for ws_id in continent_watersheds
@@ -5460,7 +5460,7 @@ class ClimateMap:
             )
             continent_selected.extend(longest_selected)
 
-            # Phase 3: Highest flow potential (from remaining watersheds)
+            # Highest flow potential (from remaining watersheds)
             remaining_watersheds = [
                 ws_id
                 for ws_id in continent_watersheds
@@ -5643,7 +5643,7 @@ class ClimateMap:
                     )
 
         # Build connected tree from outlet upward
-        # Phase 1: Build complete connectivity tree from outlet
+        # Build complete connectivity tree from outlet
         connected_nodes = set([outlet_node])
         changed = True
         while changed:
@@ -5655,7 +5655,7 @@ class ClimateMap:
                         connected_nodes.add(node_i)
                         changed = True
 
-        # Phase 2: Filter by threshold and create segments
+        # Filter by threshold and create segments
         river_segments = []
         for node_i in connected_nodes:
             if 0 <= node_i < len(self.enhanced_flows):
@@ -5777,7 +5777,7 @@ class ClimateMap:
 
         placed_lakes = []
 
-        # Phase 1: MANDATORY lakes for ALL selected endorheic river watersheds
+        # MANDATORY lakes for ALL selected endorheic river watersheds
         for watershed_id in selected_watersheds:
             if watershed_id in self.watershed_database:
                 data = self.watershed_database[watershed_id]
@@ -5816,7 +5816,7 @@ class ClimateMap:
                                 )
                                 break
 
-        # Phase 2: Strategic lakes from remaining endorheic basins (non-river watersheds)
+        # Strategic lakes from remaining endorheic basins (non-river watersheds)
         endorheic_candidates = []
         for watershed_id, data in self.watershed_database.items():
             if (
@@ -5841,7 +5841,7 @@ class ClimateMap:
             if lake:
                 placed_lakes.append(lake)
 
-        # Phase 3: Attempt ocean connections for large lakes
+        # Attempt ocean connections for large lakes
         for lake in placed_lakes:
             if lake["final_size"] >= 4:  # Only try connecting larger lakes
                 self.attempt_ocean_connection(lake)

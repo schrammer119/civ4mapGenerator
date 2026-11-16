@@ -1,8 +1,8 @@
-"""Diagnostic for Phase H.2: quantify why rainfall concentrates on 1-2 tiles.
+"""Diagnostic for quantifying why rainfall concentrates on 1-2 tiles.
 
 Not a pass/fail test - prints distribution statistics and (optionally) plots
 intermediate climate fields for a human to inspect before any rainfall-model
-tuning is attempted. See FINISH_LINE_TODO.md Phase H.2.
+tuning is attempted.
 
 Hypothesis under test: the atmospheric-thickness floor `max(0.1, H)` in
 ClimateMap._calculate_thickness_field lets H approach zero for cold/high

@@ -1,7 +1,7 @@
-"""Diagnostic for Phase H.1: quantify coastline / plate-boundary co-location.
+"""Diagnostic for quantifying coastline / plate-boundary co-location.
 
 Not a pass/fail test - prints binned statistics for a human to inspect before
-any elevationMap tuning is attempted. See FINISH_LINE_TODO.md Phase H.1.
+any elevationMap tuning is attempted.
 """
 
 import argparse

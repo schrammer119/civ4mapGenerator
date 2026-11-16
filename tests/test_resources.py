@@ -34,7 +34,7 @@ class FakePythonMgr(object):
         self.calls += 1
 
 
-class Phase2ResourceTests(unittest.TestCase):
+class ResourceTests(unittest.TestCase):
     def make_terrain_map(self, width=5, height=5):
         gc = PlanetSim.CyGlobalContext()
         map_config = MapConfig(gc, gc.getMap())
