@@ -19,8 +19,8 @@ Core consolidation is complete, but resource verification, start-location logic,
 
 - [x] Verify addBonuses() calls TerrainMap.\_place_resources() instead of fallback
 - [x] Confirm XML constraint loading is wired to the live path
-- [ ] Repair focused resource-test fixtures/API expectations
-- [ ] Confirm the smoke harness places resources
+- [x] Repair focused resource-test fixtures/API expectations
+- [x] Confirm the smoke harness places resources
 - [ ] Test resource distribution respects elevation/biome/terrain rules
 - [ ] Check that strategic resources are appropriately scarce
 - [ ] Verify luxury and food resources are evenly distributed
@@ -28,8 +28,8 @@ Core consolidation is complete, but resource verification, start-location logic,
 **Verification evidence**:
 
 - `TerrainMap.GenerateTerrain()` calls `_place_resources()` in the live generation path.
-- The latest `py tests/run_planetsim.py` run completed the 144x96 mock map with 15 plates but reported no resources placed.
-- The focused suite currently runs 19 tests and reports 14 errors, including missing `xml_constraints`/`xml_overrides` fixture fields and an outdated helper signature.
+- The latest `pixi run -e dev generate` run completed the 144x96 mock map with 15 plates, placed 383 resources, and reported zero placement violations.
+- `pixi run -e dev unit` passes 30 tests and 13 subtests under pytest.
 
 **Owner**: Implementation
 
@@ -96,8 +96,8 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 ### 4.2 CI/CD-Ready Test Suite
 
 - [ ] Organize tests in `tests/` directory with clear naming
-- [ ] Add `run_tests.py` script that runs all tests and reports results
-- [ ] Ensure tests run without matplotlib display (headless mode)
+- [x] Add a Pixi `unit` task that runs the pytest suite
+- [x] Ensure unit tests and headless generation run without matplotlib display
 - [ ] Add performance benchmarking
 
 **Owner**: Testing infrastructure
@@ -196,7 +196,7 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 
 ## Standing Directives
 
-1. **Resource verification is blocking**: Repair the focused suite and explain the zero-resource smoke result before claiming resource placement is complete.
+1. **Resource verification is blocking**: Continue testing resource distribution and gameplay balance across generated maps; a single passing smoke run does not establish overall balance.
 2. **Stability First**: If balancing requires parameter tweaks, document them in code comments and commit history.
 3. **Test Before Shipping**: Every phase must include real testing, not just code review.
 4. **Complete Over Perfect**: Focus on completing the work correctly rather than optimization. Performance tuning is Phase 5+.

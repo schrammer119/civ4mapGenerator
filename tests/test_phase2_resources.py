@@ -3,7 +3,6 @@ import sys
 import unittest
 from unittest import mock
 
-
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 sys.path.insert(0, REPO_ROOT)
@@ -48,10 +47,15 @@ class Phase2ResourceTests(unittest.TestCase):
             y = tile_index // width
             row = [-1] * 9
             for direction, dx, dy in (
-                (map_config.N, 0, 1), (map_config.S, 0, -1),
-                (map_config.E, 1, 0), (map_config.W, -1, 0),
-                (map_config.NE, 1, 1), (map_config.NW, -1, 1),
-                (map_config.SE, 1, -1), (map_config.SW, -1, -1)):
+                (map_config.N, 0, 1),
+                (map_config.S, 0, -1),
+                (map_config.E, 1, 0),
+                (map_config.W, -1, 0),
+                (map_config.NE, 1, 1),
+                (map_config.NW, -1, 1),
+                (map_config.SE, 1, -1),
+                (map_config.SW, -1, -1),
+            ):
                 nx = (x + dx) % width
                 ny = y + dy
                 if 0 <= ny < height:
@@ -70,7 +74,9 @@ class Phase2ResourceTests(unittest.TestCase):
             },
         )()
         terrain_map.cm = type("Climate", (), {})()
-        terrain_map.terrain_map = [gc.getInfoTypeForString("TERRAIN_GRASS")] * map_config.iNumPlots
+        terrain_map.terrain_map = [
+            gc.getInfoTypeForString("TERRAIN_GRASS")
+        ] * map_config.iNumPlots
         terrain_map.feature_map = [-1] * map_config.iNumPlots
         terrain_map.resource_map = [BonusTypes.NO_BONUS] * map_config.iNumPlots
         terrain_map.resource_targets = {}
@@ -153,10 +159,14 @@ class Phase2ResourceTests(unittest.TestCase):
                 adjacency = self.build_river_adjacency_map(
                     terrain_map, [(segment[0], segment[1], 0, 1.0)]
                 )
-                self.assertEqual(expected, {
-                    tile_index for tile_index, adjacent in enumerate(adjacency)
-                    if adjacent
-                })
+                self.assertEqual(
+                    expected,
+                    {
+                        tile_index
+                        for tile_index, adjacent in enumerate(adjacency)
+                        if adjacent
+                    },
+                )
 
     def test_diagonal_river_crossing_does_not_make_tile_riverside(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
@@ -186,10 +196,14 @@ class Phase2ResourceTests(unittest.TestCase):
                 adjacency = self.build_river_adjacency_map(
                     terrain_map, [(segment[0], segment[1], 0, 1.0)]
                 )
-                self.assertEqual(expected, {
-                    tile_index for tile_index, adjacent in enumerate(adjacency)
-                    if adjacent
-                })
+                self.assertEqual(
+                    expected,
+                    {
+                        tile_index
+                        for tile_index, adjacent in enumerate(adjacency)
+                        if adjacent
+                    },
+                )
 
     def test_feature_adjacency_reads_terrain_map_state(self):
         terrain_map = self.make_terrain_map()
@@ -199,9 +213,7 @@ class Phase2ResourceTests(unittest.TestCase):
             "FEATURE_FOREST"
         )
 
-        self.assertTrue(
-            terrain_map.mc.is_adjacent_to_feature(target, "FEATURE_FOREST")
-        )
+        self.assertTrue(terrain_map.mc.is_adjacent_to_feature(target, "FEATURE_FOREST"))
 
         terrain_map.feature_map[adjacent] = BonusTypes.NO_BONUS
         self.assertFalse(
@@ -252,7 +264,9 @@ class Phase2ResourceTests(unittest.TestCase):
     def test_bonus_policy_enforces_peak_latitude_and_city_work_rules(self):
         terrain_map = self.make_terrain_map(width=3, height=1)
         terrain_map.em.plotTypes = [
-            PlotTypes.PLOT_PEAK, PlotTypes.PLOT_LAND, PlotTypes.PLOT_OCEAN
+            PlotTypes.PLOT_PEAK,
+            PlotTypes.PLOT_LAND,
+            PlotTypes.PLOT_OCEAN,
         ]
         terrain_map.bonusAreaID = [0, 0, 1]
         terrain_map.bonusAreaSizes = {0: 2, 1: 1}
@@ -311,9 +325,7 @@ class Phase2ResourceTests(unittest.TestCase):
         try:
             PlanetSim.mapCtx = FakeMap(plots)
             PlanetSim.mc = type("Config", (), {"iNumPlots": 3})()
-            PlanetSim.tm = type(
-                "Terrain", (), {"resource_map": [-1, 4, -1]}
-            )()
+            PlanetSim.tm = type("Terrain", (), {"resource_map": [-1, 4, -1]})()
             PlanetSim.CyPythonMgr = lambda: manager
 
             PlanetSim.addBonuses()
@@ -353,10 +365,12 @@ class Phase2ResourceTests(unittest.TestCase):
             )
         )
 
-        terrain_map._add_non_unique_bonus_type({
-            "base_resource": "BONUS_MARBLE",
-            "xml_constraints": terrain_map.bonus_constraints[marble_id],
-        })
+        terrain_map._add_non_unique_bonus_type(
+            {
+                "base_resource": "BONUS_MARBLE",
+                "xml_constraints": terrain_map.bonus_constraints[marble_id],
+            }
+        )
 
         self.assertEqual([4, 15], terrain_map.placed_resources["BONUS_MARBLE"])
         self.assertEqual(marble_id, terrain_map.resource_map[15])
@@ -414,19 +428,25 @@ class Phase2ResourceTests(unittest.TestCase):
                 "iGroupRand": 100,
             },
         }
-        terrain_map._can_have_bonus = lambda tile_index, definition: tile_index in candidate_tiles
-        terrain_map._calculate_placement_score = (
-            lambda tile_index, definition: 1.0 if tile_index == 12 else 0.0
+        terrain_map._can_have_bonus = (
+            lambda tile_index, definition: tile_index in candidate_tiles
+        )
+        terrain_map._calculate_placement_score = lambda tile_index, definition: (
+            1.0 if tile_index == 12 else 0.0
         )
         terrain_map._calculate_num_bonuses_to_add = lambda constraints, count: 5
 
         with mock.patch.object(PlanetSim.random, "randint", return_value=1):
             terrain_map._add_non_unique_bonus_type(resource_def)
 
-        self.assertEqual([12], [
-            tile_index for tile_index, placed_bonus in enumerate(terrain_map.resource_map)
-            if placed_bonus == bonus_id
-        ])
+        self.assertEqual(
+            [12],
+            [
+                tile_index
+                for tile_index, placed_bonus in enumerate(terrain_map.resource_map)
+                if placed_bonus == bonus_id
+            ],
+        )
 
     def test_unique_bonus_prefers_highest_scoring_area_and_keeps_group_together(self):
         terrain_map = self.make_terrain_map(width=4, height=2)
@@ -443,14 +463,10 @@ class Phase2ResourceTests(unittest.TestCase):
             copper_id: {"bArea": True},
         }
         terrain_map._can_have_bonus = lambda tile_index, resource_def: True
-        terrain_map._calculate_placement_score = (
-            lambda tile_index, resource_def: (
-                1.0 if tile_index == 2 else 0.6 if tile_index == 0 else 0.0
-            )
+        terrain_map._calculate_placement_score = lambda tile_index, resource_def: (
+            1.0 if tile_index == 2 else 0.6 if tile_index == 0 else 0.0
         )
-        terrain_map._calculate_num_bonuses_to_add = (
-            lambda xml_constraints, count: 3
-        )
+        terrain_map._calculate_num_bonuses_to_add = lambda xml_constraints, count: 3
         resource_def = {
             "base_resource": "BONUS_MARBLE",
             "xml_constraints": {
@@ -464,11 +480,14 @@ class Phase2ResourceTests(unittest.TestCase):
             terrain_map._add_unique_bonus_type(resource_def)
 
         placed_tiles = [
-            tile_index for tile_index, placed_bonus in enumerate(terrain_map.resource_map)
+            tile_index
+            for tile_index, placed_bonus in enumerate(terrain_map.resource_map)
             if placed_bonus == marble_id
         ]
         self.assertEqual(3, len(placed_tiles))
-        self.assertTrue(all(terrain_map.bonusAreaID[tile] == 1 for tile in placed_tiles))
+        self.assertTrue(
+            all(terrain_map.bonusAreaID[tile] == 1 for tile in placed_tiles)
+        )
         self.assertEqual(3, terrain_map.resource_targets["BONUS_MARBLE"])
 
     def test_resource_order_respects_placement_order(self):
@@ -496,9 +515,7 @@ class Phase2ResourceTests(unittest.TestCase):
 
     def test_player_target_count_uses_configured_player_count(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.mc = type(
-            "Config", (), {"iNumPlayers": 3, "iNumPlots": 25}
-        )()
+        terrain_map.mc = type("Config", (), {"iNumPlayers": 3, "iNumPlots": 25})()
 
         self.assertEqual(
             6,
@@ -568,7 +585,11 @@ class Phase2ResourceTests(unittest.TestCase):
     def test_target_quantity_uses_candidate_tiles_for_tiles_per(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
         terrain_map.mc.iNumPlots = 25
-        terrain_map._can_have_bonus = lambda tile_index, resource_def: tile_index in (0, 1, 2)
+        terrain_map._can_have_bonus = lambda tile_index, resource_def: tile_index in (
+            0,
+            1,
+            2,
+        )
 
         target = terrain_map._calculate_num_bonuses_to_add(
             {
@@ -592,7 +613,9 @@ class Phase2ResourceTests(unittest.TestCase):
     def test_place_single_resource_uses_eligible_tiles_for_tiles_per_target(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
         eligible_tiles = set(range(5))
-        terrain_map._can_have_bonus = lambda tile_index, resource_def: tile_index in eligible_tiles
+        terrain_map._can_have_bonus = (
+            lambda tile_index, resource_def: tile_index in eligible_tiles
+        )
         terrain_map._calculate_placement_score = lambda tile_index, resource_def: 1.0
         marble_id = terrain_map._get_bonus_id("BONUS_MARBLE")
         terrain_map.bonus_constraints = {
@@ -607,19 +630,21 @@ class Phase2ResourceTests(unittest.TestCase):
             }
         }
 
-        terrain_map._add_non_unique_bonus_type({
-            "base_resource": "BONUS_MARBLE",
-            "xml_constraints": terrain_map.bonus_constraints[marble_id],
-        })
+        terrain_map._add_non_unique_bonus_type(
+            {
+                "base_resource": "BONUS_MARBLE",
+                "xml_constraints": terrain_map.bonus_constraints[marble_id],
+            }
+        )
 
         self.assertEqual(1, terrain_map.resource_targets["BONUS_MARBLE"])
         placed_tiles = [
-            tile_index for tile_index, bonus in enumerate(terrain_map.resource_map)
+            tile_index
+            for tile_index, bonus in enumerate(terrain_map.resource_map)
             if bonus == marble_id
         ]
         self.assertEqual(1, len(placed_tiles))
         self.assertTrue(set(placed_tiles).issubset(eligible_tiles))
-
 
     def test_target_quantity_sums_tiles_per_and_four_random_terms(self):
         terrain_map = self.make_terrain_map(width=10, height=10)
@@ -727,11 +752,13 @@ class Phase2ResourceTests(unittest.TestCase):
         terrain_map._add_non_unique_bonus_type(resource_def)
 
         placed = [
-            tile_index for tile_index, bonus in enumerate(terrain_map.resource_map)
+            tile_index
+            for tile_index, bonus in enumerate(terrain_map.resource_map)
             if bonus == bonus_id
         ]
         land_placed = [
-            tile_index for tile_index in placed
+            tile_index
+            for tile_index in placed
             if terrain_map.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
         ]
         self.assertEqual(3, len(placed))
@@ -748,9 +775,7 @@ class Phase2ResourceTests(unittest.TestCase):
         resource_def = {"base_resource": "BONUS_MARBLE"}
 
         self.assertTrue(
-            terrain_map._should_place_resource(
-                0, resource_def, {"iMinLandPercent": 0}
-            )
+            terrain_map._should_place_resource(0, resource_def, {"iMinLandPercent": 0})
         )
 
         terrain_map.resource_map[1] = bonus_id
@@ -799,18 +824,20 @@ class Phase2ResourceTests(unittest.TestCase):
             bonus_id: {"iGroupRange": 1, "iGroupRand": 100}
         }
         terrain_map._can_have_bonus = lambda tile_index, resource_def: True
-        terrain_map._calculate_placement_score = (
-            lambda tile_index, resource_def: 1.0 if tile_index == 12 else 0.0
+        terrain_map._calculate_placement_score = lambda tile_index, resource_def: (
+            1.0 if tile_index == 12 else 0.0
         )
         terrain_map._calculate_num_bonuses_to_add = (
             lambda xml_constraints, num_candidate_tiles: 5
         )
 
         with mock.patch.object(PlanetSim.random, "randint", return_value=1):
-            terrain_map._add_non_unique_bonus_type({
-                "base_resource": "BONUS_MARBLE",
-                "xml_constraints": terrain_map.bonus_constraints[bonus_id],
-            })
+            terrain_map._add_non_unique_bonus_type(
+                {
+                    "base_resource": "BONUS_MARBLE",
+                    "xml_constraints": terrain_map.bonus_constraints[bonus_id],
+                }
+            )
 
         self.assertEqual(bonus_id, terrain_map.resource_map[12])
         cluster_neighbours = [7, 11, 13, 17]  # 4-connected tiles within range 1
@@ -827,18 +854,20 @@ class Phase2ResourceTests(unittest.TestCase):
         terrain_map._can_have_bonus = (
             lambda tile_index, resource_def: tile_index != blocked_tile
         )
-        terrain_map._calculate_placement_score = (
-            lambda tile_index, resource_def: 1.0 if tile_index == 12 else 0.0
+        terrain_map._calculate_placement_score = lambda tile_index, resource_def: (
+            1.0 if tile_index == 12 else 0.0
         )
         terrain_map._calculate_num_bonuses_to_add = (
             lambda xml_constraints, num_candidate_tiles: 1
         )
 
         with mock.patch.object(PlanetSim.random, "randint", return_value=1):
-            terrain_map._add_non_unique_bonus_type({
-                "base_resource": "BONUS_MARBLE",
-                "xml_constraints": terrain_map.bonus_constraints[bonus_id],
-            })
+            terrain_map._add_non_unique_bonus_type(
+                {
+                    "base_resource": "BONUS_MARBLE",
+                    "xml_constraints": terrain_map.bonus_constraints[bonus_id],
+                }
+            )
 
         self.assertEqual(bonus_id, terrain_map.resource_map[12])
         self.assertEqual(BonusTypes.NO_BONUS, terrain_map.resource_map[blocked_tile])

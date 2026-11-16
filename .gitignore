@@ -5,9 +5,11 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .coverage
+.pytest_cache/
 
 # Environments
 .env
+.pixi/
 .venv
 env/
 venv/

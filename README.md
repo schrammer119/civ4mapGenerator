@@ -15,21 +15,21 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 
 ## Current Status
 
-The generation pipeline runs in the development harness, but resource placement and its regression tests need repair before Phase 3 can be called complete.
+The generation pipeline runs in the development harness and the focused pytest suite passes. Resource balance and gameplay quality still need broader verification before Phase 3 can be called complete.
 
 - Resource placement wiring is verified end-to-end: `TerrainMap.GenerateTerrain()` calls `_place_resources()`, and the generated `resource_map` is consumed by the bonus application path.
-- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are implemented in the live path, but the focused tests currently use an older resource-definition shape and fail before exercising several helpers.
+- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are covered by the focused tests.
 - Feature adjacency and river cleanup use the canonical map state instead of stale legacy lookups.
 - The `addBonuses()` path applies the generated bonus map directly to plot instances.
 - `run_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
 
 ### Verification
 
-Latest local verification:
+Latest recorded verification:
 
-- `$env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v` -> 19 tests run, 14 errors
-- `$env:MPLBACKEND="Agg"; py tests/run_planetsim.py` -> exit code 0; the mock map completed at 144x96 with 15 plates
-- The smoke run reported `No resources placed on map`; the previous 1907-resource result is historical and should not be used as current verification.
+- `pixi run -e dev unit` -> 30 passed, 13 subtests passed
+- `pixi run -e dev generate` -> mock map completed at 144x96 with 15 plates; one run placed 383 resources with 0 detected placement violations
+- A single smoke run is diagnostic evidence, not proof of overall resource balance.
 
 ## Installation
 
@@ -79,48 +79,68 @@ Latest local verification:
 
 ```
 mapGenerator/
+├── pixi.toml                   # Runtime/dev environments and development tasks
+├── pixi.lock                   # Locked multi-platform environments
 ├── PlanetSim.py                # Main consolidated map script
+├── CvPythonExtensions.py       # Mock Civ IV API for development and tests
+├── CvUtil.py                   # Mock Civ IV utilities
 ├── tests/
-│   ├── run_planetsim.py       # End-to-end generation and visualization harness
-│   ├── test_phase2_resources.py # Focused Phase 2 regression tests
+│   ├── run_planetsim.py        # End-to-end generation and visualization harness
+│   ├── test_phase2_resources.py # Focused resource regression tests
 │   ├── diagnose_edge_lift.py   # Elevation diagnostics
 │   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
-├── CvPythonExtensions.py       # Mock Civ IV API for testing
-├── CvUtil.py                   # Utility module
-├── docs/                      # Technical documentation
-├── CLAUDE.md                  # Technical documentation
-├── FINISH_LINE_TODO.md        # Delivery checklist and outstanding phases
-└── README.md                  # This file
+├── .claude/                    # Project guidance and delivery checklist
+├── .vscode/                    # Pixi environment and pytest settings
+└── README.md                   # This file
 ```
 
 ### Testing
 
-Create the development environment from PowerShell:
+Install the Pixi dev environment (latest available Python, NumPy, Matplotlib, pytest, and Black):
 
 ```
-.\scripts\setup-venv.ps1
+pixi install -e dev
 ```
 
-Activate it for the current shell when needed:
+Install the legacy game-runtime environment (Python 2.7):
 
 ```
-. .\scripts\activate.ps1
+pixi install -e runtime
 ```
 
-The VS Code workspace automatically runs the setup task when opened, selects
-`.venv`, and enables unittest discovery. The setup task is also available as
-`Python: Setup development environment` from the Tasks menu.
+The runtime environment is for Python 2.7 compatibility checks; Civilization IV
+provides its own interpreter and engine API in game. VS Code uses the Pixi test
+environment (`.pixi/envs/dev`) and discovers tests with pytest.
 
-Run the end-to-end generation harness in a headless environment:
-
-```
-$env:MPLBACKEND="Agg"; py tests/run_planetsim.py
-```
-
-Run the focused Phase 2 regression suite:
+Run the unit tests:
 
 ```
-$env:MPLBACKEND="Agg"; py -m unittest discover -s tests -p test_phase2_resources.py -v
+pixi run -e dev unit
+```
+
+Run the end-to-end generation harness without opening plots:
+
+```
+pixi run -e dev generate
+```
+
+Open the generation plots interactively:
+
+```
+pixi run -e dev generate-plots
+```
+
+Format or check Python files with Black:
+
+```
+pixi run -e dev format
+pixi run -e dev format-check
+```
+
+Run the full preflight in order (format check, unit tests, then headless generation):
+
+```
+pixi run -e dev preflight
 ```
 
 This generates matplotlib visualizations of:
@@ -132,13 +152,14 @@ This generates matplotlib visualizations of:
 - Feature placement
 - Resource placement with letter-code overlays on the final map and console resource statistics
 
-The default harness run prints diagnostics and does not open plots. Add `--show` for interactive plots. The current harness does not assign civilization starting locations or implement old-world/new-world classification; those remain open work in [FINISH_LINE_TODO.md](.claude/FINISH_LINE_TODO.md).
+The headless generation task checks that dimensions are positive, plot types cover the map, both land and ocean exist, and terrain, features, and resources have one entry per tile. Resource count is reported but is not a pass/fail condition. Add `--show` for interactive plots. The current harness does not assign civilization starting locations or implement old-world/new-world classification; those remain open work in [FINISH_LINE_TODO.md](.claude/FINISH_LINE_TODO.md).
 
 ### Requirements
 
 - Civilization IV: Beyond the Sword for the shipped `PlanetSim.py` map script
-- Python 3.6+ for this development workspace
-- NumPy and Matplotlib, installed from `requirements.txt` by the setup script
+- Pixi for reproducible runtime and development environments
+- Python 2.7 for the Civilization IV runtime compatibility environment
+- The test environment resolves the latest available Python and includes NumPy, Matplotlib, pytest, and Black
 
 ## Usage
 

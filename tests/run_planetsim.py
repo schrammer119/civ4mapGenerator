@@ -10,7 +10,9 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
-if "--show" not in sys.argv and not os.environ.get("DISPLAY"):
+if "--headless" in sys.argv or (
+    "--show" not in sys.argv and not os.environ.get("DISPLAY")
+):
     mpl.use("Agg")
 else:
     mpl.use("TkAgg")
@@ -27,21 +29,32 @@ sys.path.insert(0, _REPO_ROOT)
 
 from PlanetSim import *
 
-parser = argparse.ArgumentParser(description="Run the PlanetSim pipeline and optionally display matplotlib diagnostics.")
-parser.add_argument("--show", action="store_true", help="Open the visualization windows for interactive debugging.")
+parser = argparse.ArgumentParser(
+    description="Run the PlanetSim pipeline and optionally display matplotlib diagnostics."
+)
+parser.add_argument(
+    "--show",
+    action="store_true",
+    help="Open the visualization windows for interactive debugging.",
+)
+parser.add_argument(
+    "--headless",
+    action="store_true",
+    help="Run generation checks without creating or displaying plots.",
+)
 ARGS = parser.parse_args()
 
 # random.seed(542069)
 
 # dark plots
-plt.style.use('dark_background')  # This sets up a good dark theme baseline
-mpl.rcParams['text.color'] = 'white'
-mpl.rcParams['axes.labelcolor'] = 'white'
-mpl.rcParams['xtick.color'] = 'white'
-mpl.rcParams['ytick.color'] = 'white'
-mpl.rcParams['axes.edgecolor'] = 'white'
-mpl.rcParams['figure.facecolor'] = '#2E2E2E'
-mpl.rcParams['axes.facecolor'] = '#2E2E2E'
+plt.style.use("dark_background")  # This sets up a good dark theme baseline
+mpl.rcParams["text.color"] = "white"
+mpl.rcParams["axes.labelcolor"] = "white"
+mpl.rcParams["xtick.color"] = "white"
+mpl.rcParams["ytick.color"] = "white"
+mpl.rcParams["axes.edgecolor"] = "white"
+mpl.rcParams["figure.facecolor"] = "#2E2E2E"
+mpl.rcParams["axes.facecolor"] = "#2E2E2E"
 
 gc = CyGlobalContext()
 mapCtx = gc.getMap()
@@ -74,18 +87,48 @@ land_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_LAND)
 hills_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_HILLS)
 peaks_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_PEAK)
 
+generation_checks = [
+    ("map dimensions are positive", mc.iNumPlotsX > 0 and mc.iNumPlotsY > 0),
+    (
+        "dimensions match total plots",
+        mc.iNumPlotsX * mc.iNumPlotsY == mc.iNumPlots,
+    ),
+    ("plot types cover every map tile", len(em.plotTypes) == mc.iNumPlots),
+    (
+        "recognized plot types cover the map",
+        ocean_count + land_count + hills_count + peaks_count == mc.iNumPlots,
+    ),
+    (
+        "land and ocean are both present",
+        ocean_count > 0 and land_count + hills_count + peaks_count > 0,
+    ),
+    ("terrain covers every map tile", len(tm.terrain_map) == mc.iNumPlots),
+    ("features cover every map tile", len(tm.feature_map) == mc.iNumPlots),
+    ("resources cover every map tile", len(tm.resource_map) == mc.iNumPlots),
+]
+
+failed_checks = []
+print("\nGeneration checks:")
+for check_name, passed in generation_checks:
+    print("%s %s" % ("PASS" if passed else "FAIL", check_name))
+    if not passed:
+        failed_checks.append(check_name)
+
+if failed_checks:
+    raise SystemExit("Generation checks failed: %s" % ", ".join(failed_checks))
+
 print("\nPlot type distribution:")
-print("Ocean: %d (%.1f%%)" % (ocean_count, ocean_count/float(mc.iNumPlots)*100))
-print("Land: %d (%.1f%%)" % (land_count, land_count/float(mc.iNumPlots)*100))
-print("Hills: %d (%.1f%%)" % (hills_count, hills_count/float(mc.iNumPlots)*100))
-print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count/float(mc.iNumPlots)*100))
+print("Ocean: %d (%.1f%%)" % (ocean_count, ocean_count / float(mc.iNumPlots) * 100))
+print("Land: %d (%.1f%%)" % (land_count, land_count / float(mc.iNumPlots) * 100))
+print("Hills: %d (%.1f%%)" % (hills_count, hills_count / float(mc.iNumPlots) * 100))
+print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count / float(mc.iNumPlots) * 100))
 
 
 # === RESOURCE PLACEMENT STATISTICS ===
 print("\n=== RESOURCE PLACEMENT STATISTICS ===")
 
 # Count resources by type if resource_map exists
-if hasattr(tm, 'resource_map') and tm.resource_map is not None:
+if hasattr(tm, "resource_map") and tm.resource_map is not None:
     resource_counts = {}
     for resource_id in tm.resource_map:
         if resource_id and resource_id > 0:  # Skip NO_BONUS (0)
@@ -98,18 +141,21 @@ if hasattr(tm, 'resource_map') and tm.resource_map is not None:
         total_violations = 0
         print("Total resources placed: %d" % total_resources)
         print("\nResource distribution by type:")
-        print("ID    Name                       Target  Actual  %s of Total  Violations" % "%")
+        print(
+            "ID    Name                       Target  Actual  %s of Total  Violations"
+            % "%"
+        )
         print("-" * 76)
 
         for res_id in sorted(resource_counts.keys()):
             count = resource_counts[res_id]
             pct = (100.0 * count) / total_resources
-            bonus_name = bonus_name_by_id.get(res_id, 'UNKNOWN_%d' % res_id)
-            target = getattr(tm, 'resource_targets', {}).get(bonus_name, 0)
+            bonus_name = bonus_name_by_id.get(res_id, "UNKNOWN_%d" % res_id)
+            target = getattr(tm, "resource_targets", {}).get(bonus_name, 0)
             bonus_def = dict(tm.resource_definitions.get(bonus_name, {}))
-            bonus_def.setdefault('base_resource', bonus_name)
+            bonus_def.setdefault("base_resource", bonus_name)
             bonus_def.setdefault(
-                'xml_constraints', tm.bonus_constraints.get(res_id, {})
+                "xml_constraints", tm.bonus_constraints.get(res_id, {})
             )
             failures = 0
             for tile_index, placed_id in enumerate(tm.resource_map):
@@ -117,7 +163,10 @@ if hasattr(tm, 'resource_map') and tm.resource_map is not None:
                     if not tm._can_have_bonus(tile_index, bonus_def):
                         failures += 1
             total_violations += failures
-            print("%-3d   %-25s   %5d   %5d   %9.1f%%   %10d" % (res_id, bonus_name, target, count, pct, failures))
+            print(
+                "%-3d   %-25s   %5d   %5d   %9.1f%%   %10d"
+                % (res_id, bonus_name, target, count, pct, failures)
+            )
         print("Total resource violations: %d" % total_violations)
     else:
         print("No resources placed on map")
@@ -134,13 +183,15 @@ if ARGS.show:
     V = np.array(em.continentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
 
     fig, ax = plt.subplots()
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.tab20)
+    p = ax.imshow(Z, origin="lower", cmap=mpl.cm.tab20)
     ax.quiver(U, V)
-    ax.plot([x["x_centroid"] for x in em.seedList], [x["y_centroid"]
-    for x in em.seedList], 'bo')
-    ax.plot([x["x"] for x in em.plumeList], [x["y"]
-    for x in em.plumeList], 'rx')
-    ax.set_title('Continent ID with Plate Velocities')
+    ax.plot(
+        [x["x_centroid"] for x in em.seedList],
+        [x["y_centroid"] for x in em.seedList],
+        "bo",
+    )
+    ax.plot([x["x"] for x in em.plumeList], [x["y"] for x in em.plumeList], "rx")
+    ax.set_title("Continent ID with Plate Velocities")
     fig.colorbar(p)
 
     # Create a 2x2 subplot for elevation components
@@ -148,26 +199,26 @@ if ARGS.show:
 
     # Base Elevation (Plate Density)
     Z1 = np.array(em.elevationBaseMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p1 = axs[0, 0].imshow(Z1, origin='lower', cmap=mpl.cm.terrain)
-    axs[0, 0].set_title('Base Elevation (Plate Density)')
+    p1 = axs[0, 0].imshow(Z1, origin="lower", cmap=mpl.cm.terrain)
+    axs[0, 0].set_title("Base Elevation (Plate Density)")
     fig.colorbar(p1, ax=axs[0, 0])
 
     # Velocity Elevation
     Z2 = np.array(em.elevationVelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p2 = axs[0, 1].imshow(Z2, origin='lower', cmap=mpl.cm.terrain)
-    axs[0, 1].set_title('Velocity Elevation')
+    p2 = axs[0, 1].imshow(Z2, origin="lower", cmap=mpl.cm.terrain)
+    axs[0, 1].set_title("Velocity Elevation")
     fig.colorbar(p2, ax=axs[0, 1])
 
     # Buoyancy Elevation
     Z3 = np.array(em.elevationBuoyMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p3 = axs[1, 0].imshow(Z3, origin='lower', cmap=mpl.cm.terrain)
-    axs[1, 0].set_title('Buoyancy Elevation')
+    p3 = axs[1, 0].imshow(Z3, origin="lower", cmap=mpl.cm.terrain)
+    axs[1, 0].set_title("Buoyancy Elevation")
     fig.colorbar(p3, ax=axs[1, 0])
 
     # Preliminary Elevation
     Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p4 = axs[1, 1].imshow(Z4, origin='lower', cmap=mpl.cm.terrain)
-    axs[1, 1].set_title('Preliminary Elevation')
+    p4 = axs[1, 1].imshow(Z4, origin="lower", cmap=mpl.cm.terrain)
+    axs[1, 1].set_title("Preliminary Elevation")
     fig.colorbar(p4, ax=axs[1, 1])
 
     plt.tight_layout()
@@ -177,39 +228,43 @@ if ARGS.show:
 
     # Preliminary Elevation
     Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p4 = axs2[0, 0].imshow(Z4, origin='lower', cmap=mpl.cm.terrain)
-    axs2[0, 0].set_title('Preliminary Elevation')
+    p4 = axs2[0, 0].imshow(Z4, origin="lower", cmap=mpl.cm.terrain)
+    axs2[0, 0].set_title("Preliminary Elevation")
     fig2.colorbar(p4, ax=axs2[0, 0])
 
     # Boundary Elevation
     Z5 = np.array(em.elevationBoundaryMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p5 = axs2[0, 1].imshow(Z5, origin='lower', cmap=mpl.cm.terrain)
-    axs2[0, 1].set_title('Boundary Elevation')
+    p5 = axs2[0, 1].imshow(Z5, origin="lower", cmap=mpl.cm.terrain)
+    axs2[0, 1].set_title("Boundary Elevation")
     fig2.colorbar(p5, ax=axs2[0, 1])
 
     # Prominence Map
     Z6 = np.array(em.prominenceMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p6 = axs2[1, 0].imshow(Z6, origin='lower', cmap=mpl.cm.terrain)
-    axs2[1, 0].set_title('Prominence Map')
+    p6 = axs2[1, 0].imshow(Z6, origin="lower", cmap=mpl.cm.terrain)
+    axs2[1, 0].set_title("Prominence Map")
     fig2.colorbar(p6, ax=axs2[1, 0])
 
     # Final Elevation
     Z7 = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p7 = axs2[1, 1].imshow(Z7, origin='lower', cmap=mpl.cm.terrain)
-    axs2[1, 1].set_title('Final Elevation')
+    p7 = axs2[1, 1].imshow(Z7, origin="lower", cmap=mpl.cm.terrain)
+    axs2[1, 1].set_title("Final Elevation")
     fig2.colorbar(p7, ax=axs2[1, 1])
 
     plt.tight_layout()
 
     # Create landform background data
     landform_map = np.array(em.plotTypes).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    elevation_background = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    elevation_background = np.array(em.elevationMap).reshape(
+        mc.iNumPlotsY, mc.iNumPlotsX
+    )
 
     # Create land/ocean mask (True for land, False for ocean)
     land_mask = elevation_background > em.seaLevelThreshold
 
     # Create landform colors
-    landform_colors = np.where(land_mask, 0.8, 0.3)  # Light gray for land, dark gray for ocean
+    landform_colors = np.where(
+        land_mask, 0.8, 0.3
+    )  # Light gray for land, dark gray for ocean
 
     # Prepare data arrays
     U_ocean = np.array(cm.OceanCurrentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
@@ -228,10 +283,10 @@ if ARGS.show:
 
     # Create 2x2 subplot grid
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    ax1, ax2, ax3, ax4 = axes[0,0], axes[0,1], axes[1,0], axes[1,1]
+    ax1, ax2, ax3, ax4 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
 
     # Plot 1: Ocean Currents with Landforms (top-left)
-    ax1.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.6, vmin=0, vmax=1)
+    ax1.imshow(landform_colors, origin="lower", cmap="gray", alpha=0.6, vmin=0, vmax=1)
 
     # Mask ocean currents to only show over ocean areas
     U_masked = np.where(~land_mask, U_ocean, 0)
@@ -239,69 +294,111 @@ if ARGS.show:
 
     # Plot ocean currents with color based on magnitude
     current_magnitude = np.sqrt(U_masked**2 + V_masked**2)
-    q1 = ax1.quiver(X, Y, U_masked, V_masked, current_magnitude,
-                    alpha=0.8, cmap='Blues', width=0.003)
+    q1 = ax1.quiver(
+        X,
+        Y,
+        U_masked,
+        V_masked,
+        current_magnitude,
+        alpha=0.8,
+        cmap="Blues",
+        width=0.003,
+    )
 
-    ax1.set_title('Ocean Currents with Landforms')
+    ax1.set_title("Ocean Currents with Landforms")
     ax1.set_xlim(0, mc.iNumPlotsX)
     ax1.set_ylim(0, mc.iNumPlotsY)
-    fig.colorbar(q1, ax=ax1, label='Current Magnitude')
+    fig.colorbar(q1, ax=ax1, label="Current Magnitude")
 
     # Plot 2: Temperature Map with Landforms (top-right)
-    ax2.imshow(landform_colors, origin='lower', cmap='gray', alpha=0.4, vmin=0, vmax=1)
+    ax2.imshow(landform_colors, origin="lower", cmap="gray", alpha=0.4, vmin=0, vmax=1)
 
     # Overlay temperature data with transparency
-    p2 = ax2.imshow(Z_temp, origin='lower', cmap=mpl.cm.coolwarm, alpha=0.8)
+    p2 = ax2.imshow(Z_temp, origin="lower", cmap=mpl.cm.coolwarm, alpha=0.8)
 
     # Add contour lines to show land boundaries
-    ax2.contour(elevation_background, levels=[em.seaLevelThreshold],
-    colors='black', linewidths=1, alpha=0.6)
+    ax2.contour(
+        elevation_background,
+        levels=[em.seaLevelThreshold],
+        colors="black",
+        linewidths=1,
+        alpha=0.6,
+    )
 
-    ax2.set_title('Temperature Map with Landforms')
-    fig.colorbar(p2, ax=ax2, label='Temperature')
+    ax2.set_title("Temperature Map with Landforms")
+    fig.colorbar(p2, ax=ax2, label="Temperature")
 
     # Plot 3: Wind Patterns with Topography (bottom-left)
     # Add contour lines to show major elevation features
-    ax3.contour(elevation_background, levels=[em.seaLevelThreshold],
-                colors=['cyan'], linewidths=[1], alpha=0.7)  # Changed to cyan
-    ax3.plot([i % mc.iNumPlotsX for i in iPeaks], [
-    i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
+    ax3.contour(
+        elevation_background,
+        levels=[em.seaLevelThreshold],
+        colors=["cyan"],
+        linewidths=[1],
+        alpha=0.7,
+    )  # Changed to cyan
+    ax3.plot(
+        [i % mc.iNumPlotsX for i in iPeaks],
+        [i // mc.iNumPlotsX for i in iPeaks],
+        "^",
+        mec="0.7",
+        mfc="none",
+        ms=8,
+    )
 
     # Plot wind patterns with color based on magnitude
     wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
     # q3 = ax3.quiver(X, Y, U_wind, V_wind, wind_magnitude,
     #                 alpha=0.8, cmap='plasma')
 
-    q3 = ax3.streamplot(X, Y, U_wind, V_wind,
-                        color=wind_magnitude,           # Color by speed
-                        cmap='Spectral',        # Colormap
-                        density=4,             # Density of streamlines
-                        linewidth=0.5,           # Line thickness
-                        arrowstyle='->')       # Arrow style
+    q3 = ax3.streamplot(
+        X,
+        Y,
+        U_wind,
+        V_wind,
+        color=wind_magnitude,  # Color by speed
+        cmap="Spectral",  # Colormap
+        density=4,  # Density of streamlines
+        linewidth=0.5,  # Line thickness
+        arrowstyle="->",
+    )  # Arrow style
 
-    ax3.set_title('Wind Patterns with Topography')
+    ax3.set_title("Wind Patterns with Topography")
     ax3.set_xlim(0, mc.iNumPlotsX)
     ax3.set_ylim(0, mc.iNumPlotsY)
-    fig.colorbar(q3.lines, ax=ax3, label='Wind Magnitude')
+    fig.colorbar(q3.lines, ax=ax3, label="Wind Magnitude")
 
     # Plot 4: Rainfall Map with Landforms (bottom-right)
     # Overlay rainfall data with transparency
-    p4 = ax4.imshow(Z_rain, origin='lower', cmap=mpl.cm.Blues, alpha=0.8, clim=(0.0,1.0))
+    p4 = ax4.imshow(
+        Z_rain, origin="lower", cmap=mpl.cm.Blues, alpha=0.8, clim=(0.0, 1.0)
+    )
 
     # Add contour lines to show land boundaries
-    ax4.contour(elevation_background, levels=[em.seaLevelThreshold],
-    colors='black', linewidths=1, alpha=0.6)
-    ax4.plot([i % mc.iNumPlotsX for i in iPeaks], [
-    i // mc.iNumPlotsX for i in iPeaks], "^", mec="0.7", mfc="none", ms=8)
+    ax4.contour(
+        elevation_background,
+        levels=[em.seaLevelThreshold],
+        colors="black",
+        linewidths=1,
+        alpha=0.6,
+    )
+    ax4.plot(
+        [i % mc.iNumPlotsX for i in iPeaks],
+        [i // mc.iNumPlotsX for i in iPeaks],
+        "^",
+        mec="0.7",
+        mfc="none",
+        ms=8,
+    )
 
-    ax4.set_title('Rainfall Percentile Map with Landforms')
-    fig.colorbar(p4, ax=ax4, label='Rainfall Percentile')
+    ax4.set_title("Rainfall Percentile Map with Landforms")
+    fig.colorbar(p4, ax=ax4, label="Rainfall Percentile")
 
     plt.tight_layout()
 
     tile_ids = []
     for id in cm.tile_watershed_ids:
-        if id == -1 or cm.watershed_database[id]['selected']:
+        if id == -1 or cm.watershed_database[id]["selected"]:
             tile_ids.append(id)
         else:
             tile_ids.append(mc.iNumPlots + 2000)
@@ -327,10 +424,12 @@ if ARGS.show:
             flow_v[y_i, x_i] = dy
 
     # Create node coordinate meshgrid
-    X_nodes, Y_nodes = np.meshgrid(np.arange(mc.iNumPlotsX) + 0.5, np.arange(mc.iNumPlotsY) - 0.5)
+    X_nodes, Y_nodes = np.meshgrid(
+        np.arange(mc.iNumPlotsX) + 0.5, np.arange(mc.iNumPlotsY) - 0.5
+    )
 
     fig, ax = plt.subplots()
-    p = ax.imshow(Z, origin='lower', cmap=mpl.cm.gist_ncar)
+    p = ax.imshow(Z, origin="lower", cmap=mpl.cm.gist_ncar)
 
     # Create color array for arrows based on watershed IDs
     arrow_colors = np.full((mc.iNumPlotsY, mc.iNumPlotsX), mc.iNumPlots + 1)
@@ -338,7 +437,10 @@ if ARGS.show:
         if cm.flow_directions[node_i] >= 0:  # Only for nodes with valid flow
             x_i, y_i = mc.get_coords_from_index(node_i)
             watershed_id = cm.watershed_ids[node_i]
-            if watershed_id == -1 or (watershed_id in cm.watershed_database and cm.watershed_database[watershed_id]['selected']):
+            if watershed_id == -1 or (
+                watershed_id in cm.watershed_database
+                and cm.watershed_database[watershed_id]["selected"]
+            ):
                 arrow_colors[y_i, x_i] = watershed_id
             else:
                 arrow_colors[y_i, x_i] = mc.iNumPlots + 2000
@@ -346,50 +448,69 @@ if ARGS.show:
     # Add flow direction quiver plot
     # Scale=1 with scale_units='xy' makes arrow length equal to 1 tile width
     # Color arrows by watershed ID, darker than background
-    q = ax.quiver(X_nodes, Y_nodes, flow_u, flow_v, arrow_colors,
-    cmap=mpl.cm.gist_ncar, scale_units='xy', scale=1,
-    width=0.002, headwidth=6, headlength=7, headaxislength=5,
-    alpha=0.9)
+    q = ax.quiver(
+        X_nodes,
+        Y_nodes,
+        flow_u,
+        flow_v,
+        arrow_colors,
+        cmap=mpl.cm.gist_ncar,
+        scale_units="xy",
+        scale=1,
+        width=0.002,
+        headwidth=6,
+        headlength=7,
+        headaxislength=5,
+        alpha=0.9,
+    )
     # Make arrows darker by adjusting the color limits to compress the color range
-    q.set_clim(vmin=np.min(arrow_colors) - (np.max(arrow_colors) - np.min(arrow_colors)) * 0.3,
-    vmax=np.max(arrow_colors))
+    q.set_clim(
+        vmin=np.min(arrow_colors) - (np.max(arrow_colors) - np.min(arrow_colors)) * 0.3,
+        vmax=np.max(arrow_colors),
+    )
 
     # Add outlet nodes for selected basins as black dots
     outlet_x = []
     outlet_y = []
     for watershed_id, data in cm.watershed_database.items():
-        if data['selected']:
-            outlet_node = data['outlet_node']
+        if data["selected"]:
+            outlet_node = data["outlet_node"]
             x_outlet, y_outlet = mc.get_coords_from_index(outlet_node)
             outlet_x.append(x_outlet + 0.5)  # Apply same offset as flow vectors
             outlet_y.append(y_outlet - 0.5)
 
     if outlet_x:  # Only plot if we have outlets
-        ax.scatter(outlet_x, outlet_y, c='black', s=30, marker='o', zorder=10, edgecolor='white', linewidth=1)
+        ax.scatter(
+            outlet_x,
+            outlet_y,
+            c="black",
+            s=30,
+            marker="o",
+            zorder=10,
+            edgecolor="white",
+            linewidth=1,
+        )
 
-    ax.set_title('Watershed IDs with Flow Directions')
+    ax.set_title("Watershed IDs with Flow Directions")
     fig.colorbar(p)
-
-
 
     # Define target percentages for earth-like biomes
     biome_targets = {
-        'hot_desert':             16.8,   # tropical/subtropical sandy deserts
-        'tropical_jungle':         7.2,   # tropical moist broadleaf forests
-        'temperate_forest':        6.5,   # temperate broadleaf & mixed forests
-        'taiga':                  14.1,   # boreal (coniferous) forests
-        'tundra':                  9.2,   # arctic/alpine tundra
-        'savanna':                15.8,   # tropical & subtropical grasslands/savannas
-        'steppe':                  9.1,   # temperate grassland steppes + former cold deserts
-        'temperate_grassland':     3.9,   # temperate grasslands (other)
-        'mediterranean':           1.2,   # Mediterranean shrublands & woodlands
-        'coastal_rainforest':      3.8,   # temperate coastal rainforests
-        'woodland_savanna':        1.8,   # tropical dry broadleaf woodlands
-        'dry_conifer_forest':      3.0,   # montane/dry conifer forests
-        'polar_desert':            7.6    # polar ice caps & cold deserts
+        "hot_desert": 16.8,  # tropical/subtropical sandy deserts
+        "tropical_jungle": 7.2,  # tropical moist broadleaf forests
+        "temperate_forest": 6.5,  # temperate broadleaf & mixed forests
+        "taiga": 14.1,  # boreal (coniferous) forests
+        "tundra": 9.2,  # arctic/alpine tundra
+        "savanna": 15.8,  # tropical & subtropical grasslands/savannas
+        "steppe": 9.1,  # temperate grassland steppes + former cold deserts
+        "temperate_grassland": 3.9,  # temperate grasslands (other)
+        "mediterranean": 1.2,  # Mediterranean shrublands & woodlands
+        "coastal_rainforest": 3.8,  # temperate coastal rainforests
+        "woodland_savanna": 1.8,  # tropical dry broadleaf woodlands
+        "dry_conifer_forest": 3.0,  # montane/dry conifer forests
+        "polar_desert": 7.6,  # polar ice caps & cold deserts
     }
     # Total: 100.0%
-
 
     # Color scheme for target status (light colors for dark background)
     def get_target_color(actual_pct, target_pct):
@@ -397,25 +518,33 @@ if ARGS.show:
         tolerance = 2.0  # Within 2.0% is considered on-target
 
         if abs(actual_pct - target_pct) <= tolerance:
-            return '#90EE90'  # Light green - on target
+            return "#90EE90"  # Light green - on target
         elif actual_pct > target_pct:
-            return '#FFB6C1'  # Light pink - over target
+            return "#FFB6C1"  # Light pink - over target
         else:
-            return '#87CEEB'  # Light sky blue - under target
+            return "#87CEEB"  # Light sky blue - under target
 
     # Get land tiles only (not ocean)
-    land_indices = [i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN]
+    land_indices = [
+        i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+    ]
 
     # Get temperature and rainfall percentiles for land tiles (already calculated in ClimateMap)
-    land_temp_percentiles = [cm.temperature_percentiles[i] * 100 for i in land_indices]  # Convert to 0-100
-    land_rain_percentiles = [cm.rainfall_percentiles[i] * 100 for i in land_indices]  # Convert to 0-100
+    land_temp_percentiles = [
+        cm.temperature_percentiles[i] * 100 for i in land_indices
+    ]  # Convert to 0-100
+    land_rain_percentiles = [
+        cm.rainfall_percentiles[i] * 100 for i in land_indices
+    ]  # Convert to 0-100
 
     # Get biome assignments for land tiles
     land_biomes = [tm.biome_assignments[i] for i in land_indices]
 
     # Create biome background grid using actual biome selection logic
     grid_resolution = 200  # Higher resolution for smoother boundaries
-    temp_grid = np.linspace(0, 1, grid_resolution)  # Keep 0-1 for biome range comparisons
+    temp_grid = np.linspace(
+        0, 1, grid_resolution
+    )  # Keep 0-1 for biome range comparisons
     rain_grid = np.linspace(0, 1, grid_resolution)
     Rain_grid, Temp_grid = np.meshgrid(rain_grid, temp_grid)
 
@@ -424,43 +553,43 @@ if ARGS.show:
 
     # Define colors for each biome type - matching your exact biome definitions
     biome_color_map = {
-        'no_biome': '#1a1a1a',
-
+        "no_biome": "#1a1a1a",
         # Water biomes
-        'tropical_ocean': '#191970',      # Midnight Blue
-        'temperate_ocean': '#4682B4',     # Steel Blue
-        'polar_ocean': '#708090',         # Slate Gray
-        'tropical_coast': '#87CEEB',      # Sky Blue
-        'temperate_coast': '#87CEFA',     # Light Sky Blue
-        'polar_coast': '#B0C4DE',         # Light Steel Blue
-
+        "tropical_ocean": "#191970",  # Midnight Blue
+        "temperate_ocean": "#4682B4",  # Steel Blue
+        "polar_ocean": "#708090",  # Slate Gray
+        "tropical_coast": "#87CEEB",  # Sky Blue
+        "temperate_coast": "#87CEFA",  # Light Sky Blue
+        "polar_coast": "#B0C4DE",  # Light Steel Blue
         # Desert biomes
-        'hot_desert': '#F4A460',          # Sandy Brown
-
+        "hot_desert": "#F4A460",  # Sandy Brown
         # Plains biomes
-        'steppe': '#DAA520',              # Goldenrod
-        'savanna': '#D2691E',             # Chocolate
-        'mediterranean': '#CD853F',       # Peru
-        'dry_conifer_forest': '#8FBC8F',  # Dark Sea Green
-        'woodland_savanna': '#DEB887',    # Burlywood
-
+        "steppe": "#DAA520",  # Goldenrod
+        "savanna": "#D2691E",  # Chocolate
+        "mediterranean": "#CD853F",  # Peru
+        "dry_conifer_forest": "#8FBC8F",  # Dark Sea Green
+        "woodland_savanna": "#DEB887",  # Burlywood
         # Grassland biomes
-        'temperate_grassland': '#228B22', # Forest Green
-        'temperate_forest': '#006400',    # Dark Green
-        'coastal_rainforest': '#2E8B57',  # Sea Green
-        'tropical_jungle': '#32CD32',     # Lime Green
-
+        "temperate_grassland": "#228B22",  # Forest Green
+        "temperate_forest": "#006400",  # Dark Green
+        "coastal_rainforest": "#2E8B57",  # Sea Green
+        "tropical_jungle": "#32CD32",  # Lime Green
         # Tundra biomes
-        'tundra': '#708090',              # Slate Gray
-        'taiga': '#556B2F',               # Dark Olive Green
-
+        "tundra": "#708090",  # Slate Gray
+        "taiga": "#556B2F",  # Dark Olive Green
         # Snow biomes
-        'polar_desert': '#FFFAFA',        # Snow
+        "polar_desert": "#FFFAFA",  # Snow
     }
 
     # Create ordered list of biomes and assign IDs (no_biome gets ID 0)
-    biome_names = ['no_biome'] + sorted([name for name in tm.biome_definitions.keys()
-                                        if tm.biome_definitions[name]['terrain'] not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']])
+    biome_names = ["no_biome"] + sorted(
+        [
+            name
+            for name in tm.biome_definitions.keys()
+            if tm.biome_definitions[name]["terrain"]
+            not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]
+        ]
+    )
     biome_to_id = {biome: i for i, biome in enumerate(biome_names)}
 
     # Fill the grid based on actual TerrainMap biome selection logic
@@ -470,15 +599,19 @@ if ARGS.show:
             rain_pct = rain_grid[j]  # 0-1 scale
 
             # Use TerrainMap's exact percentile-to-grid conversion
-            temp_idx = min(int(temp_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1)
-            precip_idx = min(int(rain_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1)
+            temp_idx = min(
+                int(temp_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1
+            )
+            precip_idx = min(
+                int(rain_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1
+            )
             grid_candidates = tm.biome_grid.get((temp_idx, precip_idx), [])
 
             # Filter to land biomes only
             land_candidates = []
             for biome_name, climate_weight in grid_candidates:
-                terrain = tm.biome_definitions[biome_name]['terrain']
-                if terrain not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+                terrain = tm.biome_definitions[biome_name]["terrain"]
+                if terrain not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]:
                     land_candidates.append((biome_name, climate_weight))
 
             # Select highest scoring biome
@@ -501,24 +634,42 @@ if ARGS.show:
     # Create colormap for background - ensure exact alignment with biome_names order
     colors_list = []
     for biome_name in biome_names:  # This ensures perfect ID-to-color alignment
-        colors_list.append(biome_color_map.get(biome_name, '#808080'))
+        colors_list.append(biome_color_map.get(biome_name, "#808080"))
     background_cmap = mcolors.ListedColormap(colors_list)
 
     # Plot biome regions as background
-    background = ax.imshow(biome_color_grid, extent=[0, 100, 0, 100],
-                        origin='lower', cmap=background_cmap, alpha=0.4, aspect='auto',
-                        vmin=0, vmax=len(biome_names)-1)
+    background = ax.imshow(
+        biome_color_grid,
+        extent=[0, 100, 0, 100],
+        origin="lower",
+        cmap=background_cmap,
+        alpha=0.4,
+        aspect="auto",
+        vmin=0,
+        vmax=len(biome_names) - 1,
+    )
 
     # Scatter plot of actual tiles colored by their assigned biome
-    scatter_colors = [biome_color_map.get(biome, '#000000') for biome in land_biomes]
+    scatter_colors = [biome_color_map.get(biome, "#000000") for biome in land_biomes]
 
-    scatter = ax.scatter(land_rain_percentiles, land_temp_percentiles,
-                        c=scatter_colors, s=12, alpha=0.8, edgecolors='black', linewidth=0.3)
+    scatter = ax.scatter(
+        land_rain_percentiles,
+        land_temp_percentiles,
+        c=scatter_colors,
+        s=12,
+        alpha=0.8,
+        edgecolors="black",
+        linewidth=0.3,
+    )
 
     # Labels and formatting
-    ax.set_xlabel('Rainfall Percentile (%)', fontsize=12)
-    ax.set_ylabel('Temperature Percentile (%)', fontsize=12)
-    ax.set_title('Biome Assignment Analysis with Target Comparison\n(Background: TerrainMap\'s %dx%d Grid, Points: Actual Assignments)' % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE), fontsize=14)
+    ax.set_xlabel("Rainfall Percentile (%)", fontsize=12)
+    ax.set_ylabel("Temperature Percentile (%)", fontsize=12)
+    ax.set_title(
+        "Biome Assignment Analysis with Target Comparison\n(Background: TerrainMap's %dx%d Grid, Points: Actual Assignments)"
+        % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE),
+        fontsize=14,
+    )
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
 
@@ -538,30 +689,42 @@ if ARGS.show:
     total_grid_cells = grid_resolution * grid_resolution
     no_biome_pct = 100.0 * no_biome_cells / total_grid_cells
 
-    no_biome_patch = mpatches.Patch(color=biome_color_map['no_biome'],
-                                   label='No Biome (Grid Gaps): %.1f%% of grid' % no_biome_pct)
-    legend_patches.append((no_biome_patch, '#FFFFFF'))  # White text for no biome
+    no_biome_patch = mpatches.Patch(
+        color=biome_color_map["no_biome"],
+        label="No Biome (Grid Gaps): %.1f%% of grid" % no_biome_pct,
+    )
+    legend_patches.append((no_biome_patch, "#FFFFFF"))  # White text for no biome
 
     # Include all land biomes from definitions, even if not present
-    for biome_name in sorted([name for name in tm.biome_definitions.keys()
-                             if tm.biome_definitions[name]['terrain'] not in ['TERRAIN_OCEAN', 'TERRAIN_COAST']]):
+    for biome_name in sorted(
+        [
+            name
+            for name in tm.biome_definitions.keys()
+            if tm.biome_definitions[name]["terrain"]
+            not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]
+        ]
+    ):
         actual_count = biome_counts.get(biome_name, 0)
         actual_pct = (100.0 * actual_count) / total_land
         target_pct = biome_targets.get(biome_name, 0.0)
 
         # Get target status color
         text_color = get_target_color(actual_pct, target_pct)
-        biome_color = biome_color_map.get(biome_name, '#808080')
+        biome_color = biome_color_map.get(biome_name, "#808080")
 
         # Format label with target info
-        label = '%s: %.1f%% (target %.1f%%)' % (biome_name, actual_pct, target_pct)
+        label = "%s: %.1f%% (target %.1f%%)" % (biome_name, actual_pct, target_pct)
         patch = mpatches.Patch(color=biome_color, label=label)
         legend_patches.append((patch, text_color))
 
     # Create legend with colored text
-    legend = ax.legend([patch for patch, _ in legend_patches],
-                      [patch.get_label() for patch, _ in legend_patches],
-                      loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+    legend = ax.legend(
+        [patch for patch, _ in legend_patches],
+        [patch.get_label() for patch, _ in legend_patches],
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=10,
+    )
 
     # Color the legend text based on target status
     for i, (_, text_color) in enumerate(legend_patches):
@@ -569,23 +732,32 @@ if ARGS.show:
 
     # Add target color legend
     target_legend_elements = [
-        mpatches.Patch(color='#90EE90', label='On Target (+/-2.0%)'),
-        mpatches.Patch(color='#FFB6C1', label='Over Target'),
-        mpatches.Patch(color='#87CEEB', label='Under Target')
+        mpatches.Patch(color="#90EE90", label="On Target (+/-2.0%)"),
+        mpatches.Patch(color="#FFB6C1", label="Over Target"),
+        mpatches.Patch(color="#87CEEB", label="Under Target"),
     ]
 
     ax.add_artist(legend)  # Keep the main legend
-    target_legend = ax.legend(handles=target_legend_elements,
-                             loc='lower right', fontsize=9, title='Target Status')
+    target_legend = ax.legend(
+        handles=target_legend_elements,
+        loc="lower right",
+        fontsize=9,
+        title="Target Status",
+    )
 
     # Add statistics text
     n_tiles = len(land_indices)
     n_biomes = len(biome_counts)
 
-    ax.text(0.02, 0.98, "Total Land Tiles: %d\nUnique Biomes: %d\nGrid Gaps: %d/%d cells (%.1f%%)" %
-            (n_tiles, n_biomes, no_biome_cells, total_grid_cells, no_biome_pct),
-            transform=ax.transAxes, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
+    ax.text(
+        0.02,
+        0.98,
+        "Total Land Tiles: %d\nUnique Biomes: %d\nGrid Gaps: %d/%d cells (%.1f%%)"
+        % (n_tiles, n_biomes, no_biome_cells, total_grid_cells, no_biome_pct),
+        transform=ax.transAxes,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="#2F2F2F", alpha=0.8),
+    )
 
     plt.tight_layout()
 
@@ -600,12 +772,12 @@ if ARGS.show:
     land_biomes_plotted = []
     for biome_name, biome_def in tm.biome_definitions.items():
         # Skip water biomes
-        terrain = biome_def['terrain']
-        if terrain in ['TERRAIN_OCEAN', 'TERRAIN_COAST']:
+        terrain = biome_def["terrain"]
+        if terrain in ["TERRAIN_OCEAN", "TERRAIN_COAST"]:
             continue
 
-        temp_min, temp_max = biome_def['temp_range']
-        precip_min, precip_max = biome_def['precip_range']
+        temp_min, temp_max = biome_def["temp_range"]
+        precip_min, precip_max = biome_def["precip_range"]
 
         # Convert to 0-100 scale for display
         temp_min *= 100
@@ -614,16 +786,18 @@ if ARGS.show:
         precip_max *= 100
 
         # Get color for this biome
-        color = biome_color_map.get(biome_name, '#808080')
+        color = biome_color_map.get(biome_name, "#808080")
 
         # Create rectangle with transparency to show overlaps
-        rect = mpatches.Rectangle((precip_min, temp_min),
-                                precip_max - precip_min,
-                                temp_max - temp_min,
-                                linewidth=2,
-                                edgecolor='black',
-                                facecolor=color,
-                                alpha=0.4)
+        rect = mpatches.Rectangle(
+            (precip_min, temp_min),
+            precip_max - precip_min,
+            temp_max - temp_min,
+            linewidth=2,
+            edgecolor="black",
+            facecolor=color,
+            alpha=0.4,
+        )
         ax.add_patch(rect)
 
         # Add text label at center of rectangle
@@ -631,24 +805,39 @@ if ARGS.show:
         center_y = (temp_min + temp_max) / 2.0
 
         # Format biome name for display (remove underscores, capitalize)
-        display_name = biome_name.replace('_', ' ').title()
+        display_name = biome_name.replace("_", " ").title()
 
         # Add text with background for readability
-        ax.text(center_x, center_y, display_name,
-            ha='center', va='center', fontsize=9, weight='bold',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='#2F2F2F', alpha=0.8, edgecolor='black'))
+        ax.text(
+            center_x,
+            center_y,
+            display_name,
+            ha="center",
+            va="center",
+            fontsize=9,
+            weight="bold",
+            bbox=dict(
+                boxstyle="round,pad=0.3",
+                facecolor="#2F2F2F",
+                alpha=0.8,
+                edgecolor="black",
+            ),
+        )
 
         land_biomes_plotted.append(biome_name)
 
     # Set up the plot
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
-    ax.set_xlabel('Rainfall Percentile (%)', fontsize=14)
-    ax.set_ylabel('Temperature Percentile (%)', fontsize=14)
-    ax.set_title('Biome Range Coverage Map\n(Rectangles show temp/rainfall ranges for each biome)', fontsize=16)
+    ax.set_xlabel("Rainfall Percentile (%)", fontsize=14)
+    ax.set_ylabel("Temperature Percentile (%)", fontsize=14)
+    ax.set_title(
+        "Biome Range Coverage Map\n(Rectangles show temp/rainfall ranges for each biome)",
+        fontsize=16,
+    )
 
     # Add grid for easier reading
-    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.grid(True, alpha=0.3, linestyle="--")
 
     # Add minor ticks every 10%
     ax.set_xticks(range(0, 101, 10))
@@ -657,23 +846,37 @@ if ARGS.show:
     # Create legend showing all land biomes
     legend_patches = []
     for biome_name in sorted(land_biomes_plotted):
-        color = biome_color_map.get(biome_name, '#808080')
-        display_name = biome_name.replace('_', ' ').title()
+        color = biome_color_map.get(biome_name, "#808080")
+        display_name = biome_name.replace("_", " ").title()
         patch = mpatches.Patch(color=color, alpha=0.4, label=display_name)
         legend_patches.append(patch)
 
-    ax.legend(handles=legend_patches, loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+    ax.legend(
+        handles=legend_patches,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=10,
+    )
 
     # Add annotation explaining overlaps
-    ax.text(0.02, 0.98, 'Overlapping areas show biome competition\\nDarker regions = multiple biomes compete',
-            transform=ax.transAxes, verticalalignment='top', fontsize=10,
-            bbox=dict(boxstyle='round', facecolor='#2F2F2F', alpha=0.8))
+    ax.text(
+        0.02,
+        0.98,
+        "Overlapping areas show biome competition\\nDarker regions = multiple biomes compete",
+        transform=ax.transAxes,
+        verticalalignment="top",
+        fontsize=10,
+        bbox=dict(boxstyle="round", facecolor="#2F2F2F", alpha=0.8),
+    )
 
     plt.tight_layout()
 
     # Print summary statistics with target analysis
     print("\n=== BIOME TARGET ANALYSIS ===")
-    print("Using TerrainMap's %dx%d biome grid (%.1f%% resolution)" % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0/(tm.BIOME_GRID_SIZE-1)))
+    print(
+        "Using TerrainMap's %dx%d biome grid (%.1f%% resolution)"
+        % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0 / (tm.BIOME_GRID_SIZE - 1))
+    )
     print("Biome Name               Actual    Target    Status")
     print("-" * 55)
 
@@ -689,22 +892,21 @@ if ARGS.show:
         else:
             status = "UNDER (-%.1f%%)" % (target_pct - actual_pct)
 
-        print("%-24s %6.1f%%   %6.1f%%   %s" % (biome_name, actual_pct, target_pct, status))
-
-
-
-
+        print(
+            "%-24s %6.1f%%   %6.1f%%   %s"
+            % (biome_name, actual_pct, target_pct, status)
+        )
 
     # Define terrain colors matching your specifications
     terrain_colors = [
-        '#228B22',  # 0: TERRAIN_GRASS: Forest Green (lush grass)
+        "#228B22",  # 0: TERRAIN_GRASS: Forest Green (lush grass)
         "#D49C0E",  # 1: TERRAIN_PLAINS: Goldenrod (amber grain)
         "#FFDE96",  # 2: TERRAIN_DESERT: Sandy Brown (sandy color)
-        '#708090',  # 3: TERRAIN_TUNDRA: Slate Gray (taiga-like gray/green)
-        '#FFFAFA',  # 4: TERRAIN_SNOW: Snow White
+        "#708090",  # 3: TERRAIN_TUNDRA: Slate Gray (taiga-like gray/green)
+        "#FFFAFA",  # 4: TERRAIN_SNOW: Snow White
         "#1D80DD",  # 5: TERRAIN_COAST: Sky Blue (light coastal blue)
-        '#191970',  # 6: TERRAIN_OCEAN: Midnight Blue (deep ocean blue)
-        '#696969'   # 7: TERRAIN_PEAK: Dim Gray (mountainy gray, shouldn't exist)
+        "#191970",  # 6: TERRAIN_OCEAN: Midnight Blue (deep ocean blue)
+        "#696969",  # 7: TERRAIN_PEAK: Dim Gray (mountainy gray, shouldn't exist)
     ]
 
     # Create custom colormap for terrain types
@@ -721,25 +923,42 @@ if ARGS.show:
             clean_terrain.append(int(terrain))
 
     # Convert to numpy array and reshape to grid
-    terrain_data = np.array(clean_terrain, dtype=np.int32).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    terrain_data = np.array(clean_terrain, dtype=np.int32).reshape(
+        mc.iNumPlotsY, mc.iNumPlotsX
+    )
 
     # Create the plot
     fig, ax = plt.subplots(figsize=(12, 8))
-    p = ax.imshow(terrain_data, origin='lower', cmap=terrain_cmap, vmin=0, vmax=7)
+    p = ax.imshow(terrain_data, origin="lower", cmap=terrain_cmap, vmin=0, vmax=7)
 
     # Add plot type overlays for peaks and hills
     iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
     iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
 
     # Plot peaks as triangles
-    ax.plot([i % mc.iNumPlotsX for i in iPeaks],
-            [i // mc.iNumPlotsX for i in iPeaks],
-            "^", mec="#808080", mfc="none", ms=6, alpha=0.8, label='Peaks')
+    ax.plot(
+        [i % mc.iNumPlotsX for i in iPeaks],
+        [i // mc.iNumPlotsX for i in iPeaks],
+        "^",
+        mec="#808080",
+        mfc="none",
+        ms=6,
+        alpha=0.8,
+        label="Peaks",
+    )
 
     # Plot hills as frown symbols
-    ax.plot([i % mc.iNumPlotsX for i in iHills],
-            [i // mc.iNumPlotsX for i in iHills],
-            linestyle="", marker="$\\frown$", mec='#8B4513', mfc='none', ms=6, alpha=0.8, label='Hills')
+    ax.plot(
+        [i % mc.iNumPlotsX for i in iHills],
+        [i // mc.iNumPlotsX for i in iHills],
+        linestyle="",
+        marker="$\\frown$",
+        mec="#8B4513",
+        mfc="none",
+        ms=6,
+        alpha=0.8,
+        label="Hills",
+    )
 
     # Add terrain features overlay
     # Get feature locations (check if feature_map exists)
@@ -749,15 +968,29 @@ if ARGS.show:
     iFloodPlains = []
     iForest = []
 
-    if hasattr(tm, 'feature_map') and tm.feature_map is not None:
-        iIce = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE]
-        iJungle = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE]
-        iOasis = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS]
-        iFloodPlains = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FLOOD_PLAINS]
-        iForest = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST]
+    if hasattr(tm, "feature_map") and tm.feature_map is not None:
+        iIce = [
+            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE
+        ]
+        iJungle = [
+            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE
+        ]
+        iOasis = [
+            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS
+        ]
+        iFloodPlains = [
+            i
+            for i, x in enumerate(tm.feature_map)
+            if x == FeatureTypes.FEATURE_FLOOD_PLAINS
+        ]
+        iForest = [
+            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST
+        ]
 
     # Helper function to plot distributed forest/jungle symbols
-    def plot_distributed_vegetation(tile_indices, symbol, edge_color, fill_color, symbol_size, label):
+    def plot_distributed_vegetation(
+        tile_indices, symbol, edge_color, fill_color, symbol_size, label
+    ):
         """Plot 4 small symbols distributed around each tile"""
         if not tile_indices:
             return
@@ -776,34 +1009,67 @@ if ARGS.show:
                 all_x.append(tile_x + dx)
                 all_y.append(tile_y + dy)
 
-        ax.plot(all_x, all_y, linestyle="", marker=symbol, mec=edge_color,
-                mfc=fill_color, ms=symbol_size, alpha=0.8, label=label)
+        ax.plot(
+            all_x,
+            all_y,
+            linestyle="",
+            marker=symbol,
+            mec=edge_color,
+            mfc=fill_color,
+            ms=symbol_size,
+            alpha=0.8,
+            label=label,
+        )
 
     # Plot non-vegetation features with single symbols (these don't block other features)
     if iIce:
-        ax.plot([i % mc.iNumPlotsX for i in iIce],
-                [i // mc.iNumPlotsX for i in iIce],
-                "s", mec="#FFFFFF", mfc="#FFFFFF", ms=4, alpha=0.9, label='Ice')
+        ax.plot(
+            [i % mc.iNumPlotsX for i in iIce],
+            [i // mc.iNumPlotsX for i in iIce],
+            "s",
+            mec="#FFFFFF",
+            mfc="#FFFFFF",
+            ms=4,
+            alpha=0.9,
+            label="Ice",
+        )
 
     if iOasis:
-        ax.plot([i % mc.iNumPlotsX for i in iOasis],
-                [i // mc.iNumPlotsX for i in iOasis],
-                "o", mec="#0000FF", mfc="#0000FF", ms=4, alpha=0.9, label='Oasis')
+        ax.plot(
+            [i % mc.iNumPlotsX for i in iOasis],
+            [i // mc.iNumPlotsX for i in iOasis],
+            "o",
+            mec="#0000FF",
+            mfc="#0000FF",
+            ms=4,
+            alpha=0.9,
+            label="Oasis",
+        )
 
     if iFloodPlains:
-        ax.plot([i % mc.iNumPlotsX for i in iFloodPlains],
-                [i // mc.iNumPlotsX for i in iFloodPlains],
-                linestyle="", marker="$\\sim$", mec="#265809", mfc="#265809", ms=6, alpha=0.8, label='Flood Plains')
+        ax.plot(
+            [i % mc.iNumPlotsX for i in iFloodPlains],
+            [i // mc.iNumPlotsX for i in iFloodPlains],
+            linestyle="",
+            marker="$\\sim$",
+            mec="#265809",
+            mfc="#265809",
+            ms=6,
+            alpha=0.8,
+            label="Flood Plains",
+        )
 
     # Plot vegetation features with distributed symbols and subtype support
     if iJungle:
         # Jungle: bright green club
-        plot_distributed_vegetation(iJungle, "$\\Psi$", "#00E400", "#00E400", 3, 'Jungle')
+        plot_distributed_vegetation(
+            iJungle, "$\\Psi$", "#00E400", "#00E400", 3, "Jungle"
+        )
 
     if iForest:
         # Forest subtypes - placeholder for future subtype map
         # For now, check if subtype map exists, otherwise default to broadleaf
-        if hasattr(tm, 'feature_subtype_map') and tm.feature_subtype_map is not None:
+        if hasattr(tm, "feature_subtype_map") and tm.feature_subtype_map is not None:
             # Group forests by subtype
             broadleaf_forests = []
             evergreen_forests = []
@@ -822,20 +1088,33 @@ if ARGS.show:
 
             # Plot each subtype with appropriate symbol/color
             if broadleaf_forests:
-                plot_distributed_vegetation(broadleaf_forests, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
+                plot_distributed_vegetation(
+                    broadleaf_forests,
+                    "$\\Psi$",
+                    "#005A00",
+                    "#005A00",
+                    3,
+                    "Broadleaf Forest",
+                )
             if evergreen_forests:
-                plot_distributed_vegetation(evergreen_forests, "^", "#084B19", "#084B19", 3, 'Evergreen Forest')
+                plot_distributed_vegetation(
+                    evergreen_forests, "^", "#084B19", "#084B19", 3, "Evergreen Forest"
+                )
             if snowy_forests:
-                plot_distributed_vegetation(snowy_forests, "^", "#8CCA8A", "#8CCA8A", 3, 'Snowy Forest')
+                plot_distributed_vegetation(
+                    snowy_forests, "^", "#8CCA8A", "#8CCA8A", 3, "Snowy Forest"
+                )
         else:
             # Default to broadleaf forest for all forest tiles
-            plot_distributed_vegetation(iForest, "$\\Psi$", "#005A00", "#005A00", 3, 'Broadleaf Forest')
+            plot_distributed_vegetation(
+                iForest, "$\\Psi$", "#005A00", "#005A00", 3, "Broadleaf Forest"
+            )
 
     # Add river visualization from river_map
 
     # Track which tiles have which types of rivers
     horizontal_rivers = set()  # north_of_rivers
-    vertical_rivers = set()    # west_of_rivers
+    vertical_rivers = set()  # west_of_rivers
 
     for from_node, to_node, _, _ in cm.river_map:
         from_x, from_y = mc.get_coords_from_index(from_node)
@@ -874,115 +1153,229 @@ if ARGS.show:
         x = tile_i % mc.iNumPlotsX
         y = tile_i // mc.iNumPlotsX
         # Horizontal line on south edge of tile
-        ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5],
-                'cyan', linewidth=2, alpha=0.9)
+        ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5], "cyan", linewidth=2, alpha=0.9)
 
     # Draw N/S rivers (vertical lines on east edges of tiles)
     for tile_i in vertical_rivers:
         x = tile_i % mc.iNumPlotsX
         y = tile_i // mc.iNumPlotsX
         # Vertical line on east edge of tile
-        ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5],
-                'cyan', linewidth=2, alpha=0.9)
+        ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5], "cyan", linewidth=2, alpha=0.9)
 
     # Create comprehensive legend combining terrain types, plot types, and features
     legend_handles = []
 
     # Add terrain type patches
     terrain_labels = [
-        'Grass', 'Plains', 'Desert', 'Tundra',
-        'Snow', 'Coast', 'Ocean', 'Peak'
+        "Grass",
+        "Plains",
+        "Desert",
+        "Tundra",
+        "Snow",
+        "Coast",
+        "Ocean",
+        "Peak",
     ]
 
     for color, label in zip(terrain_colors, terrain_labels):
         legend_handles.append(mpatches.Patch(color=color, label=label))
 
     # Add separator
-    legend_handles.append(mpatches.Patch(color='none', label=''))  # Empty space
+    legend_handles.append(mpatches.Patch(color="none", label=""))  # Empty space
 
     # Add plot type and feature entries if they exist
     if iPeaks:
-        legend_handles.append(mlines.Line2D([], [], marker="^", mec="#808080", mfc="none",
-                                        markersize=6, linestyle="None", label='Peaks'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="^",
+                mec="#808080",
+                mfc="none",
+                markersize=6,
+                linestyle="None",
+                label="Peaks",
+            )
+        )
     if iHills:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\frown$", mec='#8B4513', mfc='none',
-                                        markersize=6, linestyle="None", label='Hills'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="$\\frown$",
+                mec="#8B4513",
+                mfc="none",
+                markersize=6,
+                linestyle="None",
+                label="Hills",
+            )
+        )
 
     # Add feature entries if they exist
     if iIce:
-        legend_handles.append(mlines.Line2D([], [], marker="s", mec="#FFFFFF", mfc="#FFFFFF",
-                                        markersize=4, linestyle="None", label='Ice'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="s",
+                mec="#FFFFFF",
+                mfc="#FFFFFF",
+                markersize=4,
+                linestyle="None",
+                label="Ice",
+            )
+        )
     if iJungle:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec='#00E400', mfc='#00E400',
-                                        markersize=5, linestyle="None", label='Jungle'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="$\\Psi$",
+                mec="#00E400",
+                mfc="#00E400",
+                markersize=5,
+                linestyle="None",
+                label="Jungle",
+            )
+        )
     if iOasis:
-        legend_handles.append(mlines.Line2D([], [], marker="o", mec="#0000FF", mfc="#0000FF",
-                                        markersize=4, linestyle="None", label='Oasis'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="o",
+                mec="#0000FF",
+                mfc="#0000FF",
+                markersize=4,
+                linestyle="None",
+                label="Oasis",
+            )
+        )
     if iFloodPlains:
-        legend_handles.append(mlines.Line2D([], [], marker="$\\sim$", mec='#265809', mfc='#265809',
-                                        markersize=6, linestyle="None", label='Flood Plains'))
+        legend_handles.append(
+            mlines.Line2D(
+                [],
+                [],
+                marker="$\\sim$",
+                mec="#265809",
+                mfc="#265809",
+                markersize=6,
+                linestyle="None",
+                label="Flood Plains",
+            )
+        )
 
     # Handle forest subtypes in legend
     if iForest:
-        if hasattr(tm, 'forest_subtype_map') and tm.forest_subtype_map is not None:
+        if hasattr(tm, "forest_subtype_map") and tm.forest_subtype_map is not None:
             # Add legend entries for present subtypes
             # Broadleaf or default
-            legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec="#005A00", mfc='#005A00',
-                                            markersize=4, linestyle="None", label='Broadleaf Forest'))
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    marker="$\\Psi$",
+                    mec="#005A00",
+                    mfc="#005A00",
+                    markersize=4,
+                    linestyle="None",
+                    label="Broadleaf Forest",
+                )
+            )
             # Evergreen
-            legend_handles.append(mlines.Line2D([], [], marker="^", mec='#084B19', mfc='#084B19',
-                                            markersize=4, linestyle="None", label='Evergreen Forest'))
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    marker="^",
+                    mec="#084B19",
+                    mfc="#084B19",
+                    markersize=4,
+                    linestyle="None",
+                    label="Evergreen Forest",
+                )
+            )
             # Snowy
-            legend_handles.append(mlines.Line2D([], [], marker="^", mec='#8CCA8A', mfc='#8CCA8A',
-                                            markersize=4, linestyle="None", label='Snowy Forest'))
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    marker="^",
+                    mec="#8CCA8A",
+                    mfc="#8CCA8A",
+                    markersize=4,
+                    linestyle="None",
+                    label="Snowy Forest",
+                )
+            )
         else:
             # Default forest legend entry
-            legend_handles.append(mlines.Line2D([], [], marker="$\\Psi$", mec='#005A00', mfc='#005A00',
-                                            markersize=4, linestyle="None", label='Broadleaf Forest'))
+            legend_handles.append(
+                mlines.Line2D(
+                    [],
+                    [],
+                    marker="$\\Psi$",
+                    mec="#005A00",
+                    mfc="#005A00",
+                    markersize=4,
+                    linestyle="None",
+                    label="Broadleaf Forest",
+                )
+            )
 
     # Add rivers legend entry
-    legend_handles.append(mlines.Line2D([], [], color='cyan', linewidth=2, label='Rivers'))
+    legend_handles.append(
+        mlines.Line2D([], [], color="cyan", linewidth=2, label="Rivers")
+    )
 
     # Create single legend
-    ax.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1))
+    ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.02, 1))
 
-    ax.set_title('Final Map: Terrain Types, Features, Rivers & Bonuses')
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
+    ax.set_title("Final Map: Terrain Types, Features, Rivers & Bonuses")
+    ax.set_xlabel("X Coordinate")
+    ax.set_ylabel("Y Coordinate")
 
     # Adjust layout to accommodate legends
     plt.tight_layout()
 
     # Print feature statistics
-    if hasattr(tm, 'feature_map') and tm.feature_map is not None:
+    if hasattr(tm, "feature_map") and tm.feature_map is not None:
         feature_counts = {
-            'Ice': len(iIce),
-            'Jungle': len(iJungle),
-            'Oasis': len(iOasis),
-            'Flood Plains': len(iFloodPlains),
-            'Forest': len(iForest)
+            "Ice": len(iIce),
+            "Jungle": len(iJungle),
+            "Oasis": len(iOasis),
+            "Flood Plains": len(iFloodPlains),
+            "Forest": len(iForest),
         }
         print("\nFeature distribution:")
         total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
         for feature_name, count in feature_counts.items():
             if count > 0:
-                percentage = (count / float(total_land_tiles)) * 100 if total_land_tiles > 0 else 0
-                print("%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage))
+                percentage = (
+                    (count / float(total_land_tiles)) * 100
+                    if total_land_tiles > 0
+                    else 0
+                )
+                print(
+                    "%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage)
+                )
     else:
         print("\nFeature map not available - TerrainMap may not be fully initialized")
 
     # === RESOURCE VISUALIZATION ===
     # Overlay resource codes on the final map and show their name key at the left.
-    if hasattr(tm, 'resource_map') and tm.resource_map is not None:
+    if hasattr(tm, "resource_map") and tm.resource_map is not None:
         # Derive letter codes from the live BonusTypes enum rather than a drift-prone hard-coded table.
         bonus_name_by_id = dict(gc.bonus_types.items())
         resource_letter_codes = {}
         for bonus_id, bonus_name in sorted(bonus_name_by_id.items()):
             if bonus_id > 0:
-                base = bonus_name.replace('BONUS_', '')
+                base = bonus_name.replace("BONUS_", "")
                 code_length = 2
                 code = base[:code_length].upper()
-                while code in resource_letter_codes.values() and code_length < len(base):
+                while code in resource_letter_codes.values() and code_length < len(
+                    base
+                ):
                     code_length += 1
                     code = base[:code_length].upper()
                 resource_letter_codes[bonus_id] = code
@@ -992,21 +1385,48 @@ if ARGS.show:
             if resource_id and resource_id > 0:  # Skip empty tiles
                 tile_x = tile_i % mc.iNumPlotsX
                 tile_y = tile_i // mc.iNumPlotsX
-                letter_code = resource_letter_codes.get(resource_id, '??')
-                ax.text(tile_x, tile_y, letter_code, ha='center', va='center',
-                          fontsize=6, weight='bold', color='white', clip_on=True,
-                          bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.6, edgecolor='yellow', linewidth=0.5))
+                letter_code = resource_letter_codes.get(resource_id, "??")
+                ax.text(
+                    tile_x,
+                    tile_y,
+                    letter_code,
+                    ha="center",
+                    va="center",
+                    fontsize=6,
+                    weight="bold",
+                    color="white",
+                    clip_on=True,
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        facecolor="black",
+                        alpha=0.6,
+                        edgecolor="yellow",
+                        linewidth=0.5,
+                    ),
+                )
 
         resource_key_entries = [
-            '%s = %s' % (resource_letter_codes[bonus_id], bonus_name)
+            "%s = %s" % (resource_letter_codes[bonus_id], bonus_name)
             for bonus_id, bonus_name in sorted(bonus_name_by_id.items())
             if bonus_id in resource_letter_codes
         ]
-        resource_key = 'Bonus codes:\n' + '\n'.join(resource_key_entries)
+        resource_key = "Bonus codes:\n" + "\n".join(resource_key_entries)
         fig.subplots_adjust(left=0.15)
-        fig.text(0.02, 0.98, resource_key, ha='left', va='top', fontsize=8,
-                 bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.75,
-                           edgecolor='yellow', linewidth=0.5))
+        fig.text(
+            0.02,
+            0.98,
+            resource_key,
+            ha="left",
+            va="top",
+            fontsize=8,
+            bbox=dict(
+                boxstyle="round,pad=0.4",
+                facecolor="black",
+                alpha=0.75,
+                edgecolor="yellow",
+                linewidth=0.5,
+            ),
+        )
 
     plt.show()
 else:

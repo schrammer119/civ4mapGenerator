@@ -8,10 +8,13 @@
             "name": "PlanetSim: unit tests",
             "type": "debugpy",
             "request": "launch",
-            "module": "unittest",
+            "module": "pytest",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "args": ["discover", "-s", "tests", "-p", "test_phase2_resources.py", "-v"],
+            "args": [
+                "tests",
+                "-q"
+            ],
             "env": {
                 "MPLBACKEND": "Agg"
             },
@@ -24,7 +27,9 @@
             "program": "${workspaceFolder}/tests/run_planetsim.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "args": ["--show"],
+            "args": [
+                "--show"
+            ],
             "env": {
                 "MPLBACKEND": "Agg"
             },
@@ -37,7 +42,9 @@
             "program": "${workspaceFolder}/tests/diagnose_rainfall_h2.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "args": ["--save"],
+            "args": [
+                "--save"
+            ],
             "env": {
                 "MPLBACKEND": "Agg"
             },

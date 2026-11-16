@@ -2,18 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Python: Setup development environment",
+            "label": "PlanetSim: Install dev environment",
             "type": "process",
-            "windows": {
-                "command": "powershell.exe",
-                "args": [
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    "${workspaceFolder}\\scripts\\setup-venv.ps1"
-                ]
-            },
+            "command": "pixi",
+            "args": [
+                "install",
+                "-e",
+                "dev"
+            ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -26,43 +22,6 @@
             "runOptions": {
                 "runOn": "folderOpen"
             }
-        },
-        {
-            "label": "Python: Unit tests",
-            "type": "process",
-            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-            "args": [
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests",
-                "-p",
-                "test_phase2_resources.py",
-                "-v"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "MPLBACKEND": "Agg"
-                }
-            },
-            "dependsOn": "Python: Setup development environment",
-            "problemMatcher": []
-        },
-        {
-            "label": "Python: PlanetSim smoke test",
-            "type": "process",
-            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-            "args": ["tests/run_planetsim.py"],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "MPLBACKEND": "Agg"
-                }
-            },
-            "dependsOn": "Python: Setup development environment",
-            "problemMatcher": []
         }
     ]
 }
