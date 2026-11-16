@@ -613,16 +613,9 @@ class MapConfig:
             x -= 1
             y -= 1
 
-        if self.wrapY:
-            y %= self.iNumPlotsY
-        elif not (0 <= y < self.iNumPlotsY):
+        x, y = self.wrap_coordinates(x, y)
+        if x == -1 or y == -1:
             return -1
-
-        if self.wrapX:
-            x %= self.iNumPlotsX
-        elif not (0 <= x < self.iNumPlotsX):
-            return -1
-
         return y * self.iNumPlotsX + x
 
     def get_wrapped_distance(self, x1, y1, x2, y2):
@@ -641,12 +634,12 @@ class MapConfig:
         """Wrap coordinates according to map settings"""
         if self.wrapX:
             x = x % self.iNumPlotsX
-        elif x >= self.iNumPlotsX:
+        elif not (0 <= x < self.iNumPlotsX):
             x = -1
 
         if self.wrapY:
             y = y % self.iNumPlotsY
-        elif y >= self.iNumPlotsY:
+        elif not (0 <= y < self.iNumPlotsY):
             y = -1
 
         return x, y

@@ -21,7 +21,7 @@ black = "*"
 
 [environments]
 runtime = ["runtime"]
-dev = ["dev"]
+default = ["dev"]
 
 [tasks]
 unit = { cmd = "pytest -q tests", env = { MPLBACKEND = "Agg" } }

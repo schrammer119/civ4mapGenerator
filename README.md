@@ -86,7 +86,7 @@ mapGenerator/
 ├── CvUtil.py                   # Mock Civ IV utilities
 ├── tests/
 │   ├── run_planetsim.py        # End-to-end generation and visualization harness
-│   ├── test_phase2_resources.py # Focused resource regression tests
+│   ├── test_resources.py       # Focused resource regression tests
 │   ├── diagnose_edge_lift.py   # Elevation diagnostics
 │   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
 ├── .claude/                    # Project guidance and delivery checklist
