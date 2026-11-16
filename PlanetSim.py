@@ -7772,7 +7772,7 @@ class TerrainMap:
         resources_by_order = self._get_resources_by_placement_order()
 
         for resource_def in resources_by_order:
-            if resource_def['xml_constraints'].get('bArea', False):
+            if not resource_def['xml_constraints'].get('bArea', False):
                 self._add_non_unique_bonus_type(resource_def)
             else:
                 self._add_unique_bonus_type(resource_def)
@@ -7872,8 +7872,140 @@ class TerrainMap:
                 break
 
     def _add_unique_bonus_type(self, resource_def):
-        # TODO same as non_unique, but tied to an area. See addUniqueBonusType at C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization IV Beyond the Sword\Beyond the Sword\CvGameCoreDLL\CvMapGenerator.cpp:711
-        return
+        """Place a resource in the least-loaded eligible area, preferring good tiles."""
+        bonus_id = self._get_bonus_id(resource_def['base_resource'])
+        if bonus_id == -1:
+            return
+
+        candidate_tiles = []
+        for tile_index in xrange(self.mc.iNumPlots):
+            if self.resource_map[tile_index] != -1:
+                continue
+            if not self._can_have_bonus(tile_index, resource_def):
+                continue
+            candidate_tiles.append(tile_index)
+
+        xml_constraints = resource_def['xml_constraints']
+        target_quantity = self._calculate_num_bonuses_to_add(
+            xml_constraints, len(candidate_tiles)
+        )
+        self.resource_targets[resource_def['base_resource']] = target_quantity
+
+        unique_bonus_ids = set()
+        for base_resource, existing_resource_def in self.resource_definitions.items():
+            existing_bonus_id = self._get_bonus_id(base_resource)
+            if existing_bonus_id == -1:
+                continue
+            base_constraints = self.bonus_constraints.get(existing_bonus_id, {})
+            existing_constraints = existing_resource_def.get(
+                'xml_constraints', base_constraints
+            )
+            if existing_constraints.get(
+                    'bArea', base_constraints.get('bArea', False)):
+                unique_bonus_ids.add(existing_bonus_id)
+
+        unique_bonus_ids.update(
+            existing_bonus_id
+            for existing_bonus_id, constraints in self.bonus_constraints.items()
+            if constraints.get('bArea', False)
+        )
+
+        unique_bonus_types_by_area = {}
+        for tile_index, placed_bonus_id in enumerate(self.resource_map):
+            area_id = self.bonusAreaID[tile_index]
+            if area_id >= 0 and placed_bonus_id in unique_bonus_ids:
+                unique_bonus_types_by_area.setdefault(area_id, set()).add(
+                    placed_bonus_id
+                )
+
+        candidates_by_area = {}
+        best_score_by_area = {}
+        for tile_index in candidate_tiles:
+            area_id = self.bonusAreaID[tile_index]
+            if area_id < 0:
+                continue
+
+            score = self._calculate_placement_score(tile_index, resource_def)
+            best_score_by_area[area_id] = max(
+                score, best_score_by_area.get(area_id, float('-inf'))
+            )
+            if score == 0.0:
+                placement_order = float('inf')
+            elif score == 1.0:
+                placement_order = 1.0
+            else:
+                random_value = max(random.random(), 1e-12)
+                placement_order = (
+                    math.log(random_value) / math.log(1.0 - score) + 1.0
+                )
+            candidates_by_area.setdefault(area_id, []).append(
+                (tile_index, placement_order)
+            )
+
+        area_order = sorted(
+            candidates_by_area,
+            key=lambda area_id: (
+                best_score_by_area[area_id],
+                self.bonusAreaSizes[area_id] // (
+                    len(unique_bonus_types_by_area.get(area_id, ())) + 1
+                ),
+            ),
+            reverse=True,
+        )
+
+        land_count = 0
+        total_count = 0
+        placed_count = 0
+        group_range = xml_constraints.get('iGroupRange', 0)
+        group_rand = xml_constraints.get('iGroupRand', 0)
+
+        for area_id in area_order:
+            candidates = candidates_by_area.get(area_id, [])
+            candidates.sort(key=lambda candidate: candidate[1])
+
+            for tile_index, _ in candidates:
+                if self._should_place_resource(
+                        tile_index, resource_def, xml_constraints,
+                        land_count, total_count):
+                    self.resource_map[tile_index] = bonus_id
+                    placed_count += 1
+                    total_count += 1
+                    if self.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+                        land_count += 1
+                    self._update_exclusion_zones(tile_index, xml_constraints)
+
+                    if group_range > 0 and group_rand > 0:
+                        for cluster_tile in self._get_tiles_in_radius(
+                                tile_index, group_range):
+                            if cluster_tile == tile_index:
+                                continue
+                            if self.bonusAreaID[cluster_tile] != area_id:
+                                continue
+                            if self.resource_map[cluster_tile] != -1:
+                                continue
+                            if not self._can_have_bonus(cluster_tile, resource_def):
+                                continue
+                            if not self._should_place_resource(
+                                    cluster_tile, resource_def, xml_constraints,
+                                    land_count, total_count):
+                                continue
+                            if random.randint(1, 100) <= group_rand:
+                                self.resource_map[cluster_tile] = bonus_id
+                                placed_count += 1
+                                total_count += 1
+                                if self.em.plotTypes[cluster_tile] != PlotTypes.PLOT_OCEAN:
+                                    land_count += 1
+                                self._update_exclusion_zones(
+                                    cluster_tile, xml_constraints
+                                )
+                            if placed_count >= target_quantity:
+                                break
+
+                if placed_count >= target_quantity:
+                    break
+
+            if placed_count >= target_quantity:
+                break
 
     def _can_have_bonus(self, tile_index, resource_def):
         """Check hard constraints that must be obeyed (boolean gates)"""

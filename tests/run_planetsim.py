@@ -946,7 +946,7 @@ if ARGS.show:
     # Create single legend
     ax.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1))
 
-    ax.set_title('Final Map: Terrain Types, Plot Types, Features & Rivers')
+    ax.set_title('Final Map: Terrain Types, Features, Rivers & Bonuses')
     ax.set_xlabel('X Coordinate')
     ax.set_ylabel('Y Coordinate')
 
@@ -972,21 +972,20 @@ if ARGS.show:
         print("\nFeature map not available - TerrainMap may not be fully initialized")
 
     # === RESOURCE VISUALIZATION ===
-    # Add a new figure showing resources with letter overlays
+    # Overlay resource codes on the final map and show their name key at the left.
     if hasattr(tm, 'resource_map') and tm.resource_map is not None:
-        fig_res, ax_res = plt.subplots(figsize=(14, 10))
-
-        # Re-plot terrain as base
-        p_res = ax_res.imshow(terrain_data, origin='lower', cmap=terrain_cmap, vmin=0, vmax=7)
-
         # Derive letter codes from the live BonusTypes enum rather than a drift-prone hard-coded table.
         bonus_name_by_id = dict(gc.bonus_types.items())
         resource_letter_codes = {}
-        for bonus_id, bonus_name in bonus_name_by_id.items():
-            if bonus_id <= 0:
-                continue
-            base = bonus_name.replace('BONUS_', '')
-            resource_letter_codes[bonus_id] = base[:2].upper()
+        for bonus_id, bonus_name in sorted(bonus_name_by_id.items()):
+            if bonus_id > 0:
+                base = bonus_name.replace('BONUS_', '')
+                code_length = 2
+                code = base[:code_length].upper()
+                while code in resource_letter_codes.values() and code_length < len(base):
+                    code_length += 1
+                    code = base[:code_length].upper()
+                resource_letter_codes[bonus_id] = code
 
         # Plot resource letter codes on map
         for tile_i, resource_id in enumerate(tm.resource_map):
@@ -994,14 +993,20 @@ if ARGS.show:
                 tile_x = tile_i % mc.iNumPlotsX
                 tile_y = tile_i // mc.iNumPlotsX
                 letter_code = resource_letter_codes.get(resource_id, '??')
-                ax_res.text(tile_x, tile_y, letter_code, ha='center', va='center',
-                          fontsize=6, weight='bold', color='white',
+                ax.text(tile_x, tile_y, letter_code, ha='center', va='center',
+                          fontsize=6, weight='bold', color='white', clip_on=True,
                           bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.6, edgecolor='yellow', linewidth=0.5))
 
-        ax_res.set_title('Resource Map: Letter Codes on Terrain')
-        ax_res.set_xlabel('X Coordinate')
-        ax_res.set_ylabel('Y Coordinate')
-        plt.tight_layout()
+        resource_key_entries = [
+            '%s = %s' % (resource_letter_codes[bonus_id], bonus_name)
+            for bonus_id, bonus_name in sorted(bonus_name_by_id.items())
+            if bonus_id in resource_letter_codes
+        ]
+        resource_key = 'Bonus codes:\n' + '\n'.join(resource_key_entries)
+        fig.subplots_adjust(left=0.15)
+        fig.text(0.02, 0.98, resource_key, ha='left', va='top', fontsize=8,
+                 bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.75,
+                           edgecolor='yellow', linewidth=0.5))
 
     plt.show()
 else:

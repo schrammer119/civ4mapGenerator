@@ -428,6 +428,49 @@ class Phase2ResourceTests(unittest.TestCase):
             if placed_bonus == bonus_id
         ])
 
+    def test_unique_bonus_prefers_highest_scoring_area_and_keeps_group_together(self):
+        terrain_map = self.make_terrain_map(width=4, height=2)
+        marble_id = terrain_map._get_bonus_id("BONUS_MARBLE")
+        iron_id = terrain_map._get_bonus_id("BONUS_IRON")
+        copper_id = terrain_map._get_bonus_id("BONUS_COPPER")
+        terrain_map.bonusAreaID = [0, 0, 1, 1, 0, 0, 1, 1]
+        terrain_map.bonusAreaSizes = {0: 12, 1: 3}
+        terrain_map.resource_map[0] = iron_id
+        terrain_map.resource_map[1] = copper_id
+        terrain_map.bonus_constraints = {
+            marble_id: {"bArea": True},
+            iron_id: {"bArea": True},
+            copper_id: {"bArea": True},
+        }
+        terrain_map._can_have_bonus = lambda tile_index, resource_def: True
+        terrain_map._calculate_placement_score = (
+            lambda tile_index, resource_def: (
+                1.0 if tile_index == 2 else 0.6 if tile_index == 0 else 0.0
+            )
+        )
+        terrain_map._calculate_num_bonuses_to_add = (
+            lambda xml_constraints, count: 3
+        )
+        resource_def = {
+            "base_resource": "BONUS_MARBLE",
+            "xml_constraints": {
+                "base_resource": "BONUS_MARBLE",
+                "iGroupRange": 1,
+                "iGroupRand": 100,
+            },
+        }
+
+        with mock.patch.object(PlanetSim.random, "randint", return_value=1):
+            terrain_map._add_unique_bonus_type(resource_def)
+
+        placed_tiles = [
+            tile_index for tile_index, placed_bonus in enumerate(terrain_map.resource_map)
+            if placed_bonus == marble_id
+        ]
+        self.assertEqual(3, len(placed_tiles))
+        self.assertTrue(all(terrain_map.bonusAreaID[tile] == 1 for tile in placed_tiles))
+        self.assertEqual(3, terrain_map.resource_targets["BONUS_MARBLE"])
+
     def test_resource_order_respects_placement_order(self):
         terrain_map = self.make_terrain_map()
         terrain_map.resource_definitions = {
