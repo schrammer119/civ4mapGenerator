@@ -34,6 +34,16 @@ class ElevationBehaviorTests(unittest.TestCase):
             elevation_map.plotTypes,
         )
 
+    def test_peak_with_only_ocean_neighbors_is_demoted_to_hills(self):
+        elevation_map = make_elevation_map(width=3, height=3)
+        elevation_map.mc.MountainPassNeighbourThreshold = 2
+        elevation_map.plotTypes = [PlotTypes.PLOT_OCEAN] * 9
+        elevation_map.plotTypes[4] = PlotTypes.PLOT_PEAK
+
+        elevation_map._decluster_elevation_peaks()
+
+        self.assertEqual(PlotTypes.PLOT_HILLS, elevation_map.plotTypes[4])
+
     def test_peak_demotions_choose_two_lowest_neighbors_only_above_threshold(self):
         elevation_map = make_elevation_map(width=3, height=1)
         elevation_map.mc.MountainPassNeighbourThreshold = 2

@@ -162,6 +162,18 @@ class CallbackTests(unittest.TestCase):
             game_map.plots[10].calls,
         )
 
+    def test_add_rivers_skips_when_generation_state_is_missing(self):
+        with mock.patch.object(PlanetSim, "mc", None), mock.patch.object(
+            PlanetSim, "cm", None
+        ), mock.patch.object(PlanetSim, "mapCtx", None), mock.patch(
+            "builtins.print"
+        ) as print_mock:
+            PlanetSim.addRivers()
+
+        print_mock.assert_called_once_with(
+            "PlanetSim: river data unavailable; skipping river placement."
+        )
+
     def test_add_features_applies_feature_id_and_subtype(self):
         map_config = make_map_config(width=2, height=1)
         game_map = FakeMap(map_config.iNumPlots)
@@ -176,6 +188,62 @@ class CallbackTests(unittest.TestCase):
 
         self.assertEqual([("feature", 4, 2)], game_map.plots[0].calls)
         self.assertEqual([("feature", -1, -1)], game_map.plots[1].calls)
+
+    def test_add_features_skips_when_generation_state_is_missing(self):
+        with mock.patch.object(PlanetSim, "mapCtx", None), mock.patch.object(
+            PlanetSim, "mc", None
+        ), mock.patch.object(PlanetSim, "tm", None), mock.patch(
+            "builtins.print"
+        ) as print_mock:
+            PlanetSim.addFeatures()
+
+        print_mock.assert_called_once_with(
+            "PlanetSim: feature data unavailable; skipping feature placement."
+        )
+
+    def test_assign_starting_plots_uses_finder_and_falls_back_when_incomplete(self):
+        finder = mock.Mock()
+        finder.assign_starting_plots.return_value = False
+        python_manager = mock.Mock()
+        with mock.patch("builtins.print") as print_mock:
+            with mock.patch.object(PlanetSim, "gc", object()), mock.patch.object(
+                PlanetSim, "mc", object()
+            ), mock.patch.object(PlanetSim, "em", object()), mock.patch.object(
+                PlanetSim, "tm", object()
+            ), mock.patch.object(
+                PlanetSim, "mapCtx", object()
+            ), mock.patch.object(
+                PlanetSim, "StartingPlotFinder", return_value=finder
+            ) as finder_factory, mock.patch.object(
+                PlanetSim, "CyPythonMgr", return_value=python_manager
+            ):
+                PlanetSim.assignStartingPlots()
+
+        finder_factory.assert_called_once()
+        finder.assign_starting_plots.assert_called_once_with()
+        python_manager.allowDefaultImpl.assert_called_once_with()
+        print_mock.assert_called_once_with(
+            "PlanetSim: start plot finder incomplete; using DLL default implementation."
+        )
+
+    def test_assign_starting_plots_logs_when_generation_state_is_missing(self):
+        python_manager = mock.Mock()
+        with mock.patch("builtins.print") as print_mock:
+            with mock.patch.object(PlanetSim, "gc", None), mock.patch.object(
+                PlanetSim, "mc", None
+            ), mock.patch.object(PlanetSim, "em", None), mock.patch.object(
+                PlanetSim, "tm", None
+            ), mock.patch.object(
+                PlanetSim, "mapCtx", None
+            ), mock.patch.object(
+                PlanetSim, "CyPythonMgr", return_value=python_manager
+            ):
+                PlanetSim.assignStartingPlots()
+
+        python_manager.allowDefaultImpl.assert_called_once_with()
+        print_mock.assert_called_once_with(
+            "PlanetSim: start plot data unavailable; using DLL default implementation."
+        )
 
 
 if __name__ == "__main__":

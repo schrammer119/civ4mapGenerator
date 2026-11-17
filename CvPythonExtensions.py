@@ -28,6 +28,18 @@ class DirectionTypes:
     NUM_DIRECTION_TYPES = 8
 
 
+class YieldTypes:
+    NO_YIELD = -1
+    YIELD_FOOD = 0
+    YIELD_PRODUCTION = 1
+    YIELD_COMMERCE = 2
+    NUM_YIELD_TYPES = 3
+
+
+class TeamTypes:
+    NO_TEAM = -1
+
+
 class TerrainTypes:
     NO_TERRAIN = -1
     TERRAIN_GRASS = 0
@@ -357,6 +369,13 @@ class CyGame:
         return 4  # Default 4 players for testing
 
 
+class CyPythonMgr:
+    """Mock Python callback manager"""
+
+    def allowDefaultImpl(self):
+        pass
+
+
 class CyTerrainInfo:
     """Mock TerrainInfo for testing - Data from CIV4TerrainInfos.xml"""
 
@@ -653,16 +672,11 @@ class CyBonusInfo:
             if len(yield_changes) < 3:
                 yield_changes.extend([0] * (3 - len(yield_changes)))
 
-            rands = [0, 0, 0, 0]
+            rands = []
             rands_element = _find_child(element, "Rands")
-            if rands_element is not None:
-                for idx in range(1, 5):
-                    value = _child_text(rands_element, "iRandApp%s" % idx)
-                    if value:
-                        try:
-                            rands[idx - 1] = int(value)
-                        except ValueError:
-                            pass
+            for idx in range(1, 5):
+                value = _child_text(rands_element, "iRandApp%s" % idx)
+                rands.append(int(value) if value else 0)
 
             self.bonus_data[bonus_type] = {
                 "yields": yield_changes,
@@ -773,21 +787,17 @@ class CyBonusInfo:
     def getMaxLatitude(self):
         return self.bonus_data.get(self.bonus_type, {}).get("max_latitude", 90)
 
-    def getRandApp1(self):
-        rands = self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])
-        return rands[0] if len(rands) > 0 else 0
+    def getRandAppearance1(self):
+        return self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])[0]
 
-    def getRandApp2(self):
-        rands = self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])
-        return rands[1] if len(rands) > 1 else 0
+    def getRandAppearance2(self):
+        return self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])[1]
 
-    def getRandApp3(self):
-        rands = self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])
-        return rands[2] if len(rands) > 2 else 0
+    def getRandAppearance3(self):
+        return self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])[2]
 
-    def getRandApp4(self):
-        rands = self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])
-        return rands[3] if len(rands) > 3 else 0
+    def getRandAppearance4(self):
+        return self.bonus_data.get(self.bonus_type, {}).get("rands", [0, 0, 0, 0])[3]
 
     def getPercentPerPlayer(self):
         return self.bonus_data.get(self.bonus_type, {}).get("player", 100)

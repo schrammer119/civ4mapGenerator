@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import sys
 import numpy as np
@@ -28,6 +29,7 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "tools"))
 sys.path.insert(0, _REPO_ROOT)
 
 from PlanetSim import *
+import PlanetSim
 
 parser = argparse.ArgumentParser(
     description="Run the PlanetSim pipeline and optionally display matplotlib diagnostics."
@@ -43,6 +45,167 @@ parser.add_argument(
     help="Run generation checks without creating or displaying plots.",
 )
 ARGS = parser.parse_args()
+
+
+def run_starting_plot_smoke_check(gc, mc, em, tm):
+    class SmokeArea(object):
+        def __init__(self, size):
+            self.size = size
+
+        def getNumTiles(self):
+            return self.size
+
+    class SmokePlot(object):
+        def __init__(self, tile_index, area):
+            self.tile_index = tile_index
+            self.plot_type = em.plotTypes[tile_index]
+            self.terrain_id = tm.terrain_map[tile_index]
+            self.feature_id = tm.feature_map[tile_index]
+            self.bonus_id = tm.resource_map[tile_index]
+            self._area = area
+            self.yields = []
+            terrain_info = gc.getTerrainInfo(self.terrain_id)
+            feature_info = (
+                gc.getFeatureInfo(self.feature_id) if self.feature_id >= 0 else None
+            )
+            bonus_info = gc.getBonusInfo(self.bonus_id) if self.bonus_id >= 0 else None
+            for yield_type in range(3):
+                value = terrain_info.getYield(yield_type)
+                if feature_info is not None:
+                    value += feature_info.getYieldChange(yield_type)
+                if bonus_info is not None:
+                    value += bonus_info.getYieldChange(yield_type)
+                self.yields.append(value)
+
+        def isWater(self):
+            return self.plot_type == PlotTypes.PLOT_OCEAN
+
+        def isPeak(self):
+            return self.plot_type == PlotTypes.PLOT_PEAK
+
+        def isHills(self):
+            return self.plot_type == PlotTypes.PLOT_HILLS
+
+        def isRiver(self):
+            return mc.is_adjacent_to_river(self.tile_index)
+
+        def isFreshWater(self):
+            return self.isRiver()
+
+        def isRiverSide(self):
+            return self.isRiver()
+
+        def isLake(self):
+            return False
+
+        def getBonusType(self, team_id=-1):
+            return self.bonus_id
+
+        def calculateBestNatureYield(self, yield_type, team_id=-1):
+            return self.yields[yield_type]
+
+        def area(self):
+            return self._area
+
+    class SmokeMap(object):
+        def __init__(self, plots):
+            self.plots = plots
+
+        def plotByIndex(self, tile_index):
+            return self.plots[tile_index]
+
+    class SmokeTeam(object):
+        def isHasTech(self, tech_id):
+            return False
+
+    class SmokePlayer(object):
+        def __init__(self, player_id):
+            self.player_id = player_id
+            self.starting_plot = None
+
+        def isAlive(self):
+            return True
+
+        def isHuman(self):
+            return self.player_id == 0
+
+        def getCivilizationType(self):
+            return -1
+
+        def getTeam(self):
+            return self.player_id
+
+        def setStartingPlot(self, plot, update_starting_plot):
+            self.starting_plot = plot
+            assignment_order.append(self.player_id)
+
+    class SmokeContext(object):
+        def __init__(self, base_gc, players):
+            self.base_gc = base_gc
+            self.players = players
+
+        def __getattr__(self, name):
+            return getattr(self.base_gc, name)
+
+        def getMAX_CIV_PLAYERS(self):
+            return len(self.players)
+
+        def getPlayer(self, player_id):
+            return self.players[player_id]
+
+        def getTeam(self, team_id):
+            return SmokeTeam()
+
+    land_area = SmokeArea(
+        sum(1 for plot_type in em.plotTypes if plot_type != PlotTypes.PLOT_OCEAN)
+    )
+    plots = [SmokePlot(i, land_area) for i in range(mc.iNumPlots)]
+    smoke_map = SmokeMap(plots)
+    players = [SmokePlayer(i) for i in range(4)]
+    assignment_order = []
+    context = SmokeContext(gc, players)
+    previous_globals = (
+        PlanetSim.gc,
+        PlanetSim.mapCtx,
+        PlanetSim.mc,
+        PlanetSim.em,
+        PlanetSim.tm,
+    )
+    try:
+        PlanetSim.gc = context
+        PlanetSim.mapCtx = smoke_map
+        PlanetSim.mc = mc
+        PlanetSim.em = em
+        PlanetSim.tm = tm
+        PlanetSim.assignStartingPlots()
+    finally:
+        (
+            PlanetSim.gc,
+            PlanetSim.mapCtx,
+            PlanetSim.mc,
+            PlanetSim.em,
+            PlanetSim.tm,
+        ) = previous_globals
+
+    starts = [player.starting_plot for player in players]
+    if any(plot is None or plot.isWater() or plot.isPeak() for plot in starts):
+        return False, "all players receive a land start"
+    if len(set(id(plot) for plot in starts)) != len(starts):
+        return False, "starting plots are unique"
+    start_indices = [plots.index(plot) for plot in starts]
+    distances = []
+    for index, first in enumerate(start_indices):
+        for second in start_indices[index + 1 :]:
+            first_x, first_y = mc.get_coords_from_index(first)
+            second_x, second_y = mc.get_coords_from_index(second)
+            dx, dy = mc.get_wrapped_distance(first_x, first_y, second_x, second_y)
+            distances.append(math.sqrt(dx * dx + dy * dy))
+    if distances and min(distances) < 10.0:
+        return False, "starting plots meet the minimum separation"
+    if not assignment_order or assignment_order[0] != 0:
+        return False, "human player is assigned first"
+    return True, "start plots assigned with unique, separated land starts"
+
 
 # random.seed(542069)
 
@@ -108,6 +271,10 @@ generation_checks = [
 ]
 
 failed_checks = []
+starting_plot_passed, starting_plot_message = run_starting_plot_smoke_check(
+    gc, mc, em, tm
+)
+generation_checks.append((starting_plot_message, starting_plot_passed))
 print("\nGeneration checks:")
 for check_name, passed in generation_checks:
     print("%s %s" % ("PASS" if passed else "FAIL", check_name))

@@ -134,6 +134,17 @@ class MapConfigUtilityTests(unittest.TestCase):
         self.assertTrue(map_config.terrain_constraints)
         self.assertTrue(map_config.feature_constraints)
         self.assertTrue(map_config.bonus_constraints)
+        aluminum_id = gc.getInfoTypeForString("BONUS_ALUMINUM")
+        aluminum_info = gc.getBonusInfo(aluminum_id)
+        self.assertEqual(
+            [10, 10, 0, 0],
+            [
+                aluminum_info.getRandAppearance1(),
+                aluminum_info.getRandAppearance2(),
+                aluminum_info.getRandAppearance3(),
+                aluminum_info.getRandAppearance4(),
+            ],
+        )
         for info_id, data in map_config.terrain_constraints.items():
             self.assertEqual(
                 data["type_string"], map_config.get_terrain_string_from_id(info_id)
@@ -143,6 +154,11 @@ class MapConfigUtilityTests(unittest.TestCase):
                 data["type_string"], map_config.get_feature_string_from_id(info_id)
             )
         for info_id, data in map_config.bonus_constraints.items():
+            bonus_info = gc.getBonusInfo(info_id)
+            self.assertEqual(data["iRandApp1"], bonus_info.getRandAppearance1())
+            self.assertEqual(data["iRandApp2"], bonus_info.getRandAppearance2())
+            self.assertEqual(data["iRandApp3"], bonus_info.getRandAppearance3())
+            self.assertEqual(data["iRandApp4"], bonus_info.getRandAppearance4())
             self.assertEqual(
                 data["type_string"], map_config.get_bonus_string_from_id(info_id)
             )

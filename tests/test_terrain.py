@@ -138,6 +138,26 @@ class TerrainBehaviorTests(unittest.TestCase):
 
         self.assertEqual("coast_biome", terrain_map._select_biome_for_tile(0))
 
+    def test_world_ids_include_coast_and_land_but_exclude_open_ocean(self):
+        terrain_map = object.__new__(TerrainMap)
+        terrain_map.gc = PlanetSim.CyGlobalContext()
+        terrain_map.mc = make_map_config(width=3, height=1)
+        terrain_map.em = SimpleNamespace(
+            plotTypes=[PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_LAND]
+        )
+        terrain_map.terrain_map = [
+            terrain_map.gc.getInfoTypeForString("TERRAIN_OCEAN"),
+            terrain_map.gc.getInfoTypeForString("TERRAIN_COAST"),
+            terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS"),
+        ]
+        terrain_map.world_ids = [-1] * 3
+        terrain_map.world_sizes = {}
+
+        terrain_map._calculate_world_ids()
+
+        self.assertEqual(-1, terrain_map.world_ids[0])
+        self.assertEqual(terrain_map.world_ids[1], terrain_map.world_ids[2])
+
     def test_seeded_biome_shares_remain_within_broad_target_tolerance(self):
         random_state = random.getstate()
         try:

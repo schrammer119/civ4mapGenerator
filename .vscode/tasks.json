@@ -2,13 +2,11 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "PlanetSim: Install dev environment",
+            "label": "PlanetSim: Install default environment",
             "type": "process",
             "command": "pixi",
             "args": [
-                "install",
-                "-e",
-                "dev"
+                "install"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

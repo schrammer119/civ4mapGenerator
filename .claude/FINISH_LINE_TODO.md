@@ -22,12 +22,12 @@ Core consolidation is complete, but resource verification, start-location logic,
 Based on example implementation from another map script, implement weighted start locations
 based on civilization.
 
-- [ ] intercept existing Civ IV start location function
-- [ ] create baseline scores for each start location eligible tile. Based on yields and resources in the "fat cross".
-- [ ] Resources carry different weights (strategics weigh high for example, early strategics weigh even higher)
-- [ ] Add weight for desirable terrain: rivers, coast, hills, etc.
-- [ ] For each civilization, add weights for tiles in historical biomes, latitudes, resources, coast/river/peaks, on islands, etc.
-- [ ] Add unit tests to verify behaviour of both base weights and civ-specific weights.
+- [x] intercept existing Civ IV start location function
+- [x] create baseline scores for each start location eligible tile. Based on yields and resources in the "fat cross".
+- [x] Resources carry different weights (strategics weigh high for example, early strategics weigh even higher)
+- [x] Add weight for desirable terrain: rivers, coast, hills, etc.
+- [x] For each civilization, add weights to tiles in historical biomes, latitudes, resources, coast/river/peaks, on islands, etc.
+- [x] Add unit tests to verify behaviour of both base weights and civ-specific weights.
 
 ### F.2 Add "old world"/"new world" functionality
 

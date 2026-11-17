@@ -27,8 +27,8 @@ The generation pipeline runs in the development harness and the focused pytest s
 
 Latest recorded verification:
 
-- `pixi run -e dev unit` -> 30 passed, 13 subtests passed
-- `pixi run -e dev generate` -> mock map completed at 144x96 with 15 plates; one run placed 383 resources with 0 detected placement violations
+- `pixi run unit` -> 30 passed, 13 subtests passed
+- `pixi run generate` -> mock map completed at 144x96 with 15 plates; one run placed 383 resources with 0 detected placement violations
 - A single smoke run is diagnostic evidence, not proof of overall resource balance.
 
 ## Installation
@@ -79,7 +79,7 @@ Latest recorded verification:
 
 ```
 mapGenerator/
-├── pixi.toml                   # Runtime/dev environments and development tasks
+├── pixi.toml                   # Runtime/default environments and development tasks
 ├── pixi.lock                   # Locked multi-platform environments
 ├── PlanetSim.py                # Main consolidated map script
 ├── CvPythonExtensions.py       # Mock Civ IV API for development and tests
@@ -96,10 +96,10 @@ mapGenerator/
 
 ### Testing
 
-Install the Pixi dev environment (latest available Python, NumPy, Matplotlib, pytest, and Black):
+Install the Pixi default environment (latest available Python, NumPy, Matplotlib, pytest, and Black):
 
 ```
-pixi install -e dev
+pixi install
 ```
 
 Install the legacy game-runtime environment (Python 2.7):
@@ -110,37 +110,37 @@ pixi install -e runtime
 
 The runtime environment is for Python 2.7 compatibility checks; Civilization IV
 provides its own interpreter and engine API in game. VS Code uses the Pixi test
-environment (`.pixi/envs/dev`) and discovers tests with pytest.
+environment (`.pixi/envs/default`) and discovers tests with pytest.
 
 Run the unit tests:
 
 ```
-pixi run -e dev unit
+pixi run unit
 ```
 
 Run the end-to-end generation harness without opening plots:
 
 ```
-pixi run -e dev generate
+pixi run generate
 ```
 
 Open the generation plots interactively:
 
 ```
-pixi run -e dev generate-plots
+pixi run generate-plots
 ```
 
 Format or check Python files with Black:
 
 ```
-pixi run -e dev format
-pixi run -e dev format-check
+pixi run format
+pixi run format-check
 ```
 
 Run the full preflight in order (format check, unit tests, then headless generation):
 
 ```
-pixi run -e dev preflight
+pixi run preflight
 ```
 
 This generates matplotlib visualizations of:

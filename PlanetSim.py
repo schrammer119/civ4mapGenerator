@@ -27,6 +27,15 @@ if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
     xrange = range
 
+FLOAT_INF = 1e30
+FLOAT_NINF = -1e30
+
+STARTING_YIELD_TYPES = (
+    YieldTypes.YIELD_FOOD,
+    YieldTypes.YIELD_PRODUCTION,
+    YieldTypes.YIELD_COMMERCE,
+)
+
 # Global map instances - shared across all generation functions
 gc = None
 mapCtx = None
@@ -48,42 +57,49 @@ def profile(func):
             pass
     """
 
-    def wrapper(*args, **kwargs):
-        # Get function info
-        func_name = getattr(func, "func_name", getattr(func, "__name__", "unknown"))
+    if sys.version_info[0] < 3:
 
-        # Handle class methods
-        if args and hasattr(args[0], func_name):
-            class_name = args[0].__class__.__name__
-            display_name = class_name + "." + func_name
-        else:
-            display_name = func_name
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
 
-        # Start timing
-        start_time = time.time()
+    else:
 
-        try:
-            # Execute the function
-            result = func(*args, **kwargs)
+        def wrapper(*args, **kwargs):
+            # Get function info
+            func_name = getattr(func, "func_name", getattr(func, "__name__", "unknown"))
 
-            # Calculate execution time
-            end_time = time.time()
-            execution_time = end_time - start_time
+            # Handle class methods
+            if args and hasattr(args[0], func_name):
+                class_name = args[0].__class__.__name__
+                display_name = class_name + "." + func_name
+            else:
+                display_name = func_name
 
-            # Print one-line summary
-            print("%60s: %8.3f seconds" % (display_name, execution_time))
+            # Start timing
+            start_time = time.time()
 
-            return result
+            try:
+                # Execute the function
+                result = func(*args, **kwargs)
 
-        except Exception:
-            # Calculate execution time even on failure
-            end_time = time.time()
-            execution_time = end_time - start_time
+                # Calculate execution time
+                end_time = time.time()
+                execution_time = end_time - start_time
 
-            # Print one-line summary for failed calls
-            print("%60s: %8.3f seconds (FAILED)" % (display_name, execution_time))
+                # Print one-line summary
+                print("%60s: %8.3f seconds" % (display_name, execution_time))
 
-            raise  # Re-raise the exception
+                return result
+
+            except Exception:
+                # Calculate execution time even on failure
+                end_time = time.time()
+                execution_time = end_time - start_time
+
+                # Print one-line summary for failed calls
+                print("%60s: %8.3f seconds (FAILED)" % (display_name, execution_time))
+
+                raise  # Re-raise the exception
 
     # Copy basic function attributes
     wrapper.__name__ = getattr(func, "__name__", "wrapped_function")
@@ -147,6 +163,7 @@ class MapConfig:
         self._initialize_civ_settings()
         self._initialize_elevation_parameters()
         self._initialize_climate_parameters()
+        self._initialize_starting_parameters()
 
         # --- Pre-calculate and Cache Utilities ---
         self._precalculate_neighbours()
@@ -490,6 +507,184 @@ class MapConfig:
         self.largeLakeSizeThreshold = 4  # Minimum size for large lake bonus
         self.largeLakeMoistureBonus = 1.1  # Moisture multiplier for large lakes
 
+    def _initialize_starting_parameters(self):
+        """Initialize start-plot scoring weights and civilization preferences."""
+        self.starting_city_radius_offsets = tuple(
+            (dx, dy)
+            for dy in xrange(-2, 3)
+            for dx in xrange(-2, 3)
+            if max(abs(dx), abs(dy)) < 2 or abs(dx) != 2 or abs(dy) != 2
+        )
+        self.starting_yield_weights = (2.0, 1.5, 0.5)
+        self.starting_inner_radius_multiplier = 1.0
+        self.starting_outer_radius_multiplier = 0.5
+        self.starting_bonus_weight = 2.0
+        self.starting_strategic_bonus_weights = {
+            "BONUS_HORSE": 6.0,
+            "BONUS_COPPER": 6.0,
+            "BONUS_IRON": 6.0,
+            "BONUS_COAL": 3.0,
+            "BONUS_OIL": 3.0,
+            "BONUS_URANIUM": 3.0,
+            "BONUS_ALUMINUM": 3.0,
+            "BONUS_IVORY": 3.0,
+        }
+        self.starting_revealed_bonus_weight = 5.0
+        self.starting_river_weight = 8.0
+        self.starting_freshwater_weight = 3.0
+        self.starting_hill_weight = 4.0
+        self.starting_coast_weight = 5.0
+        self.starting_peak_weight = 1.0
+        self.starting_riverside_weight = 1.0
+        self.starting_freshwater_tile_weight = 1.0
+        self.starting_min_distance = 10.0
+        self.starting_island_min_area_size = 12
+        self.starting_island_area_divisor = 20
+        self.starting_civilization_weight_multiplier = 10.0
+        self.starting_civilization_latitude_weight = 2
+        self.starting_civilization_latitude_scale = 25.0
+        self.starting_civilization_biases = {
+            "CIVILIZATION_AMERICA": {"latitude": 40, "terrain": {"JUNGLE": -2}},
+            "CIVILIZATION_ARABIA": {
+                "latitude": 0,
+                "terrain": {"DESERT": 3, "JUNGLE": -2},
+            },
+            "CIVILIZATION_AZTEC": {
+                "latitude": 0,
+                "terrain": {"JUNGLE": 2},
+                "bonuses": {"BONUS_INCENSE": 3},
+            },
+            "CIVILIZATION_BABYLON": {
+                "latitude": 0,
+                "terrain": {"DESERT": 1, "JUNGLE": -2},
+            },
+            "CIVILIZATION_BYZANTIUM": {"latitude": 41, "terrain": {"JUNGLE": -2}},
+            "CIVILIZATION_CARTHAGE": {
+                "latitude": 0,
+                "terrain": {"DESERT": 1, "JUNGLE": -2},
+                "coast": 2,
+            },
+            "CIVILIZATION_CELT": {
+                "latitude": 48,
+                "terrain": {"DESERT": -3, "JUNGLE": -2},
+            },
+            "CIVILIZATION_CHINA": {"latitude": 35},
+            "CIVILIZATION_EGYPT": {
+                "latitude": 0,
+                "terrain": {"DESERT": 3, "JUNGLE": -2},
+                "bonuses": {"BONUS_STONE": 3, "BONUS_MARBLE": 3},
+            },
+            "CIVILIZATION_ENGLAND": {
+                "latitude": 52,
+                "terrain": {"DESERT": -3, "JUNGLE": -3},
+                "bonuses": {"BONUS_SHEEP": 3},
+                "coast": 3,
+                "island": 3,
+            },
+            "CIVILIZATION_ETHIOPIA": {"latitude": 0, "terrain": {"DESERT": 1}},
+            "CIVILIZATION_FRANCE": {
+                "latitude": 49,
+                "terrain": {"DESERT": -3, "JUNGLE": -2},
+                "bonuses": {"BONUS_COW": 2, "BONUS_DEER": 2},
+            },
+            "CIVILIZATION_GERMANY": {
+                "latitude": 53,
+                "terrain": {"DESERT": -3, "JUNGLE": -2},
+            },
+            "CIVILIZATION_GREECE": {
+                "latitude": 38,
+                "terrain": {"JUNGLE": -2},
+                "coast": 2,
+                "peaks": 2,
+            },
+            "CIVILIZATION_HOLY_ROMAN": {
+                "latitude": 50,
+                "terrain": {"DESERT": -3, "JUNGLE": -2},
+            },
+            "CIVILIZATION_INCA": {
+                "latitude": 0,
+                "bonuses": {
+                    "BONUS_INCENSE": 2,
+                },
+                "peaks": 3,
+            },
+            "CIVILIZATION_INDIA": {
+                "latitude": 0,
+                "terrain": {"DESERT": -1, "JUNGLE": 2},
+                "bonuses": {"BONUS_COW": 3, "BONUS_IVORY": 3},
+            },
+            "CIVILIZATION_JAPAN": {
+                "latitude": 36,
+                "terrain": {"DESERT": -3},
+                "coast": 3,
+                "peaks": 2,
+                "island": 3,
+            },
+            "CIVILIZATION_KHMER": {
+                "latitude": 0,
+                "terrain": {"DESERT": -3, "JUNGLE": 2},
+            },
+            "CIVILIZATION_KOREA": {"latitude": 38, "terrain": {"DESERT": -2}},
+            "CIVILIZATION_MALI": {"latitude": 0, "terrain": {"DESERT": 3}},
+            "CIVILIZATION_MAYA": {
+                "latitude": 0,
+                "terrain": {"DESERT": -2, "JUNGLE": 2},
+                "bonuses": {"BONUS_INCENSE": 3},
+            },
+            "CIVILIZATION_MONGOL": {
+                "latitude": 47,
+                "terrain": {"JUNGLE": -2},
+                "bonuses": {"BONUS_HORSE": 3},
+            },
+            "CIVILIZATION_NATIVE_AMERICA": {
+                "latitude": 46,
+                "terrain": {"JUNGLE": -2},
+                "bonuses": {"BONUS_INCENSE": 2},
+            },
+            "CIVILIZATION_NETHERLANDS": {
+                "latitude": 52,
+                "terrain": {"DESERT": -3, "JUNGLE": -2},
+                "coast": 3,
+            },
+            "CIVILIZATION_OTTOMAN": {
+                "latitude": 41,
+                "terrain": {"JUNGLE": -2},
+            },
+            "CIVILIZATION_PERSIA": {
+                "latitude": 0,
+                "terrain": {"DESERT": 1, "JUNGLE": -2},
+            },
+            "CIVILIZATION_PORTUGAL": {
+                "latitude": 39,
+                "terrain": {"DESERT": -1, "JUNGLE": -2},
+                "coast": 3,
+            },
+            "CIVILIZATION_ROME": {
+                "latitude": 42,
+                "terrain": {"DESERT": -1, "JUNGLE": -2},
+                "coast": 1,
+            },
+            "CIVILIZATION_RUSSIA": {
+                "latitude": 56,
+                "terrain": {"DESERT": -3, "TUNDRA": 1, "JUNGLE": -2},
+            },
+            "CIVILIZATION_SPAIN": {
+                "latitude": 41,
+                "terrain": {"DESERT": -1, "JUNGLE": -2},
+                "coast": 1,
+            },
+            "CIVILIZATION_SUMERIA": {
+                "latitude": 0,
+                "terrain": {"DESERT": 1, "JUNGLE": -2},
+            },
+            "CIVILIZATION_VIKING": {
+                "latitude": 56,
+                "terrain": {"DESERT": -3, "TUNDRA": 3, "JUNGLE": -2},
+                "coast": 3,
+            },
+            "CIVILIZATION_ZULU": {"latitude": 0},
+        }
+
     def _load_xml_constraints(self):
         """Load constraints from game XML files"""
         print("MapConfig: Loading XML constraints from game files...")
@@ -553,10 +748,10 @@ class MapConfig:
                 "iMaxLatitude": bonus_info.getMaxLatitude(),
                 "iPlayer": bonus_info.getPercentPerPlayer(),  # XML name with correct API method
                 "iTilesPer": bonus_info.getTilesPer(),
-                "iRandApp1": bonus_info.getRandApp1(),
-                "iRandApp2": bonus_info.getRandApp2(),
-                "iRandApp3": bonus_info.getRandApp3(),
-                "iRandApp4": bonus_info.getRandApp4(),
+                "iRandApp1": bonus_info.getRandAppearance1(),
+                "iRandApp2": bonus_info.getRandAppearance2(),
+                "iRandApp3": bonus_info.getRandAppearance3(),
+                "iRandApp4": bonus_info.getRandAppearance4(),
                 "iMinLandPercent": bonus_info.getMinLandPercent(),
                 "iUnique": bonus_info.getUniqueRange(),
                 "iGroupRange": bonus_info.getGroupRange(),
@@ -921,6 +1116,7 @@ class MapConfig:
 
     def get_index_from_coords(self, x, y):
         """Convert x,y coordinates to flat index"""
+        x, y = self.wrap_coordinates(x, y)
         if not self.coordinates_in_bounds(x, y):
             return -1
         return y * self.iNumPlotsX + x
@@ -2995,9 +3191,12 @@ class ElevationMap:
                 for d in directions
                 if 0 <= self.mc.neighbours[i][d] < self.mc.iNumPlots
             ]
-            if neighbour_indices and all(
-                peak_snapshot[n] == PlotTypes.PLOT_OCEAN for n in neighbour_indices
-            ):
+            all_ocean_neighbours = len(neighbour_indices) > 0
+            for neighbour_index in neighbour_indices:
+                if peak_snapshot[neighbour_index] != PlotTypes.PLOT_OCEAN:
+                    all_ocean_neighbours = False
+                    break
+            if all_ocean_neighbours:
                 self.plotTypes[i] = PlotTypes.PLOT_HILLS
                 continue  # all-ocean peak islands cannot also have peak neighbours, so cluster check is moot
             self._demote_clustered_neighbours(
@@ -7703,12 +7902,14 @@ class TerrainMap:
                     for direction in xrange(12):
                         dx, dy = fat_neighbours[direction]
                         x, y = self.mc.get_coords_from_index(i)
-                        adj_x = (
-                            (x + dx) % self.mc.iNumPlotsX if self.mc.wrapX else x + dx
-                        )
-                        adj_y = (
-                            (y + dy) % self.mc.iNumPlotsY if self.mc.wrapY else y + dy
-                        )
+                        if self.mc.wrapX:
+                            adj_x = (x + dx) % self.mc.iNumPlotsX
+                        else:
+                            adj_x = x + dx
+                        if self.mc.wrapY:
+                            adj_y = (y + dy) % self.mc.iNumPlotsY
+                        else:
+                            adj_y = y + dy
                         adj_i = self.mc.get_index_from_coords(adj_x, adj_y)
                         if (
                             adj_i != -1
@@ -8087,11 +8288,12 @@ class TerrainMap:
     def _calculate_world_ids(self):
         """Calculate world IDs for all tiles based on biome assignments"""
 
+        coast_terrain_id = self.gc.getInfoTypeForString("TERRAIN_COAST")
         world_id_counter = 0
         for i in xrange(self.mc.iNumPlots):
             if (
                 self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
-                or self.terrain_map[i] == TerrainTypes.TERRAIN_COAST
+                or self.terrain_map[i] == coast_terrain_id
             ):
                 if self.world_ids[i] == -1:
                     continent_size = self._floodFillWorlds(i, world_id_counter)
@@ -8103,6 +8305,7 @@ class TerrainMap:
         if self.world_ids[start_index] != -1:  # Already processed
             return 0
 
+        coast_terrain_id = self.gc.getInfoTypeForString("TERRAIN_COAST")
         world_size = 0
         stack = [start_index]
 
@@ -8114,7 +8317,7 @@ class TerrainMap:
                 or self.world_ids[current] != -1
                 or (
                     self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN
-                    and self.terrain_map[current] != TerrainTypes.TERRAIN_COAST
+                    and self.terrain_map[current] != coast_terrain_id
                 )
             ):
                 continue
@@ -8131,7 +8334,7 @@ class TerrainMap:
                     and self.world_ids[neighbour] == -1
                     and (
                         self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
-                        or self.terrain_map[neighbour] == TerrainTypes.TERRAIN_COAST
+                        or self.terrain_map[neighbour] == coast_terrain_id
                     )
                 ):
                     stack.append(neighbour)
@@ -8774,7 +8977,7 @@ class TerrainMap:
         for tile_index in candidate_tiles:
             score = self._calculate_placement_score(tile_index, resource_def)
             if score == 0.0:
-                Tscore = float("inf")
+                Tscore = FLOAT_INF
             elif score == 1.0:
                 Tscore = 1.0
             else:
@@ -8886,10 +9089,10 @@ class TerrainMap:
 
             score = self._calculate_placement_score(tile_index, resource_def)
             best_score_by_area[area_id] = max(
-                score, best_score_by_area.get(area_id, float("-inf"))
+                score, best_score_by_area.get(area_id, FLOAT_NINF)
             )
             if score == 0.0:
-                placement_order = float("inf")
+                placement_order = FLOAT_INF
             elif score == 1.0:
                 placement_order = 1.0
             else:
@@ -9234,14 +9437,12 @@ class TerrainMap:
         score_modifier = 0.0
 
         # Evaluate each placement rule
-        for rule in resource_def.get("placement_rules", []):
+        placement_rules = resource_def.get("placement_rules", [])
+        for rule in placement_rules:
             rule_score = self._evaluate_placement_rule(tile_index, rule)
             score_modifier += rule_score
-        score_modifier /= (
-            len(resource_def.get("placement_rules", []))
-            if resource_def.get("placement_rules", [])
-            else 1
-        )
+        if placement_rules:
+            score_modifier /= len(placement_rules)
 
         return max(0.0, min(1.0, score_modifier))
 
@@ -9326,6 +9527,256 @@ class TerrainMap:
 # Map script interface functions
 
 
+class StartingPlotFinder:
+    """Choose civilization-aware starting plots from generated map data."""
+
+    def __init__(self, gc, map_config, elevation_map, terrain_map, map_context):
+        self.gc = gc
+        self.mc = map_config
+        self.em = elevation_map
+        self.tm = terrain_map
+        self.map = map_context
+        self.bonus_names = {}
+        for bonus_name in self.mc.starting_strategic_bonus_weights:
+            bonus_id = gc.getInfoTypeForString(bonus_name)
+            if bonus_id >= 0:
+                self.bonus_names[bonus_id] = bonus_name
+        self.civilization_ids = dict(
+            (gc.getInfoTypeForString(name), name)
+            for name in self.mc.starting_civilization_biases
+            if gc.getInfoTypeForString(name) >= 0
+        )
+
+    def _plot_bonus(self, plot, tile_index):
+        try:
+            bonus_id = plot.getBonusType(-1)
+        except TypeError:
+            bonus_id = plot.getBonusType()
+        if bonus_id is None or bonus_id < 0:
+            resource_map = getattr(self.tm, "resource_map", [])
+            if tile_index < len(resource_map):
+                bonus_id = resource_map[tile_index]
+        return bonus_id
+
+    def _area_size(self, plot):
+        try:
+            area = plot.area()
+            if area is not None:
+                return area.getNumTiles()
+        except (AttributeError, TypeError):
+            pass
+        return 0
+
+    def _is_coastal(self, tile_index):
+        for direction in xrange(1, 9):
+            neighbour = self.mc.neighbours[tile_index][direction]
+            if neighbour < 0 or self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN:
+                continue
+            plot = self.map.plotByIndex(neighbour)
+            if not getattr(plot, "isLake", lambda: False)():
+                return True
+        return False
+
+    def _revealed_bonus_ids(self, player):
+        bonus_ids = set()
+        try:
+            team = self.gc.getTeam(player.getTeam())
+            for bonus_id in xrange(self.gc.getNumBonusInfos()):
+                tech_id = self.gc.getBonusInfo(bonus_id).getTechReveal()
+                if tech_id >= 0 and team.isHasTech(tech_id):
+                    bonus_ids.add(bonus_id)
+        except AttributeError:
+            return bonus_ids
+        return bonus_ids
+
+    def _score_yields(self, plot):
+        score = 0.0
+        for yield_type, weight in zip(
+            STARTING_YIELD_TYPES, self.mc.starting_yield_weights
+        ):
+            score += weight * plot.calculateBestNatureYield(
+                yield_type, TeamTypes.NO_TEAM
+            )
+        return score
+
+    def _score_base_plot(self, tile_index):
+        x, y = self.mc.get_coords_from_index(tile_index)
+        center = self.map.plotByIndex(tile_index)
+        if center.isWater() or center.isPeak():
+            return None
+
+        score = 0.0
+        bonuses = {}
+        flags = {"DESERT": False, "TUNDRA": False, "JUNGLE": False}
+        peaks = False
+        for dx, dy in self.mc.starting_city_radius_offsets:
+            neighbour_index = self.mc.get_index_from_coords(x + dx, y + dy)
+            if neighbour_index < 0:
+                continue
+            plot = self.map.plotByIndex(neighbour_index)
+            distance = max(abs(dx), abs(dy))
+            if distance <= 1:
+                weight = self.mc.starting_inner_radius_multiplier
+            else:
+                weight = self.mc.starting_outer_radius_multiplier
+            if plot.isPeak():
+                peaks = True
+            else:
+                score += weight * self._score_yields(plot)
+            if plot.isRiverSide():
+                score += self.mc.starting_riverside_weight * weight
+            if plot.isFreshWater() and not plot.isHills():
+                score += self.mc.starting_freshwater_tile_weight * weight
+
+            terrain_id = self.tm.terrain_map[neighbour_index]
+            terrain_name = self.mc.get_terrain_string_from_id(terrain_id) or ""
+            for terrain_name_part in flags:
+                if terrain_name_part in terrain_name:
+                    flags[terrain_name_part] = True
+            feature_id = self.tm.feature_map[neighbour_index]
+            feature_name = self.mc.get_feature_string_from_id(feature_id) or ""
+            if "JUNGLE" in feature_name:
+                flags["JUNGLE"] = True
+
+            bonus_id = self._plot_bonus(plot, neighbour_index)
+            if bonus_id is not None and bonus_id >= 0:
+                bonuses[bonus_id] = bonuses.get(bonus_id, 0) + 1
+                bonus_name = self.bonus_names.get(bonus_id)
+                if bonus_name is None:
+                    bonus_name = self.gc.getBonusInfo(bonus_id).getType()
+                score += self.mc.starting_bonus_weight * weight
+                score += (
+                    self.mc.starting_strategic_bonus_weights.get(bonus_name, 0.0)
+                    * weight
+                )
+
+        if center.isRiver():
+            score += self.mc.starting_river_weight
+        elif center.isFreshWater():
+            score += self.mc.starting_freshwater_weight
+        if center.isHills():
+            score += self.mc.starting_hill_weight
+        if self._is_coastal(tile_index):
+            score += self.mc.starting_coast_weight
+        if peaks:
+            score += self.mc.starting_peak_weight
+        return score, bonuses, flags, peaks
+
+    def _score_civilization(
+        self, player, tile_index, base, bonuses, flags, peaks, revealed_bonuses
+    ):
+        civilization_name = self.civilization_ids.get(player.getCivilizationType())
+        profile = self.mc.starting_civilization_biases.get(civilization_name, {})
+        multiplier = self.mc.starting_civilization_weight_multiplier
+        score = base
+        if "latitude" in profile:
+            _, y = self.mc.get_coords_from_index(tile_index)
+            latitude = abs(self.mc.get_latitude_for_y(y))
+            latitude_delta = abs(latitude - profile["latitude"])
+            latitude_score = self.mc.starting_civilization_latitude_weight * math.exp(
+                -((latitude_delta / self.mc.starting_civilization_latitude_scale) ** 2)
+            )
+            score += latitude_score * multiplier
+
+        for terrain_name, weight in profile.get("terrain", {}).items():
+            if flags.get(terrain_name, False):
+                score += weight * multiplier
+        for bonus_name, weight in profile.get("bonuses", {}).items():
+            bonus_id = self.gc.getInfoTypeForString(bonus_name)
+            if bonus_id >= 0:
+                score += weight * multiplier * bonuses.get(bonus_id, 0)
+        if profile.get("coast") and self._is_coastal(tile_index):
+            score += profile["coast"] * multiplier
+        if profile.get("peaks") and peaks:
+            score += profile["peaks"] * multiplier
+        if profile.get("island"):
+            area_size = self._area_size(self.map.plotByIndex(tile_index))
+            island_area_limit = max(
+                self.mc.starting_island_min_area_size,
+                self.mc.iNumPlots // self.mc.starting_island_area_divisor,
+            )
+            if area_size and area_size <= island_area_limit:
+                score += profile["island"] * multiplier
+        for bonus_id in revealed_bonuses:
+            score += self.mc.starting_revealed_bonus_weight * bonuses.get(bonus_id, 0)
+        return score
+
+    def _distance(self, first_index, second_index):
+        first_x, first_y = self.mc.get_coords_from_index(first_index)
+        second_x, second_y = self.mc.get_coords_from_index(second_index)
+        dx, dy = self.mc.get_wrapped_distance(first_x, first_y, second_x, second_y)
+        return math.sqrt(dx * dx + dy * dy)
+
+    def _best_scored_tile(self, ranked):
+        best_tile_index, best_score = ranked[0]
+        for tile_index, score in ranked[1:]:
+            if score > best_score or (
+                score == best_score and tile_index < best_tile_index
+            ):
+                best_tile_index = tile_index
+                best_score = score
+        return best_tile_index
+
+    def assign_starting_plots(self):
+        players = []
+        for player_id in xrange(self.gc.getMAX_CIV_PLAYERS()):
+            player = self.gc.getPlayer(player_id)
+            if player.isAlive():
+                players.append((player_id, player))
+        players.sort(key=lambda item: (not item[1].isHuman(), item[0]))
+        if not players:
+            return True
+
+        candidate_scores = {}
+        for tile_index in xrange(self.mc.iNumPlots):
+            base_data = self._score_base_plot(tile_index)
+            if base_data is not None:
+                candidate_scores[tile_index] = base_data
+
+        if len(candidate_scores) < len(players):
+            return False
+
+        selected = []
+        for _, player in players:
+            revealed_bonuses = self._revealed_bonus_ids(player)
+            ranked = []
+            for tile_index, (base, bonuses, flags, peaks) in candidate_scores.items():
+                if tile_index in selected:
+                    continue
+                score = self._score_civilization(
+                    player,
+                    tile_index,
+                    base,
+                    bonuses,
+                    flags,
+                    peaks,
+                    revealed_bonuses,
+                )
+                ranked.append((tile_index, score))
+
+            chosen = None
+            for min_distance in xrange(int(self.mc.starting_min_distance), 0, -1):
+                separated = []
+                for item in ranked:
+                    is_separated = True
+                    for start in selected:
+                        if self._distance(item[0], start) < min_distance:
+                            is_separated = False
+                            break
+                    if is_separated:
+                        separated.append(item)
+                if separated:
+                    chosen = self._best_scored_tile(separated)
+                    break
+            if chosen is None and ranked:
+                chosen = self._best_scored_tile(ranked)
+            if chosen is None:
+                return False
+            player.setStartingPlot(self.map.plotByIndex(chosen), True)
+            selected.append(chosen)
+        return True
+
+
 def getDescription():
     """Returns the description shown in the map selection menu"""
     return (
@@ -9395,6 +9846,10 @@ def addRivers():
     """Add rivers to the map using realistic flow patterns"""
     global mc, em, cm, tm
 
+    if mc is None or cm is None or mapCtx is None:
+        print("PlanetSim: river data unavailable; skipping river placement.")
+        return
+
     for from_node, to_node, river_id, _ in cm.river_map:
         from_x, from_y = mc.get_coords_from_index(from_node)
         to_x, to_y = mc.get_coords_from_index(to_node)
@@ -9457,6 +9912,11 @@ def addRivers():
 def addFeatures():
     """Add features (forests, jungles, etc.) based on climate"""
     global mapCtx, mc, tm
+
+    if mapCtx is None or mc is None or tm is None:
+        print("PlanetSim: feature data unavailable; skipping feature placement.")
+        return
+
     for i in xrange(mc.iNumPlots):
         plot = mapCtx.plotByIndex(i)
         plot.setFeatureType(tm.feature_map[i], tm.feature_subtype_map[i])
@@ -9482,3 +9942,19 @@ def addBonuses():
 def afterGeneration():
     """Final adjustments after map generation"""
     pass
+
+
+def assignStartingPlots():
+    """Assign starts using local yields, resources, geography, and civ biases."""
+    if gc is None or mc is None or em is None or tm is None or mapCtx is None:
+        print(
+            "PlanetSim: start plot data unavailable; using DLL default implementation."
+        )
+        CyPythonMgr().allowDefaultImpl()
+        return
+    finder = StartingPlotFinder(gc, mc, em, tm, mapCtx)
+    if not finder.assign_starting_plots():
+        print(
+            "PlanetSim: start plot finder incomplete; using DLL default implementation."
+        )
+        CyPythonMgr().allowDefaultImpl()
