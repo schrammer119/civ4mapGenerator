@@ -22,10 +22,8 @@ if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
     xrange = range
 
-# PlanetSim.py lives at repo root; the game engine normally supplies
-# CvPythonExtensions/CvUtil, so the tools/ mocks are only needed here.
+# PlanetSim.py and the CvPythonExtensions/CvUtil mocks live at repo root.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "tools"))
 sys.path.insert(0, _REPO_ROOT)
 
 from PlanetSim import *
@@ -207,7 +205,10 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
     return True, "start plots assigned with unique, separated land starts"
 
 
-# random.seed(542069)
+# seed = 5347073887270499140
+seed = random.randrange(sys.maxsize)
+random.seed(seed)
+print(f"Using random seed {seed}")
 
 # dark plots
 plt.style.use("dark_background")  # This sets up a good dark theme baseline
@@ -339,6 +340,117 @@ if hasattr(tm, "resource_map") and tm.resource_map is not None:
         print("No resources placed on map")
 else:
     print("Resource map not available - resource placement may not have run")
+
+
+# Print summary statistics with target analysis
+print("\n=== BIOME TARGET ANALYSIS ===")
+print(
+    "Using TerrainMap's %dx%d biome grid (%.1f%% resolution)"
+    % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0 / (tm.BIOME_GRID_SIZE - 1))
+)
+print("Biome Name               Actual    Target    Status")
+print("-" * 55)
+
+# Define target percentages for earth-like biomes
+biome_targets = {
+    "hot_desert": 16.8,  # tropical/subtropical sandy deserts
+    "tropical_jungle": 7.2,  # tropical moist broadleaf forests
+    "temperate_forest": 6.5,  # temperate broadleaf & mixed forests
+    "taiga": 14.1,  # boreal (coniferous) forests
+    "tundra": 9.2,  # arctic/alpine tundra
+    "savanna": 15.8,  # tropical & subtropical grasslands/savannas
+    "steppe": 9.1,  # temperate grassland steppes + former cold deserts
+    "temperate_grassland": 3.9,  # temperate grasslands (other)
+    "mediterranean": 1.2,  # Mediterranean shrublands & woodlands
+    "coastal_rainforest": 3.8,  # temperate coastal rainforests
+    "woodland_savanna": 1.8,  # tropical dry broadleaf woodlands
+    "dry_conifer_forest": 3.0,  # montane/dry conifer forests
+    "polar_desert": 7.6,  # polar ice caps & cold deserts
+}
+# Total: 100.0%
+
+# Get land tiles only (not ocean)
+land_indices = [
+    i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+]
+
+# Get temperature and rainfall percentiles for land tiles (already calculated in ClimateMap)
+land_temp_percentiles = [
+    cm.temperature_percentiles[i] * 100 for i in land_indices
+]  # Convert to 0-100
+land_rain_percentiles = [
+    cm.rainfall_percentiles[i] * 100 for i in land_indices
+]  # Convert to 0-100
+
+# Get biome assignments for land tiles
+land_biomes = [tm.biome_assignments[i] for i in land_indices]
+
+# Calculate actual percentages and create enhanced legend
+biome_counts = {}
+for biome in land_biomes:
+    biome_counts[biome] = biome_counts.get(biome, 0) + 1
+total_land = len(land_indices)
+
+for biome_name in sorted(biome_targets.keys()):
+    actual_count = biome_counts.get(biome_name, 0)
+    actual_pct = (100.0 * actual_count) / total_land
+    target_pct = biome_targets[biome_name]
+
+    if abs(actual_pct - target_pct) <= 1.5:
+        status = "ON TARGET"
+    elif actual_pct > target_pct:
+        status = "OVER (+%.1f%%)" % (actual_pct - target_pct)
+    else:
+        status = "UNDER (-%.1f%%)" % (target_pct - actual_pct)
+
+    print("%-24s %6.1f%%   %6.1f%%   %s" % (biome_name, actual_pct, target_pct, status))
+
+# Print feature statistics
+
+# Add terrain features overlay
+# Get feature locations (check if feature_map exists)
+iIce = []
+iJungle = []
+iOasis = []
+iFloodPlains = []
+iForest = []
+
+if hasattr(tm, "feature_map") and tm.feature_map is not None:
+    iIce = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE]
+    iJungle = [
+        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE
+    ]
+    iOasis = [
+        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS
+    ]
+    iFloodPlains = [
+        i
+        for i, x in enumerate(tm.feature_map)
+        if x == FeatureTypes.FEATURE_FLOOD_PLAINS
+    ]
+    iForest = [
+        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST
+    ]
+
+if hasattr(tm, "feature_map") and tm.feature_map is not None:
+    feature_counts = {
+        "Ice": len(iIce),
+        "Jungle": len(iJungle),
+        "Oasis": len(iOasis),
+        "Flood Plains": len(iFloodPlains),
+        "Forest": len(iForest),
+    }
+    print("\nFeature distribution:")
+    total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
+    for feature_name, count in feature_counts.items():
+        if count > 0:
+            percentage = (
+                (count / float(total_land_tiles)) * 100 if total_land_tiles > 0 else 0
+            )
+            print("%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage))
+else:
+    print("\nFeature map not available - TerrainMap may not be fully initialized")
+
 
 if ARGS.show:
 
@@ -661,24 +773,6 @@ if ARGS.show:
     ax.set_title("Watershed IDs with Flow Directions")
     fig.colorbar(p)
 
-    # Define target percentages for earth-like biomes
-    biome_targets = {
-        "hot_desert": 16.8,  # tropical/subtropical sandy deserts
-        "tropical_jungle": 7.2,  # tropical moist broadleaf forests
-        "temperate_forest": 6.5,  # temperate broadleaf & mixed forests
-        "taiga": 14.1,  # boreal (coniferous) forests
-        "tundra": 9.2,  # arctic/alpine tundra
-        "savanna": 15.8,  # tropical & subtropical grasslands/savannas
-        "steppe": 9.1,  # temperate grassland steppes + former cold deserts
-        "temperate_grassland": 3.9,  # temperate grasslands (other)
-        "mediterranean": 1.2,  # Mediterranean shrublands & woodlands
-        "coastal_rainforest": 3.8,  # temperate coastal rainforests
-        "woodland_savanna": 1.8,  # tropical dry broadleaf woodlands
-        "dry_conifer_forest": 3.0,  # montane/dry conifer forests
-        "polar_desert": 7.6,  # polar ice caps & cold deserts
-    }
-    # Total: 100.0%
-
     # Color scheme for target status (light colors for dark background)
     def get_target_color(actual_pct, target_pct):
         """Return color based on how close actual is to target"""
@@ -690,22 +784,6 @@ if ARGS.show:
             return "#FFB6C1"  # Light pink - over target
         else:
             return "#87CEEB"  # Light sky blue - under target
-
-    # Get land tiles only (not ocean)
-    land_indices = [
-        i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN
-    ]
-
-    # Get temperature and rainfall percentiles for land tiles (already calculated in ClimateMap)
-    land_temp_percentiles = [
-        cm.temperature_percentiles[i] * 100 for i in land_indices
-    ]  # Convert to 0-100
-    land_rain_percentiles = [
-        cm.rainfall_percentiles[i] * 100 for i in land_indices
-    ]  # Convert to 0-100
-
-    # Get biome assignments for land tiles
-    land_biomes = [tm.biome_assignments[i] for i in land_indices]
 
     # Create biome background grid using actual biome selection logic
     grid_resolution = 200  # Higher resolution for smoother boundaries
@@ -842,11 +920,6 @@ if ARGS.show:
 
     # Add grid
     ax.grid(True, alpha=0.3)
-
-    # Calculate actual percentages and create enhanced legend
-    biome_counts = {}
-    for biome in land_biomes:
-        biome_counts[biome] = biome_counts.get(biome, 0) + 1
 
     total_land = len(land_indices)
     legend_patches = []
@@ -1038,32 +1111,6 @@ if ARGS.show:
 
     plt.tight_layout()
 
-    # Print summary statistics with target analysis
-    print("\n=== BIOME TARGET ANALYSIS ===")
-    print(
-        "Using TerrainMap's %dx%d biome grid (%.1f%% resolution)"
-        % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0 / (tm.BIOME_GRID_SIZE - 1))
-    )
-    print("Biome Name               Actual    Target    Status")
-    print("-" * 55)
-
-    for biome_name in sorted(biome_targets.keys()):
-        actual_count = biome_counts.get(biome_name, 0)
-        actual_pct = (100.0 * actual_count) / total_land
-        target_pct = biome_targets[biome_name]
-
-        if abs(actual_pct - target_pct) <= 1.5:
-            status = "ON TARGET"
-        elif actual_pct > target_pct:
-            status = "OVER (+%.1f%%)" % (actual_pct - target_pct)
-        else:
-            status = "UNDER (-%.1f%%)" % (target_pct - actual_pct)
-
-        print(
-            "%-24s %6.1f%%   %6.1f%%   %s"
-            % (biome_name, actual_pct, target_pct, status)
-        )
-
     # Define terrain colors matching your specifications
     terrain_colors = [
         "#228B22",  # 0: TERRAIN_GRASS: Forest Green (lush grass)
@@ -1126,33 +1173,6 @@ if ARGS.show:
         alpha=0.8,
         label="Hills",
     )
-
-    # Add terrain features overlay
-    # Get feature locations (check if feature_map exists)
-    iIce = []
-    iJungle = []
-    iOasis = []
-    iFloodPlains = []
-    iForest = []
-
-    if hasattr(tm, "feature_map") and tm.feature_map is not None:
-        iIce = [
-            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE
-        ]
-        iJungle = [
-            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE
-        ]
-        iOasis = [
-            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS
-        ]
-        iFloodPlains = [
-            i
-            for i, x in enumerate(tm.feature_map)
-            if x == FeatureTypes.FEATURE_FLOOD_PLAINS
-        ]
-        iForest = [
-            i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST
-        ]
 
     # Helper function to plot distributed forest/jungle symbols
     def plot_distributed_vegetation(
@@ -1504,30 +1524,6 @@ if ARGS.show:
 
     # Adjust layout to accommodate legends
     plt.tight_layout()
-
-    # Print feature statistics
-    if hasattr(tm, "feature_map") and tm.feature_map is not None:
-        feature_counts = {
-            "Ice": len(iIce),
-            "Jungle": len(iJungle),
-            "Oasis": len(iOasis),
-            "Flood Plains": len(iFloodPlains),
-            "Forest": len(iForest),
-        }
-        print("\nFeature distribution:")
-        total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
-        for feature_name, count in feature_counts.items():
-            if count > 0:
-                percentage = (
-                    (count / float(total_land_tiles)) * 100
-                    if total_land_tiles > 0
-                    else 0
-                )
-                print(
-                    "%s: %d tiles (%.1f%% of land)" % (feature_name, count, percentage)
-                )
-    else:
-        print("\nFeature map not available - TerrainMap may not be fully initialized")
 
     # === RESOURCE VISUALIZATION ===
     # Overlay resource codes on the final map and show their name key at the left.

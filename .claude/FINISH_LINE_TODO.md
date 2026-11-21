@@ -12,29 +12,18 @@ Core consolidation is complete, but resource verification, start-location logic,
 - Phase 2: Resolve Code TODOs & Missing Implementations (historical status; current tests need re-verification)
 - Phase 3: Complete Resource & Bonus Placement with Visualization
 - Phase 4: Unit Testing Framework
+- Phase F.1 Implement start location based on civilization
 
 ---
 
 ## Phase F: Missing features
-
-### F.1 Implement start location based on civilization
-
-Based on example implementation from another map script, implement weighted start locations
-based on civilization.
-
-- [x] intercept existing Civ IV start location function
-- [x] create baseline scores for each start location eligible tile. Based on yields and resources in the "fat cross".
-- [x] Resources carry different weights (strategics weigh high for example, early strategics weigh even higher)
-- [x] Add weight for desirable terrain: rivers, coast, hills, etc.
-- [x] For each civilization, add weights to tiles in historical biomes, latitudes, resources, coast/river/peaks, on islands, etc.
-- [x] Add unit tests to verify behaviour of both base weights and civ-specific weights.
 
 ### F.2 Add "old world"/"new world" functionality
 
 Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
 
 - [ ] Implement a determination of which landmasses are "old" and which is "new".
-- [ ] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
+- [x] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
 - [ ] Implement a placement rule for resources and civilizations based on landmass assignment.
 - [ ] Add unit tests to verify classifications and placements.
 

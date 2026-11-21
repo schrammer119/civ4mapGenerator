@@ -28,7 +28,7 @@ Current status: the mock pipeline and focused pytest suite complete successfully
 - `addFeatures()` applies generated features.
 - `addBonuses()` applies `TerrainMap.resource_map`.
 
-The pipeline uses plate generation, elevation effects, climate and rainfall percentiles, river/lake generation, biome assignment, feature placement, and XML-driven bonus constraints. Start-location weighting and old-world/new-world classification are not implemented.
+The pipeline uses plate generation, elevation effects, Pangaea breaking (balanced projection seam, random boundary walk, and rift), climate and rainfall percentiles, river/lake generation, biome assignment, feature placement, XML-driven bonus constraints, and weighted start-plot selection. Old-world/new-world classification is not implemented.
 
 ## Shared utilities
 
@@ -41,7 +41,7 @@ Run the default Pixi environment tasks:
 ```powershell
 pixi run unit
 pixi run generate
-pixi run generate-plots
+pixi run generate-map
 pixi run format
 pixi run preflight
 ```

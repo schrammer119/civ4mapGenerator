@@ -15,7 +15,7 @@ In PowerShell, configure Matplotlib before Python starts:
 pixi run generate
 ```
 
-The `generate` task skips plot creation and exits without window interaction. It fails if dimensions, plot-type coverage, land/ocean presence, or generated tile-array lengths are invalid. Resource count is reported but is not a pass/fail check. Use `pixi run generate-plots` only for interactive spatial inspection; it calls `plt.show()` and may block until windows close.
+The `generate` task skips plot creation and exits without window interaction. It fails if dimensions, plot-type coverage, land/ocean presence, or generated tile-array lengths are invalid. Resource count is reported but is not a pass/fail check. Use `pixi run generate-map` only for interactive spatial inspection; it calls `plt.show()` and may block until windows close.
 
 ## Check
 

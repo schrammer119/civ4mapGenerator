@@ -5,12 +5,19 @@ description = "Development and validation environments for the PlanetSim Civiliz
 channels = ["conda-forge"]
 platforms = ["win-64"]
 
-[feature.runtime.dependencies]
-python = { version = "2.7.*", channel = "conda-forge" }
-vc = { version = "9.*", channel = "https://repo.anaconda.com/pkgs/main" }
+[activation.env]
+PYTHONDONTWRITEBYTECODE = "1"
+
+[environments]
+runtime = ["runtime"]
+default = ["dev"]
 
 [feature.runtime]
 channels = ["conda-forge", "https://repo.anaconda.com/pkgs/main"]
+
+[feature.runtime.dependencies]
+python = { version = "2.7.*", channel = "conda-forge" }
+vc = { version = "9.*", channel = "https://repo.anaconda.com/pkgs/main" }
 
 [feature.dev.dependencies]
 python = "*"
@@ -19,14 +26,10 @@ matplotlib = ">=3.8,<4"
 pytest = "*"
 black = "*"
 
-[environments]
-runtime = ["runtime"]
-default = ["dev"]
-
 [tasks]
 unit = { cmd = "pytest -q tests", env = { MPLBACKEND = "Agg" } }
 generate = { cmd = "python tests/run_planetsim.py --headless", env = { MPLBACKEND = "Agg" } }
-generate-plots = "python tests/run_planetsim.py --show"
+generate-map = "python tests/run_planetsim.py --show"
 format = "black ."
 format-check = "black --check ."
 preflight = { cmd = "black --check . && pytest -q tests && python tests/run_planetsim.py --headless", env = { MPLBACKEND = "Agg" } }

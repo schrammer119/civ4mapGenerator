@@ -127,7 +127,7 @@ pixi run generate
 Open the generation plots interactively:
 
 ```
-pixi run generate-plots
+pixi run generate-map
 ```
 
 Format or check Python files with Black:

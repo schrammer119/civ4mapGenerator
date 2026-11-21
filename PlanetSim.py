@@ -159,6 +159,17 @@ class MapConfig:
         self.wrapX = self.map.isWrapX()
         self.wrapY = self.map.isWrapY()
 
+        # --- Pangaea Breaker Settings ---
+        self.enablePangaeaBreaker = True
+        self.pangaeaMinimumSharePercent = 31
+        self.pangaeaRiftExtraDepth = 1
+        self.pangaeaRiftMaxDepth = 3
+        self.pangaeaRiftChance = 0.6
+        self.pangaeaSeamTurnReduction = 0.32  # >(1 - sqrt(2)/2) to add slight bias to angled cuts over straight cuts
+        self.pangaeaBoundaryWalkCount = 6
+        self.pangaeaBoundaryRunLength = 10
+        self.pangaeaBreakAttempts = 5
+
         # --- Initialize Parameter Groups ---
         self._initialize_civ_settings()
         self._initialize_elevation_parameters()
@@ -1418,6 +1429,8 @@ class ElevationMap:
         self.basinSizes = {}
         self.continentID = [-1] * self.mc.iNumPlots
         self.continentSizes = {}
+        self.continentMetadata = {}
+        self.isPangaea = False
 
         # Utility maps
         self.dx_centroid = [0.0] * self.mc.iNumPlots
@@ -1471,9 +1484,11 @@ class ElevationMap:
         self._calculate_plot_types()
         self._decluster_elevation_peaks()
         self._calculateOceanBasins()
-        self._calculateContinentIDs()
         self._optimize_wrap_edges()
         self._calculate_elevation_effects()
+        self._calculateContinentIDs()
+        if self.mc.enablePangaeaBreaker:
+            self._break_pangaea()
 
     @profile
     def _generate_continental_plates(self):
@@ -3242,7 +3257,8 @@ class ElevationMap:
         Identifies ocean basins and sizes. Fills in small basins that would end up lakes
         """
 
-        # Identify ocean basins and calculate sizes
+        self.oceanBasinMap = [-1] * self.mc.iNumPlots
+        self.basinSizes = {}
         basin_counter = 0
 
         # Flood fill to identify connected ocean basins
@@ -3301,16 +3317,43 @@ class ElevationMap:
         Identifies continents and sizes.
         """
 
-        # Identify ocean basins and calculate sizes
+        self.continentID = [-1] * self.mc.iNumPlots
+        self.continentSizes = {}
+        self.continentMetadata = {}
         continent_counter = 0
 
-        # Flood fill to identify connected ocean basins
         for i in xrange(self.mc.iNumPlots):
             if self.plotTypes[i] != PlotTypes.PLOT_OCEAN:
                 if self.continentID[i] == -1:
                     continent_size = self._floodFillContinent(i, continent_counter)
                     self.continentSizes[continent_counter] = continent_size
                     continent_counter += 1
+
+        total_land_tiles = sum(self.continentSizes.values())
+        component_tiles = dict(
+            (continent_id, []) for continent_id in self.continentSizes
+        )
+        for tile_index, continent_id in enumerate(self.continentID):
+            if continent_id >= 0:
+                component_tiles[continent_id].append(tile_index)
+
+        for continent_id, tile_indices in component_tiles.items():
+            coordinates = [
+                (tile_index % self.mc.iNumPlotsX, tile_index // self.mc.iNumPlotsX)
+                for tile_index in tile_indices
+            ]
+            x_values = [coordinate[0] for coordinate in coordinates]
+            y_values = [coordinate[1] for coordinate in coordinates]
+            centroid_x, centroid_y = self._calculate_wrap_aware_centroid(coordinates)
+            continent_size = self.continentSizes[continent_id]
+            self.continentMetadata[continent_id] = {
+                "size": continent_size,
+                "land_share": continent_size / float(total_land_tiles),
+                "bounds": (min(x_values), min(y_values), max(x_values), max(y_values)),
+                "centroid": (centroid_x, centroid_y),
+            }
+
+        self.isPangaea = self._is_pangaea_sizes(self.continentSizes.values())
 
     def _floodFillContinent(self, start_tile, continent_id):
         """
@@ -3347,6 +3390,466 @@ class ElevationMap:
                     stack.append(neighbour)
 
         return continent_size
+
+    def _is_pangaea_sizes(self, sizes):
+        sorted_sizes = sorted(sizes, reverse=True)
+        return (
+            not sorted_sizes
+            or len(sorted_sizes) == 1
+            or (
+                float(sorted_sizes[1])
+                < float(sorted_sizes[0])
+                * (0.01 * float(self.mc.pangaeaMinimumSharePercent))
+            )
+        )
+
+    @profile
+    def _calculateCoastContinentIDs(self):
+        """Label 8-connected land and shallow-coast tiles; sizes count land tiles only."""
+        self.coastContinentID = [-1] * self.mc.iNumPlots
+        self.coastContinentSizes = {}
+        continent_counter = 0
+        for i in xrange(self.mc.iNumPlots):
+            if self.coastContinentID[i] == -1 and self._is_coast_passable(i):
+                self.coastContinentSizes[continent_counter] = (
+                    self._floodFillCoastContinent(i, continent_counter)
+                )
+                continent_counter += 1
+
+    def _is_coast_passable(self, tile_index):
+        if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+            return True
+        if self.elevationMap[tile_index] > self.coastLevelThreshold:
+            return True
+        return any(
+            self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+            for neighbour in self._get_all_neighbours(tile_index)
+        )
+
+    def _floodFillCoastContinent(self, start_tile, continent_id):
+        land_count = 0
+        self.coastContinentID[start_tile] = continent_id
+        stack = [start_tile]
+        while stack:
+            current = stack.pop()
+            if self.plotTypes[current] != PlotTypes.PLOT_OCEAN:
+                land_count += 1
+            for direction in xrange(1, 9):
+                neighbour = self.mc.neighbours[current][direction]
+                if (
+                    neighbour >= 0
+                    and self.coastContinentID[neighbour] == -1
+                    and self._is_coast_passable(neighbour)
+                ):
+                    self.coastContinentID[neighbour] = continent_id
+                    stack.append(neighbour)
+        return land_count
+
+    @profile
+    def _break_pangaea(self):
+        """Split the largest passable area along a balanced projection, then rift the seam."""
+        if not self.mc.enablePangaeaBreaker:
+            return False
+        self._calculateCoastContinentIDs()
+        if (
+            not self.coastContinentSizes
+            or max(self.coastContinentSizes.values()) == 0
+            or not self._is_pangaea_sizes(self.coastContinentSizes.values())
+        ):
+            print("Pangaea breaker: no pangaea found.")
+            return False
+        print("Pangaea breaker: breaking up the largest continent.")
+
+        largest_id = max(self.coastContinentSizes, key=self.coastContinentSizes.get)
+        largest_size = self.coastContinentSizes[largest_id]
+        largest_tiles = set(
+            tile_index
+            for tile_index, continent_id in enumerate(self.coastContinentID)
+            if continent_id == largest_id
+        )
+        minimum_size = (self.mc.pangaeaMinimumSharePercent * largest_size) // 100 + 1
+        maximum_size = largest_size - minimum_size
+        projection_side = self._select_projection_partition(largest_tiles, minimum_size)
+        if projection_side is None:
+            print("Pangaea breaker: no balanced projection partition found.")
+            return False
+        plan = None
+        for _ in xrange(self.mc.pangaeaBreakAttempts):
+            side_a = self._perturb_pangaea_seam(
+                largest_tiles, projection_side, minimum_size, maximum_size
+            )
+            plan = self._plan_pangaea_rift(largest_tiles, side_a, minimum_size)
+            if plan is not None:
+                break
+        if plan is None:
+            print(
+                "Pangaea breaker: no rift separates the halves, keeping the continent."
+            )
+            return False
+        rift, shoulders = plan
+        self._apply_pangaea_rift(rift, shoulders)
+
+        self._calculateOceanBasins()
+        self._calculateContinentIDs()
+        self._calculateCoastContinentIDs()
+        print(
+            "Pangaea breaker: rifted the largest continent along %d plots." % len(rift)
+        )
+        return True
+
+    def _get_pangaea_projection_partitions(self, component_tiles):
+        """Yield balanced half-plane splits of the component along sixteen projection angles."""
+        land_coordinates = [
+            (tile_index % self.mc.iNumPlotsX, tile_index // self.mc.iNumPlotsX)
+            for tile_index in component_tiles
+            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+        ]
+        centroid_x, centroid_y = self._calculate_wrap_aware_centroid(land_coordinates)
+        projections = {}
+        for tile_index in component_tiles:
+            x = tile_index % self.mc.iNumPlotsX
+            y = tile_index // self.mc.iNumPlotsX
+            dx, dy = self.mc.get_wrapped_distance(x, y, centroid_x, centroid_y)
+            projections[tile_index] = (dx, dy)
+
+        quantiles = (1.0 / 3.0, 0.375, 0.4, 0.45, 0.5, 0.55, 0.6, 0.625, 2.0 / 3.0)
+        total_land = self._count_land_tiles(component_tiles)
+        for direction in xrange(16):
+            angle = math.pi * direction / 16.0
+            axis_x = math.cos(angle)
+            axis_y = math.sin(angle)
+            axis_values = sorted(
+                (
+                    projection[0] * axis_x + projection[1] * axis_y,
+                    tile_index,
+                )
+                for tile_index, projection in projections.items()
+            )
+            thresholds = set()
+            for quantile in quantiles:
+                target = quantile * total_land
+                running = 0
+                for value, tile_index in axis_values:
+                    running += self._land_weight(tile_index)
+                    if running >= target:
+                        thresholds.add(value)
+                        break
+
+            for threshold in sorted(thresholds):
+                low_side = set(
+                    tile_index
+                    for value, tile_index in axis_values
+                    if value <= threshold
+                )
+                if not low_side or len(low_side) == len(component_tiles):
+                    continue
+                yield low_side
+
+    def _select_projection_partition(self, component_tiles, minimum_size):
+        """Return the shortest-seam projection split into two connected, balanced areas."""
+        land_total = self._count_land_tiles(component_tiles)
+        seen = set()
+        scored = []
+        for low_side in self._get_pangaea_projection_partitions(component_tiles):
+            side_a = frozenset(low_side)
+            if side_a in seen:
+                continue
+            seen.add(side_a)
+            side_a_size = self._count_land_tiles(side_a)
+            if min(side_a_size, land_total - side_a_size) < minimum_size:
+                continue
+            scored.append(
+                (
+                    self._get_seam_length(side_a, component_tiles),
+                    abs(2 * side_a_size - land_total),
+                    min(side_a),
+                    side_a,
+                )
+            )
+        scored.sort(key=lambda item: item[:3])
+        for _, _, _, side_a in scored:
+            if self._is_connected_8(side_a) and self._is_connected_8(
+                component_tiles - side_a
+            ):
+                return set(side_a)
+        return None
+
+    def _perturb_pangaea_seam(
+        self, component_tiles, side_a, minimum_size, maximum_size
+    ):
+        """Apply random boundary-run flips that keep both halves connected and balanced."""
+        side_of = dict(
+            (tile_index, 0 if tile_index in side_a else 1)
+            for tile_index in component_tiles
+        )
+        for _ in xrange(self.mc.pangaeaBoundaryWalkCount):
+            boundary = self._get_pangaea_boundary_tiles(side_of)
+            if not boundary:
+                break
+            trial = dict(side_of)
+            self._flip_pangaea_boundary_run(boundary, trial)
+            trial_sizes = self._get_pangaea_sizes(trial, component_tiles)
+            if (
+                min(trial_sizes) < minimum_size
+                or max(trial_sizes) > maximum_size
+                or not self._is_valid_pangaea_partition(trial, component_tiles)
+            ):
+                continue
+            side_of = trial
+        return self._get_pangaea_side_a(side_of)
+
+    def _get_pangaea_side_a(self, side_of):
+        return set(tile_index for tile_index, side in side_of.items() if side == 0)
+
+    def _get_pangaea_sizes(self, side_of, component_tiles):
+        side_a = self._get_pangaea_side_a(side_of)
+        return [
+            self._count_land_tiles(side_a),
+            self._count_land_tiles(component_tiles - side_a),
+        ]
+
+    def _get_pangaea_boundary_tiles(self, side_of):
+        return sorted(
+            tile_index
+            for tile_index, side in side_of.items()
+            if any(
+                side_of.get(neighbour, side) != side
+                for neighbour in self._get_cardinal_neighbours(tile_index)
+            )
+        )
+
+    def _flip_pangaea_boundary_run(self, boundary_tiles, side_of):
+        """Flip a random walk along same-side boundary tiles, giving a slide or kink."""
+        boundary = set(boundary_tiles)
+        current = boundary_tiles[random.randrange(len(boundary_tiles))]
+        side = side_of[current]
+        run = [current]
+        seen = set(run)
+        while len(run) < self.mc.pangaeaBoundaryRunLength:
+            options = [
+                neighbour
+                for neighbour in self._get_cardinal_neighbours(current)
+                if neighbour in boundary
+                and neighbour not in seen
+                and side_of[neighbour] == side
+            ]
+            if not options:
+                break
+            current = options[random.randrange(len(options))]
+            run.append(current)
+            seen.add(current)
+        for tile_index in run:
+            side_of[tile_index] = 1 - side
+
+    def _is_valid_pangaea_partition(self, side_of, component_tiles):
+        side_a = set(tile_index for tile_index, side in side_of.items() if side == 0)
+        return self._is_connected_8(side_a) and self._is_connected_8(
+            component_tiles - side_a
+        )
+
+    def _get_seam_length(self, side_a, component_tiles):
+        pairs = (
+            (tile_index, neighbour)
+            for tile_index in side_a
+            for neighbour in self._get_cardinal_neighbours(tile_index)
+            if neighbour in component_tiles and neighbour not in side_a
+        )
+        return self._get_seam_cost_from_pairs(pairs)
+
+    def _get_seam_cost_from_pairs(self, pairs):
+        """Return seam steps minus a turn reduction per perpendicular turn over cross-edge pairs."""
+        width = self.mc.iNumPlotsX
+        height = self.mc.iNumPlotsY
+        orientations = {}
+        segment_count = 0
+        for tile_index, neighbour in pairs:
+            ax = tile_index % width
+            ay = tile_index // width
+            dx = (neighbour % width - ax + 1) % width - 1
+            dy = (neighbour // width - ay + 1) % height - 1
+            mid_x = (2 * ax + dx) % (2 * width)
+            mid_y = (2 * ay + dy) % (2 * height)
+            if dx:
+                orientation = 0
+                ends = (
+                    (mid_x, (mid_y - 1) % (2 * height)),
+                    (mid_x, (mid_y + 1) % (2 * height)),
+                )
+            else:
+                orientation = 1
+                ends = (
+                    ((mid_x - 1) % (2 * width), mid_y),
+                    ((mid_x + 1) % (2 * width), mid_y),
+                )
+            segment_count += 1
+            for end in ends:
+                orientations.setdefault(end, []).append(orientation)
+        turns = sum(
+            1
+            for end_orientations in orientations.values()
+            if len(end_orientations) == 2 and end_orientations[0] != end_orientations[1]
+        )
+        return segment_count - self.mc.pangaeaSeamTurnReduction * turns
+
+    def _land_weight(self, tile_index):
+        return 0 if self.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN else 1
+
+    def _count_land_tiles(self, tile_set):
+        return sum(self._land_weight(tile_index) for tile_index in tile_set)
+
+    def _get_cardinal_neighbours(self, tile_index):
+        return [
+            neighbour
+            for neighbour in (self.mc.neighbours[tile_index][d] for d in xrange(1, 5))
+            if neighbour >= 0
+        ]
+
+    def _get_all_neighbours(self, tile_index):
+        return [
+            neighbour
+            for neighbour in (self.mc.neighbours[tile_index][d] for d in xrange(1, 9))
+            if neighbour >= 0
+        ]
+
+    def _is_connected_8(self, tile_set):
+        if not tile_set:
+            return False
+        start = next(iter(tile_set))
+        seen = set([start])
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for neighbour in self._get_all_neighbours(current):
+                if neighbour in tile_set and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        return len(seen) == len(tile_set)
+
+    def _plan_pangaea_rift(self, component_tiles, side_a, minimum_size):
+        """Return the shallowest (rift, shoulders) pair that separates the halves, or None."""
+        side_b = component_tiles - side_a
+        seam_a = set(
+            tile_index
+            for tile_index in side_a
+            if any(n in side_b for n in self._get_all_neighbours(tile_index))
+        )
+        seam_b = set(
+            tile_index
+            for tile_index in side_b
+            if any(n in side_a for n in self._get_all_neighbours(tile_index))
+        )
+        bands_a = self._grow_pangaea_rift(seam_a, side_a)
+        bands_b = self._grow_pangaea_rift(seam_b, side_b)
+        for depth in xrange(
+            self.mc.pangaeaRiftExtraDepth, self.mc.pangaeaRiftMaxDepth + 1
+        ):
+            rift_a = bands_a[depth]
+            rift_b = bands_b[depth]
+            rift = rift_a | rift_b
+            shoulders = self._get_pangaea_shoulders(
+                side_a, rift_a
+            ) | self._get_pangaea_shoulders(side_b, rift_b)
+            if self._is_rift_separating(
+                component_tiles, side_a, side_b, rift, shoulders, minimum_size
+            ):
+                return rift, shoulders
+        return None
+
+    def _is_rift_separating(
+        self, component_tiles, side_a, side_b, rift, shoulders, minimum_size
+    ):
+        """Check that no passable path after the rift links the halves, and both keep enough land."""
+        land_a = sum(
+            1
+            for tile_index in side_a - rift - shoulders
+            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+        )
+        land_b = sum(
+            1
+            for tile_index in side_b - rift - shoulders
+            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+        )
+        if min(land_a, land_b) < minimum_size:
+            return False
+        passable = set(
+            tile_index
+            for tile_index in component_tiles
+            if self._is_passable_after_rift(tile_index, rift, shoulders)
+        )
+        starts = (side_a - rift) & passable
+        if not starts:
+            return False
+        start = next(iter(starts))
+        seen = set([start])
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for neighbour in self._get_all_neighbours(current):
+                if neighbour in passable and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        return not (seen & ((side_b - rift) & passable))
+
+    def _is_passable_after_rift(self, tile_index, rift, shoulders):
+        """Return whether a tile would be land or coast once the rift is applied."""
+        if tile_index in shoulders:
+            elevated = True
+        elif tile_index in rift:
+            elevated = False
+        elif self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+            return True
+        else:
+            elevated = self.elevationMap[tile_index] > self.coastLevelThreshold
+        if elevated:
+            return True
+        return any(
+            self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+            and neighbour not in rift
+            and neighbour not in shoulders
+            for neighbour in self._get_all_neighbours(tile_index)
+        )
+
+    def _apply_pangaea_rift(self, rift, shoulders):
+        """Lower the rift to deep ocean and the shoulders to coast height."""
+        deep_elevation = self.coastLevelThreshold - 1e-6
+        coast_elevation = (self.coastLevelThreshold + self.seaLevelThreshold) / 2.0
+        for tiles, elevation in (
+            (rift, deep_elevation),
+            (shoulders, coast_elevation),
+        ):
+            for tile_index in tiles:
+                self.elevationMap[tile_index] = elevation
+                self.aboveSeaLevelMap[tile_index] = 0.0
+                self.elevationProminenceMap[tile_index] = 0.0
+                self.prominenceMap[tile_index] = 0.0
+                self.plotTypes[tile_index] = PlotTypes.PLOT_OCEAN
+
+    def _grow_pangaea_rift(self, seam, own_side):
+        """Return cumulative rift bands (depth 0 is the seam), jittered outward into own_side."""
+        bands = [set(seam)]
+        frontier = set(seam)
+        for _ in xrange(self.mc.pangaeaRiftMaxDepth):
+            candidates = set(
+                neighbour
+                for tile_index in frontier
+                for neighbour in self._get_cardinal_neighbours(tile_index)
+                if neighbour in own_side and neighbour not in bands[-1]
+            )
+            frontier = set(
+                tile_index
+                for tile_index in sorted(candidates)
+                if random.random() < self.mc.pangaeaRiftChance
+            )
+            bands.append(bands[-1] | frontier)
+        return bands
+
+    def _get_pangaea_shoulders(self, own_side, rift):
+        """Return the remaining tiles of a side that border its rift band."""
+        return set(
+            tile_index
+            for tile_index in own_side - rift
+            if any(n in rift for n in self._get_all_neighbours(tile_index))
+        )
 
     @profile
     def _optimize_wrap_edges(self):
