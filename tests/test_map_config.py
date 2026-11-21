@@ -20,6 +20,43 @@ def make_map_config(width=4, height=3, wrap_x=False, wrap_y=False):
 
 
 class MapConfigUtilityTests(unittest.TestCase):
+    def test_custom_map_options_apply_valid_selections_and_validate_values(self):
+        class OptionMap:
+            def __init__(self, values):
+                self.values = values
+
+            def getCustomMapOption(self, option_id):
+                return self.values[option_id]
+
+        map_config = object.__new__(MapConfig)
+        map_config.map = OptionMap([0, 2, 0])
+        map_config._initialize_custom_options()
+        map_config._initialize_starting_parameters()
+
+        self.assertEqual([0, 2, 0], map_config.custom_map_options)
+        self.assertFalse(map_config.enablePangaeaBreaker)
+        self.assertEqual(1.25, map_config.resource_quantity_multiplier)
+        self.assertEqual(0.0, map_config.starting_civilization_weight_multiplier)
+
+        map_config.map = OptionMap([True, 99, "1"])
+        map_config._initialize_custom_options()
+
+        self.assertEqual([1, 1, 1], map_config.custom_map_options)
+        self.assertTrue(map_config.enablePangaeaBreaker)
+        self.assertEqual(1.0, map_config.resource_quantity_multiplier)
+
+    def test_custom_map_options_default_when_map_api_is_unavailable(self):
+        class LegacyMap:
+            pass
+
+        map_config = object.__new__(MapConfig)
+        map_config.map = LegacyMap()
+        map_config._initialize_custom_options()
+
+        self.assertEqual([1, 1, 1], map_config.custom_map_options)
+        self.assertTrue(map_config.enablePangaeaBreaker)
+        self.assertEqual(1.0, map_config.resource_quantity_multiplier)
+
     def test_coordinate_index_round_trip(self):
         map_config = make_map_config()
 

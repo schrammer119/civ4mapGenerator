@@ -53,6 +53,19 @@ class CallbackTests(unittest.TestCase):
             PlanetSim.tm,
         ) = self.original_globals
 
+    def test_custom_map_option_callbacks_expose_schema_and_defaults(self):
+        self.assertEqual(3, PlanetSim.getNumCustomMapOptions())
+        self.assertEqual("Pangaea breaker:", PlanetSim.getCustomMapOptionName((0,)))
+        self.assertEqual(3, PlanetSim.getNumCustomMapOptionValues((1,)))
+        self.assertEqual(
+            "Civilization-aware", PlanetSim.getCustomMapOptionDescAt((2, 1))
+        )
+        self.assertEqual(1, PlanetSim.getCustomMapOptionDefault((0,)))
+        self.assertFalse(PlanetSim.isRandomCustomMapOption((0,)))
+        self.assertEqual("", PlanetSim.getCustomMapOptionName((99,)))
+        self.assertEqual(0, PlanetSim.getNumCustomMapOptionValues((99,)))
+        self.assertEqual("", PlanetSim.getCustomMapOptionDescAt((1, 99)))
+
     def test_generate_plot_types_runs_elevation_and_returns_plot_types(self):
         events = []
         expected_plot_types = [2, 3]

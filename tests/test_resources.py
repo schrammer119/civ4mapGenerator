@@ -627,6 +627,28 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(12, target)
         self.assertLessEqual(target, terrain_map.mc.iNumPlots)
 
+    def test_resource_abundance_option_scales_target_quantity(self):
+        terrain_map = self.make_terrain_map(width=5, height=5)
+        constraints = {
+            "iPlayer": 0,
+            "iTilesPer": 2,
+            "iConstAppearance": 100,
+            "iRandApp1": 0,
+            "iRandApp2": 0,
+            "iRandApp3": 0,
+            "iRandApp4": 0,
+        }
+
+        targets = []
+        with mock.patch.object(PlanetSim.random, "randint", return_value=0):
+            for multiplier in (0.75, 1.0, 1.25):
+                terrain_map.mc.resource_quantity_multiplier = multiplier
+                targets.append(
+                    terrain_map._calculate_num_bonuses_to_add(constraints, 25)
+                )
+
+        self.assertEqual([9, 12, 15], targets)
+
     def test_place_single_resource_uses_eligible_tiles_for_tiles_per_target(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
         eligible_tiles = set(range(5))

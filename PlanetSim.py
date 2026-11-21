@@ -34,6 +34,13 @@ STARTING_YIELD_TYPES = (
     YieldTypes.YIELD_COMMERCE,
 )
 
+CUSTOM_MAP_OPTIONS = (
+    ("Pangaea breaker:", ("Off", "On"), 1),
+    ("Resource abundance:", ("Sparse", "Standard", "Abundant"), 1),
+    ("Starting locations:", ("Standard", "Civilization-aware"), 1),
+)
+RESOURCE_ABUNDANCE_MULTIPLIERS = (0.75, 1.0, 1.25)
+
 # Global map instances - shared across all generation functions
 gc = None
 mapCtx = None
@@ -164,8 +171,10 @@ class MapConfig:
         self.wrapX = self.map.isWrapX()
         self.wrapY = self.map.isWrapY()
 
+        # --- Custom Map Options ---
+        self._initialize_custom_options()
+
         # --- Pangaea Breaker Settings ---
-        self.enablePangaeaBreaker = True
         self.pangaeaMinimumSharePercent = 31
         self.pangaeaRiftExtraDepth = 1
         self.pangaeaRiftMaxDepth = 3
@@ -196,6 +205,24 @@ class MapConfig:
     # -------------------------------------------------------------------------
     # Parameter Initialization
     # -------------------------------------------------------------------------
+
+    def _initialize_custom_options(self):
+        """Read and validate selected values for the script's custom options."""
+        self.custom_map_options = []
+        for option_id, option in enumerate(CUSTOM_MAP_OPTIONS):
+            default_value = option[2]
+            try:
+                value = self.map.getCustomMapOption(option_id)
+            except AttributeError:
+                value = default_value
+            if type(value) is not int or value < 0 or value >= len(option[1]):
+                value = default_value
+            self.custom_map_options.append(value)
+
+        self.enablePangaeaBreaker = bool(self.custom_map_options[0])
+        self.resource_quantity_multiplier = RESOURCE_ABUNDANCE_MULTIPLIERS[
+            self.custom_map_options[1]
+        ]
 
     def _initialize_civ_settings(self):
         """Loads settings directly from Civilization IV's climate and sea level options."""
@@ -556,7 +583,11 @@ class MapConfig:
         self.starting_min_distance = 10.0
         self.starting_island_min_area_size = 12
         self.starting_island_area_divisor = 20
-        self.starting_civilization_weight_multiplier = 10.0
+        custom_map_options = getattr(self, "custom_map_options", [1, 1, 1])
+        if custom_map_options[2]:
+            self.starting_civilization_weight_multiplier = 10.0
+        else:
+            self.starting_civilization_weight_multiplier = 0.0
         self.starting_civilization_latitude_weight = 2
         self.starting_civilization_latitude_scale = 25.0
         self.starting_civilization_biases = {
@@ -3585,7 +3616,7 @@ class ElevationMap:
     ):
         """Apply random boundary-run flips that keep both halves connected and balanced."""
         side_of = dict(
-            (tile_index, 0 if tile_index in side_a else 1)
+            (tile_index, int(tile_index not in side_a))
             for tile_index in component_tiles
         )
         for _ in xrange(self.mc.pangaeaBoundaryWalkCount):
@@ -3698,7 +3729,9 @@ class ElevationMap:
         return segment_count - self.mc.pangaeaSeamTurnReduction * turns
 
     def _land_weight(self, tile_index):
-        return 0 if self.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN else 1
+        if self.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN:
+            return 0
+        return 1
 
     def _count_land_tiles(self, tile_set):
         return sum(self._land_weight(tile_index) for tile_index in tile_set)
@@ -9766,7 +9799,8 @@ class TerrainMap:
 
         players = self.mc.iNumPlayers * xml_constraints.get("iPlayer", 0) // 100
         bonus_count = (base_count * (land_tiles + players)) // 100
-        return max(1, bonus_count)
+        abundance = getattr(self.mc, "resource_quantity_multiplier", 1.0)
+        return max(1, int(round(bonus_count * abundance)))
 
     def _should_place_resource(
         self,
@@ -10311,7 +10345,46 @@ def isSeaLevelMap():
 
 def getNumCustomMapOptions():
     """Number of custom map options"""
+    return len(CUSTOM_MAP_OPTIONS)
+
+
+def getCustomMapOptionName(argsList):
+    """Return the display name for a custom map option."""
+    option_id = argsList[0]
+    if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
+        return CUSTOM_MAP_OPTIONS[option_id][0]
+    return ""
+
+
+def getNumCustomMapOptionValues(argsList):
+    """Return the number of choices available for a custom map option."""
+    option_id = argsList[0]
+    if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
+        return len(CUSTOM_MAP_OPTIONS[option_id][1])
     return 0
+
+
+def getCustomMapOptionDescAt(argsList):
+    """Return the label for a custom map option choice."""
+    option_id, selection_id = argsList
+    if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
+        values = CUSTOM_MAP_OPTIONS[option_id][1]
+        if 0 <= selection_id < len(values):
+            return values[selection_id]
+    return ""
+
+
+def getCustomMapOptionDefault(argsList):
+    """Return the default choice for a custom map option."""
+    option_id = argsList[0]
+    if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
+        return CUSTOM_MAP_OPTIONS[option_id][2]
+    return 0
+
+
+def isRandomCustomMapOption(argsList):
+    """PlanetSim custom map options are explicit player choices."""
+    return False
 
 
 def beforeInit():

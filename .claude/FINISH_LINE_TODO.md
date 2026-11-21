@@ -31,11 +31,13 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 
 The game options API allows mods to define custom options that can influence map generation, resource placement, and civilization behavior.
 
-- [ ] Implement a system to define and register custom game options.
-- [ ] Ensure options can be accessed during map generation and resource placement.
-- [ ] Add validation for option values and types.
-- [ ] Integrate options into map generation logic.
-- [ ] Add unit tests to verify correct handling and application of game options.
+Implemented as map-script custom options for the Pangaea breaker, resource abundance, and civilization-aware starting locations.
+
+- [x] Implement a system to define and register custom game options.
+- [x] Ensure options can be accessed during map generation and resource placement.
+- [x] Add validation for option values and types.
+- [x] Integrate options into map generation logic.
+- [x] Add unit tests to verify correct handling and application of game options.
 
 ---
 

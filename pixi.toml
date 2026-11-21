@@ -35,7 +35,9 @@ generate = { cmd = "python tests/run_planetsim.py --headless", env = { MPLBACKEN
 generate-map = "python tests/run_planetsim.py --show"
 format = "black ."
 format-check = "black --check ."
-compat = "vermin -t=2.4- -t=3 --violations PlanetSim.py"
+compat = { depends-on = ["compat-vermin", "compat-syntax"] }
+compat-vermin = "vermin -t=2.4 --violations PlanetSim.py"
+compat-syntax = "pytest -q tests/test_compat.py"
 lint = "ruff check PlanetSim.py tests"
 dead-code = "vulture PlanetSim.py tests --min-confidence 80"
 preflight = { depends-on = [

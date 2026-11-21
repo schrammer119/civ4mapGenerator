@@ -300,6 +300,8 @@ class CyGlobalContext:
 
 
 class CyMap:
+    custom_map_options = (1, 1, 1)
+
     def getGridWidth(self):
         return 36 * 4
 
@@ -317,6 +319,9 @@ class CyMap:
 
     def getClimate(self):
         return 0
+
+    def getCustomMapOption(self, option_id):
+        return self.custom_map_options[option_id]
 
 
 class CvSeaLevelInfo:
