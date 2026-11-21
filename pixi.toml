@@ -25,6 +25,9 @@ numpy = ">=1.26,<3"
 matplotlib = ">=3.8,<4"
 pytest = "*"
 black = "*"
+vermin = "*"
+ruff = "*"
+vulture = "*"
 
 [tasks]
 unit = { cmd = "pytest -q tests", env = { MPLBACKEND = "Agg" } }
@@ -32,4 +35,14 @@ generate = { cmd = "python tests/run_planetsim.py --headless", env = { MPLBACKEN
 generate-map = "python tests/run_planetsim.py --show"
 format = "black ."
 format-check = "black --check ."
-preflight = { cmd = "black --check . && pytest -q tests && python tests/run_planetsim.py --headless", env = { MPLBACKEND = "Agg" } }
+compat = "vermin -t=2.4- -t=3 --violations PlanetSim.py"
+lint = "ruff check PlanetSim.py tests"
+dead-code = "vulture PlanetSim.py tests --min-confidence 80"
+preflight = { depends-on = [
+	"format-check",
+	"compat",
+	"lint",
+	"dead-code",
+	"unit",
+	"generate",
+] }

@@ -5,9 +5,9 @@
 
 from collections import deque
 from CvPythonExtensions import *
-import CvUtil
 import math
 import random
+import sys
 import time
 
 """
@@ -20,8 +20,6 @@ natural-looking worlds with:
 - Natural river systems and mountain ranges
 - Balanced gameplay while maintaining realism
 """
-
-import sys
 
 if sys.version_info[0] >= 3:
     # Python 3: xrange doesn't exist, so we alias it to range
@@ -114,6 +112,13 @@ def copysign(x, y):
         return abs(x)
     else:
         return -abs(x)
+
+
+def _any(iterable):
+    for value in iterable:
+        if value:
+            return True
+    return False
 
 
 # local map script classes
@@ -748,7 +753,6 @@ class MapConfig:
 
         for i in xrange(self.gc.getNumBonusInfos()):
             bonus_info = self.gc.getBonusInfo(i)
-            bonus_type = bonus_info.getType()
 
             constraints[i] = {
                 "type_string": bonus_info.getBonusClassType(),
@@ -1882,7 +1886,6 @@ class ElevationMap:
 
     def _detect_subduction_zones(self):
         """Detect potential subduction zones by analyzing plate boundaries"""
-        subduction_zones = []
         boundary_segments = {}
 
         # Scan all plots to find plate boundaries
@@ -2600,8 +2603,6 @@ class ElevationMap:
         crush_density_diffs = []
 
         for plot_index in xrange(self.mc.iNumPlots):
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
             current_plate = self.plateID[plot_index]
 
             if current_plate >= self.mc.plateCount:
@@ -3421,7 +3422,7 @@ class ElevationMap:
             return True
         if self.elevationMap[tile_index] > self.coastLevelThreshold:
             return True
-        return any(
+        return _any(
             self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
             for neighbour in self._get_all_neighbours(tile_index)
         )
@@ -3460,7 +3461,12 @@ class ElevationMap:
             return False
         print("Pangaea breaker: breaking up the largest continent.")
 
-        largest_id = max(self.coastContinentSizes, key=self.coastContinentSizes.get)
+        largest_id = None
+        largest_size = None
+        for continent_id, continent_size in self.coastContinentSizes.items():
+            if largest_size is None or continent_size > largest_size:
+                largest_id = continent_id
+                largest_size = continent_size
         largest_size = self.coastContinentSizes[largest_id]
         largest_tiles = set(
             tile_index
@@ -3612,7 +3618,7 @@ class ElevationMap:
         return sorted(
             tile_index
             for tile_index, side in side_of.items()
-            if any(
+            if _any(
                 side_of.get(neighbour, side) != side
                 for neighbour in self._get_cardinal_neighbours(tile_index)
             )
@@ -3714,7 +3720,8 @@ class ElevationMap:
     def _is_connected_8(self, tile_set):
         if not tile_set:
             return False
-        start = next(iter(tile_set))
+        for start in tile_set:
+            break
         seen = set([start])
         stack = [start]
         while stack:
@@ -3731,12 +3738,12 @@ class ElevationMap:
         seam_a = set(
             tile_index
             for tile_index in side_a
-            if any(n in side_b for n in self._get_all_neighbours(tile_index))
+            if _any(n in side_b for n in self._get_all_neighbours(tile_index))
         )
         seam_b = set(
             tile_index
             for tile_index in side_b
-            if any(n in side_a for n in self._get_all_neighbours(tile_index))
+            if _any(n in side_a for n in self._get_all_neighbours(tile_index))
         )
         bands_a = self._grow_pangaea_rift(seam_a, side_a)
         bands_b = self._grow_pangaea_rift(seam_b, side_b)
@@ -3779,7 +3786,8 @@ class ElevationMap:
         starts = (side_a - rift) & passable
         if not starts:
             return False
-        start = next(iter(starts))
+        for start in starts:
+            break
         seen = set([start])
         stack = [start]
         while stack:
@@ -3802,7 +3810,7 @@ class ElevationMap:
             elevated = self.elevationMap[tile_index] > self.coastLevelThreshold
         if elevated:
             return True
-        return any(
+        return _any(
             self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
             and neighbour not in rift
             and neighbour not in shoulders
@@ -3848,7 +3856,7 @@ class ElevationMap:
         return set(
             tile_index
             for tile_index in own_side - rift
-            if any(n in rift for n in self._get_all_neighbours(tile_index))
+            if _any(n in rift for n in self._get_all_neighbours(tile_index))
         )
 
     @profile
@@ -9684,7 +9692,6 @@ class TerrainMap:
             return False  # Missing resource definition
 
         xml_constraints = resource_def["xml_constraints"]
-        placement_rules = resource_def.get("placement_rules", [])
         placement_defs = resource_def.get("placement_defs", [])
 
         plot_type = self.em.plotTypes[tile_index]
@@ -9694,16 +9701,16 @@ class TerrainMap:
         feature_booleans = xml_constraints.get("FeatureBooleans", [])
         feature_terrain_booleans = xml_constraints.get("FeatureTerrainBooleans", [])
 
-        if not "bPeak" in placement_defs and plot_type == PlotTypes.PLOT_PEAK:
+        if "bPeak" not in placement_defs and plot_type == PlotTypes.PLOT_PEAK:
             return False
 
         if feature_id != -1:
-            if not feature_id in feature_booleans:
+            if feature_id not in feature_booleans:
                 return False
-            if not terrain_id in feature_terrain_booleans:
+            if terrain_id not in feature_terrain_booleans:
                 return False
         else:
-            if not terrain_id in terrain_booleans:
+            if terrain_id not in terrain_booleans:
                 return False
 
         if plot_type == PlotTypes.PLOT_HILLS and not xml_constraints.get(

@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from PlanetSim import FeatureTypes, PlotTypes, TerrainMap
+from PlanetSim import PlotTypes, TerrainMap
 
 
 class FeaturePlacementTests(unittest.TestCase):

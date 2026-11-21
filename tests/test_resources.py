@@ -429,9 +429,9 @@ class ResourceTests(unittest.TestCase):
             },
         }
         terrain_map._can_have_bonus = (
-            lambda tile_index, definition: tile_index in candidate_tiles
+            lambda tile_index, _definition: tile_index in candidate_tiles
         )
-        terrain_map._calculate_placement_score = lambda tile_index, definition: (
+        terrain_map._calculate_placement_score = lambda tile_index, _definition: (
             1.0 if tile_index == 12 else 0.0
         )
         terrain_map._calculate_num_bonuses_to_add = lambda constraints, count: 5

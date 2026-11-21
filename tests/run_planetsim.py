@@ -133,7 +133,7 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
         def getTeam(self):
             return self.player_id
 
-        def setStartingPlot(self, plot, update_starting_plot):
+        def setStartingPlot(self, plot, _update_starting_plot):
             self.starting_plot = plot
             assignment_order.append(self.player_id)
 

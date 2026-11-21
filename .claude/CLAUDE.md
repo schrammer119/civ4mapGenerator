@@ -12,7 +12,7 @@ Current status: the mock pipeline and focused pytest suite complete successfully
 
 ## Code style
 
-- Development and tests use Pixi's default environment with the latest available Python, NumPy, Matplotlib, pytest, and Black. The Pixi `runtime` environment provides Python 2.7 for legacy compatibility checks.
+- Development and tests use Pixi's default environment with the latest available Python, NumPy, Matplotlib, pytest, Black, Vermin, Ruff, and Vulture. The shipped `PlanetSim.py` targets Python 2.4; Pixi's `runtime` environment provides Python 2.7, the oldest available here.
 - Preserve Civ IV API compatibility in the shipped script; verify any in-game interpreter assumptions separately.
 - Use descriptive snake_case names for functions and variables, PascalCase for classes, and constants for configuration values.
 - Keep edits ASCII-only, focused, and compatible with existing public APIs.
@@ -43,7 +43,15 @@ pixi run unit
 pixi run generate
 pixi run generate-map
 pixi run format
+pixi run compat
+pixi run lint
+pixi run dead-code
 pixi run preflight
 ```
+
+Vermin targets Python 2.4 and Python 3 for `PlanetSim.py`. Ruff uses a
+conservative rule set without Python-modernization rules. Review Vulture
+findings for Civ IV callbacks, which are invoked by the game rather than by
+Python code in this repository.
 
 The smoke harness is diagnostic, not a unit test. Its headless checks cover non-empty dimensions, complete plot-type coverage, both land and ocean, and complete terrain/feature/resource arrays. Inspect its exit status, plot distribution, warnings, and resource total; a passing run does not establish resource balance.

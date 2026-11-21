@@ -110,7 +110,7 @@ class FakePlayer(object):
     def getTeam(self):
         return self.player_id
 
-    def setStartingPlot(self, plot, update_starting_plot):
+    def setStartingPlot(self, plot, _update_starting_plot):
         self.assigned_plots.append(plot)
 
 

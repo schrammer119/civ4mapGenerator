@@ -96,7 +96,7 @@ mapGenerator/
 
 ### Testing
 
-Install the Pixi default environment (latest available Python, NumPy, Matplotlib, pytest, and Black):
+Install the Pixi default environment (latest available Python, NumPy, Matplotlib, pytest, Black, and static-analysis tools):
 
 ```
 pixi install
@@ -108,9 +108,12 @@ Install the legacy game-runtime environment (Python 2.7):
 pixi install -e runtime
 ```
 
-The runtime environment is for Python 2.7 compatibility checks; Civilization IV
-provides its own interpreter and engine API in game. VS Code uses the Pixi test
-environment (`.pixi/envs/default`) and discovers tests with pytest.
+The runtime environment provides Python 2.7, the oldest interpreter available
+through Pixi here. The shipped `PlanetSim.py` targets Python 2.4 compatibility;
+Vermin checks its minimum-version requirements from the Python 3 development
+environment. Civilization IV provides its own interpreter and engine API in
+game. VS Code uses the Pixi test environment (`.pixi/envs/default`) and
+discovers tests with pytest.
 
 Run the unit tests:
 
@@ -137,7 +140,21 @@ pixi run format
 pixi run format-check
 ```
 
-Run the full preflight in order (format check, unit tests, then headless generation):
+Run the static-analysis checks:
+
+```
+pixi run compat
+pixi run lint
+pixi run dead-code
+```
+
+The compatibility check targets Python 2.4 and Python 3 for `PlanetSim.py`.
+Ruff checks general lint rules without modernization rules that could recommend
+newer syntax. Vulture reports potentially unused code; review its findings
+carefully because Civilization IV calls map-script callbacks externally.
+
+Run the full preflight (format check, compatibility, lint, dead-code, unit-test,
+and headless-generation tasks in order):
 
 ```
 pixi run preflight
@@ -158,8 +175,8 @@ The headless generation task checks that dimensions are positive, plot types cov
 
 - Civilization IV: Beyond the Sword for the shipped `PlanetSim.py` map script
 - Pixi for reproducible runtime and development environments
-- Python 2.7 for the Civilization IV runtime compatibility environment
-- The test environment resolves the latest available Python and includes NumPy, Matplotlib, pytest, and Black
+- Python 2.7 in the Pixi runtime environment; `PlanetSim.py` targets Python 2.4
+- The test environment resolves the latest available Python and includes NumPy, Matplotlib, pytest, Black, Vermin, Ruff, and Vulture
 
 ## Usage
 
