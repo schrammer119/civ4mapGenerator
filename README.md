@@ -13,29 +13,11 @@ PlanetSim generates realistic world maps by simulating geological and climatic p
 - **Balanced Resources**: Distributed according to XML constraints and terrain types
 - **Gameplay Balance**: Maintains challenge and fairness while preserving realism
 
-## Current Status
-
-The generation pipeline runs in the development harness and the focused pytest suite passes. Resource balance and gameplay quality still need broader verification before Phase 3 can be called complete.
-
-- Resource placement wiring is verified end-to-end: `TerrainMap.GenerateTerrain()` calls `_place_resources()`, and the generated `resource_map` is consumed by the bonus application path.
-- Exclusion tracking, ordering, XML constraint handling, and land-percent filtering are covered by the focused tests.
-- Feature adjacency and river cleanup use the canonical map state instead of stale legacy lookups.
-- The `addBonuses()` path applies the generated bonus map directly to plot instances.
-- `run_planetsim.py` now prints a resource distribution table and includes resource letter-code overlays for the map when run with `--show`.
-
-### Verification
-
-Latest recorded verification:
-
-- `pixi run unit` -> 30 passed, 13 subtests passed
-- `pixi run generate` -> mock map completed at 144x96 with 15 plates; one run placed 383 resources with 0 detected placement violations
-- A single smoke run is diagnostic evidence, not proof of overall resource balance.
-
 ## Installation
 
 1. Copy `PlanetSim.py` to your Civilization IV map scripts directory:
    - Windows: `Documents/My Games/Beyond the Sword/PublicMaps/`
-   - Or your Civilization IV installation's `Assets/Python/EntryPoints/` folder
+   - Or your mod's `Assets/Python/EntryPoints/` folder if you are using a modded setup
 
 2. Launch Civilization IV and select "PlanetSim" from the map script dropdown when creating a new game
 
@@ -75,117 +57,75 @@ Latest recorded verification:
 
 ## Development
 
-### Project Structure
+### Requirements
 
-```
-mapGenerator/
-├── pixi.toml                   # Runtime/default environments and development tasks
-├── pixi.lock                   # Locked multi-platform environments
-├── PlanetSim.py                # Main consolidated map script
-├── CvPythonExtensions.py       # Mock Civ IV API for development and tests
-├── CvUtil.py                   # Mock Civ IV utilities
-├── tests/
-│   ├── run_planetsim.py        # End-to-end generation and visualization harness
-│   ├── test_resources.py       # Focused resource regression tests
-│   ├── diagnose_edge_lift.py   # Elevation diagnostics
-│   └── diagnose_rainfall_h2.py # Rainfall distribution diagnostics
-├── .claude/                    # Project guidance and delivery checklist
-├── .vscode/                    # Pixi environment and pytest settings
-└── README.md                   # This file
+- Pixi
+
+### Setup
+
+Install the default development environment:
+
+```bash
+pixi install --frozen --all
 ```
 
-### Testing
+Pixi manages the Python environments, dependencies, and project tasks. The optional `runtime` environment provides Python 2.7 for legacy compatibility checks.
 
-Install the Pixi default environment (latest available Python, NumPy, Matplotlib, pytest, Black, and static-analysis tools):
+### Tasks
 
-```
-pixi install
-```
+Run project tasks through Pixi:
 
-Install the legacy game-runtime environment (Python 2.7):
-
-```
-pixi install -e runtime
-```
-
-The runtime environment provides Python 2.7, the oldest interpreter available
-through Pixi here. The shipped `PlanetSim.py` targets Python 2.4 compatibility;
-Vermin checks its minimum-version requirements from the Python 3 development
-environment. Civilization IV provides its own interpreter and engine API in
-game. VS Code uses the Pixi test environment (`.pixi/envs/default`) and
-discovers tests with pytest.
-
-Run the unit tests:
-
-```
+```bash
 pixi run unit
-```
-
-Run the end-to-end generation harness without opening plots:
-
-```
 pixi run generate
-```
-
-Open the generation plots interactively:
-
-```
 pixi run generate-map
-```
-
-Format or check Python files with Black:
-
-```
 pixi run format
 pixi run format-check
-```
-
-Run the static-analysis checks:
-
-```
 pixi run compat
 pixi run lint
 pixi run dead-code
-```
-
-The compatibility check targets Python 2.4 and Python 3 for `PlanetSim.py`.
-Ruff checks general lint rules without modernization rules that could recommend
-newer syntax. Vulture reports potentially unused code; review its findings
-carefully because Civilization IV calls map-script callbacks externally.
-
-Run the full preflight (format check, compatibility, lint, dead-code, unit-test,
-and headless-generation tasks in order):
-
-```
 pixi run preflight
 ```
 
-This generates matplotlib visualizations of:
+`preflight` runs the format check, compatibility check, lint, dead-code analysis, unit tests, and headless generation. The generation harness is diagnostic; a passing run does not establish resource balance or gameplay quality.
 
-- Elevation components (base, velocity, buoyancy, boundaries)
-- Climate maps (temperature, rainfall, wind patterns)
-- River system and watersheds
-- Biome distribution with statistical analysis
-- Feature placement
-- Resource placement with letter-code overlays on the final map and console resource statistics
+### Branch names
 
-The headless generation task checks that dimensions are positive, plot types cover the map, both land and ocean exist, and terrain, features, and resources have one entry per tile. Resource count is reported but is not a pass/fail condition. Add `--show` for interactive plots. The current harness does not assign civilization starting locations or implement old-world/new-world classification; those remain open work in [FINISH_LINE_TODO.md](.claude/FINISH_LINE_TODO.md).
+Branch names should follow the convention:
 
-### Requirements
+```
+<type>/<short-description>
+```
 
-- Civilization IV: Beyond the Sword for the shipped `PlanetSim.py` map script
-- Pixi for reproducible runtime and development environments
-- Python 2.7 in the Pixi runtime environment; `PlanetSim.py` targets Python 2.4
-- The test environment resolves the latest available Python and includes NumPy, Matplotlib, pytest, Black, Vermin, Ruff, and Vulture
+Where `<type>` can be one of:
+- `feat` for additions to the map generator
+- `fix` for bug fixes
+- `tool` for development tooling or documentation changes
 
-## Usage
+And `<short-description>` is a brief, hyphen-separated description of the branch's purpose.
 
-1. Start a new game in Civilization IV
-2. Select "Custom Game" from the main menu
-3. Choose "PlanetSim" from the map script dropdown
-4. Configure world size, climate, and sea level as desired
-5. Start the game to generate your unique world
+### Commit messages
 
-## License
+Commit messages should follow the conventional commits format:
 
-This project is developed for educational and entertainment purposes. Civilization IV is a trademark of Firaxis Games.
+```
+<type>: <short-title>
+
+**Reasoning:**
+
+<explanation of why this change is necessary or beneficial>
+
+**Additions and Changes:**
+
+- <list of additions and changes made in this commit>
+
+**Tests and Regression Protection:**
+
+<tests or checks added to ensure future changes will not break this change>
+
+**Verification:**
+
+<tests, checks, or steps taken to verify this change>
+```
+
+Where `<type>` is one of the branch types (`feat`, `fix`, `tool`), and `<short-title>` is a brief summary of the change.
