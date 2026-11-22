@@ -8421,9 +8421,8 @@ class TerrainMap:
         """Reproduce CvPlot::updateRiverCrossing for one tile and direction."""
 
         def is_water(index):
-            return index == -1 or self.em.plotTypes[index] == PlotTypes.PLOT_OCEAN
+            return index != -1 and self.em.plotTypes[index] == PlotTypes.PLOT_OCEAN
 
-        # TODO: this is broken, but layout seems close. Review and correct to cpp implementation
         neighbour = self.mc.neighbours[tile_index][direction]
         if is_water(neighbour) or is_water(tile_index):
             return False
