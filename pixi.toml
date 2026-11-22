@@ -2,6 +2,7 @@
 name = "planetsim-map-generator"
 version = "0.1.0"
 description = "Development and validation environments for the PlanetSim Civilization IV map script"
+requires-pixi = ">=0.46.0"
 channels = ["conda-forge"]
 platforms = ["win-64"]
 
@@ -20,14 +21,14 @@ python = { version = "2.7.*", channel = "conda-forge" }
 vc = { version = "9.*", channel = "https://repo.anaconda.com/pkgs/main" }
 
 [feature.dev.dependencies]
-python = "*"
-numpy = ">=1.26,<3"
-matplotlib = ">=3.8,<4"
-pytest = "*"
-black = "*"
-vermin = "*"
-ruff = "*"
-vulture = "*"
+python = ">=3.15,<4"
+numpy = ">=2.5,<3"
+matplotlib = ">=3.11,<4"
+pytest = ">=9.2,<10"
+black = ">=26.1,<27"
+vermin = ">=1.9,<2"
+ruff = ">=0.17,<1"
+vulture = ">=2.16,<3"
 
 [tasks]
 unit = { cmd = "pytest -q tests", env = { MPLBACKEND = "Agg" } }
