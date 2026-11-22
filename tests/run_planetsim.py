@@ -531,8 +531,7 @@ if ARGS.show:
 
     plt.tight_layout()
 
-    # Create landform background data
-    landform_map = np.array(em.plotTypes).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    # Create elevation background data
     elevation_background = np.array(em.elevationMap).reshape(
         mc.iNumPlotsY, mc.iNumPlotsX
     )
@@ -791,7 +790,7 @@ if ARGS.show:
         0, 1, grid_resolution
     )  # Keep 0-1 for biome range comparisons
     rain_grid = np.linspace(0, 1, grid_resolution)
-    Rain_grid, Temp_grid = np.meshgrid(rain_grid, temp_grid)
+    Rain_grid, _ = np.meshgrid(rain_grid, temp_grid)
 
     # Create biome classification grid using TerrainMap's actual logic
     biome_color_grid = np.zeros_like(Rain_grid, dtype=int)
@@ -883,7 +882,7 @@ if ARGS.show:
     background_cmap = mcolors.ListedColormap(colors_list)
 
     # Plot biome regions as background
-    background = ax.imshow(
+    ax.imshow(
         biome_color_grid,
         extent=[0, 100, 0, 100],
         origin="lower",
@@ -978,7 +977,7 @@ if ARGS.show:
     ]
 
     ax.add_artist(legend)  # Keep the main legend
-    target_legend = ax.legend(
+    ax.legend(
         handles=target_legend_elements,
         loc="lower right",
         fontsize=9,

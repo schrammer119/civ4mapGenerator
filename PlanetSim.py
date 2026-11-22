@@ -138,7 +138,6 @@ class MapConfig:
 
     # --- Static Game Constants ---
     # Direction constants (shared across all map classes)
-    L = 0
     N = 1
     S = 2
     E = 3
@@ -147,8 +146,6 @@ class MapConfig:
     NW = 6
     SE = 7
     SW = 8
-    NR = 0  # No river
-    O = 9  # Ocean
 
     def __init__(self, gc=None, mapCtx=None):
         """Initializes map dimensions, game settings, and all tunable parameters."""
@@ -259,7 +256,6 @@ class MapConfig:
         self.hotspotCount = 15  # Number of volcanic hotspots. Creates island chains and volcanic features.
 
         # --- Continent Growth ---
-        self.continentGrowthSeeds = 1  # Number of growth seeds per continent. Higher values create more irregular shapes.
         self.growthFactorMin = (
             0.3  # Minimum probability for a tile to join a continent.
         )
@@ -358,7 +354,6 @@ class MapConfig:
         self.tempLapse = (
             0.0065  # Temperature decrease in Celsius per metre of elevation.
         )
-        self.thermalInertiaFactor = 0.3  # How much temperature is smoothed between land and sea. Higher values mean more smoothing.
 
         # --- Solar Radiation ---
         self.minSolarFactor = (
@@ -438,7 +433,6 @@ class MapConfig:
         self.qgSolverFriction = 7e-12  # jacobi solver damping
 
         # Pressure gradient wind parameters
-        self.rhoAir = 1.225  # kg/m3
         self.atmoPres = 101300  # Pa
         self.gravity = 9.81  # m/s2
         self.gasConstant = 287  # J/(kg K)
@@ -520,13 +514,6 @@ class MapConfig:
             0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
         )
         self.RiverLengthCategoryWeight = 0.4
-        self.RiverCustomThresholdRange = [
-            0.3,
-            0.4,
-            0.5,
-            0.6,
-            0.7,
-        ]  # Test ratios for optimal threshold finding
         self.RiverDesiredLengthToSplit = 8.0
         self.glacialPeakCountScore = 10
         self.riverOceanBonus = 25
@@ -1354,23 +1341,11 @@ class MapConfig:
             self.bonus_id_to_string[bonus_id] = data["type_string"]
 
     # Utility functions for XML integration
-    def get_terrain_id(self, terrain_string):
-        """Convert terrain string to game ID, with error handling"""
-        if terrain_string is None:
-            return -1
-        return self.gc.getInfoTypeForString(terrain_string)
-
     def get_feature_id(self, feature_string):
         """Convert feature string to game ID, with error handling"""
         if feature_string is None:
             return -1
         return self.gc.getInfoTypeForString(feature_string)
-
-    def get_bonus_id(self, bonus_string):
-        """Convert bonus string to game ID, with error handling"""
-        if bonus_string is None:
-            return -1
-        return self.gc.getInfoTypeForString(bonus_string)
 
     def get_terrain_string_from_id(self, terrain_id):
         """Convert terrain ID back to string for comparison"""
@@ -1673,15 +1648,6 @@ class ElevationMap:
 
         return min_distance
 
-    def _calculate_min_seed_distance(self, continent, x, y):
-        """Calculate minimum distance to any seed of the continent"""
-        min_distance = 1e999
-        for seed in continent["seeds"]:
-            dx, dy = self.mc.get_wrapped_distance(x, y, seed["x"], seed["y"])
-            distance = math.sqrt(dx * dx + dy * dy)
-            min_distance = min(min_distance, distance)
-        return min_distance
-
     def _calculate_direction_factor(self, continent, x, y, min_seed_distance):
         """Calculate directional growth factor based on preferred growth angle"""
         if min_seed_distance <= 0:
@@ -1725,18 +1691,6 @@ class ElevationMap:
         continent["x_centroid"], continent["y_centroid"] = (
             self._calculate_wrap_aware_centroid(continent_coordinates)
         )
-
-    def _has_available_neighbours(self, plot_index):
-        """Check if a plot has any unclaimed neighbours - optimized version"""
-        neighbours = self.mc.neighbours[plot_index]
-        for dir_idx in xrange(1, 9):  # xrange for Python 2.4
-            neighbour_index = neighbours[dir_idx]
-            if (
-                neighbour_index >= 0
-                and self.plateID[neighbour_index] > self.mc.plateCount
-            ):
-                return True
-        return False
 
     @profile
     def _smooth_continent_edges(self):
@@ -2409,14 +2363,6 @@ class ElevationMap:
 
         if len(tiles) < 2:
             return elevations
-
-        # Helper function to get row/column from tile index
-        # Assuming standard grid layout where tiles are numbered row by row
-        def get_row_col(tile_idx):
-            # This assumes you have grid width available - adapt as needed
-            col = tile_idx % self.mc.iNumPlotsX  # Replace with your actual grid width
-            row = tile_idx // self.mc.iNumPlotsX
-            return row, col
 
         # Pass 1: Horizontal accumulation (U velocity effects)
         min_x = self.mc.iNumPlots
@@ -4315,11 +4261,7 @@ class ClimateMap:
         self.atmospheric_pressure = [0.0] * self.mc.iNumPlots
 
         # Rainfall maps
-        self.moisture_amount = [0.0] * self.mc.iNumPlots
         self.RainfallMap = [0.0] * self.mc.iNumPlots
-        self.ConvectionRainfallMap = [0.0] * self.mc.iNumPlots
-        self.OrographicRainfallMap = [0.0] * self.mc.iNumPlots
-        self.WeatherFrontRainfallMap = [0.0] * self.mc.iNumPlots
         self.rainfallConvectiveBaseTemp = 0.0
         self.rainfallConvectiveMaxTemp = 0.0
 
@@ -7533,8 +7475,7 @@ class TerrainMap:
         self.mc.feature_map = self.feature_map
         self.mc.resource_map = self.resource_map
 
-        # Feature clustering tracking
-        self.feature_patches = {}  # Track feature patches for clustering
+        # Feature tracking
         self.placed_features = {}  # Track placed features by type
         self.placed_resources = {}  # Track placed resources by type
         self.resource_exclusion_zones = {}  # Track exclusion zones for iUnique
@@ -8894,7 +8835,6 @@ class TerrainMap:
     def _place_primary_features(self):
         """Place primary biome features according to coverage and placement rules"""
         # Initialize feature tracking
-        self.feature_patches = {}
         self.placed_features = {}
 
         # Extract lake tiles from ClimateMap for special ice generation rules
@@ -9911,17 +9851,6 @@ class TerrainMap:
             )
         return terrain_id
 
-    def _get_feature_id(self, feature_string):
-        """Convert feature string to game ID, with error handling"""
-        if feature_string is None:
-            return -1
-        feature_id = self.gc.getInfoTypeForString(feature_string)
-        if feature_id == -1:
-            self._log_warning(
-                "Feature type '" + str(feature_string) + "' not found in game XML"
-            )
-        return feature_id
-
     def _get_bonus_id(self, bonus_string):
         """Convert bonus string to game ID, with error handling"""
         if bonus_string is None:
@@ -10057,18 +9986,6 @@ class TerrainMap:
                     if elevation < elevation_range[0] or elevation > elevation_range[1]:
                         return 0.0
         return weight
-
-    def _get_terrain_string_from_id(self, terrain_id):
-        """Convert terrain ID back to string for comparison"""
-        if terrain_id == -1:
-            return None
-        return self.mc.get_terrain_string_from_id(terrain_id)
-
-    def _get_feature_string_from_id(self, feature_id):
-        """Convert feature ID back to string for comparison"""
-        if feature_id == -1:
-            return None
-        return self.mc.get_feature_string_from_id(feature_id)
 
     # Helper methods for data processing
     def _get_plot_flat_map(self):
