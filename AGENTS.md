@@ -2,8 +2,6 @@
 
 PlanetSim is a Civilization IV map script that uses plate and climate models to generate plausible random worlds. `PlanetSim.py` is the shipped script. The repository-root `CvPythonExtensions.py` and `CvUtil.py` are development mocks.
 
-Current status: the mock pipeline and focused pytest suite complete successfully. Resource balance and gameplay quality remain unverified; do not describe Phase 3 as complete based on a single smoke run.
-
 ## References
 
 Read [README.md](README.md) first. It defines setup, tasks, branch names, and commit message format.

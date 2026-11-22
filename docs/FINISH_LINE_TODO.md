@@ -85,6 +85,7 @@ Core consolidation is complete, but resource verification, start-location logic,
 
 ## Other Feature TODOs
 
+- [ ] do we have and/or need a channel-adding code? I.e. something that looks at large lakes/inland seas that can be connected to the main ocean via a 1 tile land change?
 - [ ] Adjust biome distribution to match the "inflated important areas" concept. I.e. Europe gets more land in typical maps, while deserts and polar caps recieve less, relative to true Earth. We need to adjust the biome distribution accordingly. We can take the land area % from RFC map.
 - [ ] Add proper earth-like custom settings for all bonuses, along with xml overrides for vanilla xml values that are _not_ earth-like
 - [ ] Climate Settings are currently not properly used in the simulation. We need to take in these game-provided settings and adjust the climate generator accordingly. Use the game core as an example of how they are used, but tune the usage for our specific climate model. Remove the climate attribute entries and `get_y_for_latitude` from `tests/vulture_whitelist.py` when finished.
@@ -108,7 +109,6 @@ Core consolidation is complete, but resource verification, start-location logic,
 Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
 
 - [ ] Implement a determination of which landmasses are "old" and which is "new".
-- [x] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
 - [ ] Implement a placement rule for resources and civilizations based on landmass assignment. Remove the `continent_assignments` entry from `tests/vulture_whitelist.py` when finished.
 - [ ] Add unit tests to verify classifications and placements.
 
