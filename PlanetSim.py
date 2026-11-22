@@ -779,7 +779,11 @@ class MapConfig:
             bonus_info = self.gc.getBonusInfo(i)
 
             constraints[i] = {
-                "type_string": bonus_info.getBonusClassType(),
+                "type_string": bonus_info.getType(),
+                "bonus_class": bonus_info.getBonusClassType(),
+                "iClassUnique": self.gc.getBonusClassInfo(
+                    bonus_info.getBonusClassType()
+                ).getUniqueRange(),
                 "iPlacementOrder": bonus_info.getPlacementOrder(),
                 "iConstAppearance": bonus_info.getConstAppearance(),
                 "iMinAreaSize": bonus_info.getMinAreaSize(),
@@ -7478,6 +7482,7 @@ class TerrainMap:
         # Feature tracking
         self.placed_features = {}  # Track placed features by type
         self.placed_resources = {}  # Track placed resources by type
+        self.placed_by_class = {}  # Track placed bonus tiles by bonus class
         self.resource_exclusion_zones = {}  # Track exclusion zones for iUnique
         self.continent_assignments = {}  # Track which continents get bArea resources
 
@@ -9475,6 +9480,9 @@ class TerrainMap:
         counts["placed"] += 1
         if self.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
             counts["land"] += 1
+        self.placed_by_class.setdefault(xml_constraints.get("bonus_class"), []).append(
+            tile_index
+        )
         self._update_exclusion_zones(tile_index, xml_constraints)
 
     def _place_scored_tiles(
@@ -9778,7 +9786,6 @@ class TerrainMap:
             if land_count * 100 // (total_count + 1) < min_land_percent:
                 return False
 
-        # TODO: implement class-level iUnique (CvBonusClassInfo). Vanilla canPlaceBonusAt blocks any bonus of the class within plotDistance on the same area; this only checks the same type.
         # Check unique radius (exclusion zones)
         unique_radius = xml_constraints.get("iUnique", 0)
         if unique_radius > 0:
@@ -9787,7 +9794,22 @@ class TerrainMap:
             ):
                 return False
 
+        class_radius = xml_constraints.get("iClassUnique", 0)
+        if class_radius > 0 and self._has_bonus_class_in_radius(
+            tile_index, xml_constraints.get("bonus_class"), class_radius
+        ):
+            return False
+
         return True
+
+    def _plot_distance_between(self, tile_a, tile_b):
+        """Civ plot distance between two tiles, honoring map wrapping."""
+        ax, ay = self.mc.get_coords_from_index(tile_a)
+        bx, by = self.mc.get_coords_from_index(tile_b)
+        dx, dy = self.mc.get_wrapped_distance(ax, ay, bx, by)
+        dx = abs(dx)
+        dy = abs(dy)
+        return max(dx, dy) + min(dx, dy) // 2
 
     def _has_resource_in_radius(self, tile_index, resource_type, radius):
         """Check same-type resources in the same area using Civ plot distance."""
@@ -9795,20 +9817,24 @@ class TerrainMap:
         if bonus_id == -1:
             return False
 
-        tile_x, tile_y = self.mc.get_coords_from_index(tile_index)
         area_id = self.bonusAreaID[tile_index]
         for placed_tile in self.placed_resources.get(resource_type, []):
             if self.resource_map[placed_tile] != bonus_id:
                 continue
             if self.bonusAreaID[placed_tile] != area_id:
                 continue
+            if self._plot_distance_between(tile_index, placed_tile) <= radius:
+                return True
 
-            placed_x, placed_y = self.mc.get_coords_from_index(placed_tile)
-            dx, dy = self.mc.get_wrapped_distance(tile_x, tile_y, placed_x, placed_y)
-            dx = abs(dx)
-            dy = abs(dy)
-            plot_distance = max(dx, dy) + min(dx, dy) // 2
-            if plot_distance <= radius:
+        return False
+
+    def _has_bonus_class_in_radius(self, tile_index, bonus_class, radius):
+        """Check placed bonuses of any type in the same class and area."""
+        area_id = self.bonusAreaID[tile_index]
+        for placed_tile in self.placed_by_class.get(bonus_class, []):
+            if self.bonusAreaID[placed_tile] != area_id:
+                continue
+            if self._plot_distance_between(tile_index, placed_tile) <= radius:
                 return True
 
         return False

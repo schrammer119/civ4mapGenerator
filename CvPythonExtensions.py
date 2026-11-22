@@ -226,6 +226,19 @@ def _build_type_maps():
     return terrain_types, feature_types, bonus_types
 
 
+def _bonus_class_entries():
+    """Return (type names, unique ranges) for BonusClassInfos in XML order."""
+    entries = _load_xml_entries("CIV4BonusClassInfos.xml", "BonusClassInfo")
+    types = [_child_text(element, "Type") for element in entries]
+    uniques = [int(_child_text(element, "iUnique") or 0) for element in entries]
+    return types, uniques
+
+
+def _bonus_class_index(class_name):
+    class_types, _ = _bonus_class_entries()
+    return class_types.index(class_name) if class_name in class_types else -1
+
+
 ############################################ Classes ###############################################
 
 
@@ -297,6 +310,22 @@ class CyGlobalContext:
         if 0 <= bonus_id < len(self.bonus_types):
             return CyBonusInfo(self.bonus_types[bonus_id], bonus_id)
         return CyBonusInfo("UNKNOWN_BONUS", -1)
+
+    def getBonusClassInfo(self, class_id):
+        return CyBonusClassInfo(class_id)
+
+
+class CyBonusClassInfo:
+    """Mock BonusClassInfo - Data from CIV4BonusClassInfos.xml"""
+
+    def __init__(self, class_id):
+        self.class_id = class_id
+
+    def getUniqueRange(self):
+        _, uniques = _bonus_class_entries()
+        if 0 <= self.class_id < len(uniques):
+            return uniques[self.class_id]
+        return 0
 
 
 class CyMap:
@@ -698,6 +727,9 @@ class CyBonusInfo:
                 "tiles_per": int(_child_text(element, "iTilesPer") or 0),
                 "min_land_percent": int(_child_text(element, "iMinLandPercent") or 0),
                 "unique": int(_child_text(element, "iUnique") or 0),
+                "bonus_class": _bonus_class_index(
+                    _child_text(element, "BonusClassType")
+                ),
                 "group_range": int(_child_text(element, "iGroupRange") or 0),
                 "group_rand": int(_child_text(element, "iGroupRand") or 0),
                 "area": _child_text(element, "bArea") == "1",
@@ -745,6 +777,7 @@ class CyBonusInfo:
                 "tiles_per": 0,
                 "min_land_percent": 0,
                 "unique": 0,
+                "bonus_class": -1,
                 "group_range": 0,
                 "group_rand": 0,
                 "area": False,
@@ -761,7 +794,7 @@ class CyBonusInfo:
         return self.bonus_type
 
     def getBonusClassType(self):
-        return self.bonus_type
+        return self.bonus_data.get(self.bonus_type, {}).get("bonus_class", -1)
 
     def getYieldChange(self, yield_type):
         """Get bonus yield change (0=food, 1=production, 2=commerce)"""

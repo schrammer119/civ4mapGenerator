@@ -88,6 +88,7 @@ class ResourceTests(unittest.TestCase):
         map_config.river_adjacency_map = [False] * map_config.iNumPlots
         map_config.coast_adjacency_map = [False] * map_config.iNumPlots
         terrain_map.placed_resources = {}
+        terrain_map.placed_by_class = {}
         terrain_map.resource_exclusion_zones = {}
         terrain_map.resource_definitions = {}
         terrain_map.bonus_constraints = {}
@@ -415,6 +416,31 @@ class ResourceTests(unittest.TestCase):
                 {"iUnique": 2},
             )
         )
+
+    def test_class_unique_blocks_other_types_in_same_class(self):
+        cases = (
+            ("same_class_within_range", "class_a", 0, False),
+            ("other_class_within_range", "class_b", 0, True),
+            ("same_class_other_area", "class_a", 1, True),
+        )
+
+        for case_name, placed_class, placed_area, expected in cases:
+            with self.subTest(case=case_name):
+                terrain_map = self.make_terrain_map(width=5, height=5)
+                iron_id = terrain_map._get_bonus_id("BONUS_IRON")
+                terrain_map.resource_map[13] = iron_id
+                terrain_map.placed_by_class = {placed_class: [13]}
+                terrain_map.bonusAreaID = [0] * terrain_map.mc.iNumPlots
+                terrain_map.bonusAreaID[13] = placed_area
+
+                self.assertEqual(
+                    expected,
+                    terrain_map._should_place_resource(
+                        12,
+                        {"base_resource": "BONUS_MARBLE"},
+                        {"bonus_class": "class_a", "iClassUnique": 2},
+                    ),
+                )
 
     def test_unique_rule_blocks_cluster_placements(self):
         terrain_map = self.make_terrain_map(width=5, height=5)

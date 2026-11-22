@@ -117,7 +117,6 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 
 Every `TODO` in `PlanetSim.py` is tracked here.
 
-- [ ] Implement class-level `iUnique` (`CvBonusClassInfo`). Vanilla `canPlaceBonusAt` blocks any bonus of the class within `plotDistance` on the same area; the script currently checks only the same bonus type (`_should_place_resource`).
 - [ ] Use game API hooks instead of local script globals. Includes `bNoRiverSide`: the engine applies rivers before bonuses (`addGameElements`), so `isRiverSide()` is available in `addBonuses()`, while the script places resources earlier in `generateTerrainTypes()`. Decide whether to move placement to `addBonuses()` and use the game's check.
 
 ---
