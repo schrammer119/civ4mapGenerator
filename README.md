@@ -73,59 +73,8 @@ Pixi manages the Python environments, dependencies, and project tasks. The optio
 
 ### Tasks
 
-Run project tasks through Pixi:
+Run `pixi run preflight` before committing. Task definitions are in [pixi.toml](pixi.toml). The check procedure is in the [verify-source-changes skill](.agents/skills/verify-source-changes/SKILL.md).
 
-```bash
-pixi run unit
-pixi run generate
-pixi run generate-map
-pixi run format
-pixi run format-check
-pixi run compat
-pixi run lint
-pixi run dead-code
-pixi run preflight
-```
+### Branch names and commit messages
 
-`preflight` runs the format check, compatibility check, lint, dead-code analysis, unit tests, and headless generation. The generation harness is diagnostic; a passing run does not establish resource balance or gameplay quality.
-
-### Branch names
-
-Branch names should follow the convention:
-
-```
-<type>/<short-description>
-```
-
-Where `<type>` can be one of:
-- `feat` for additions to the map generator
-- `fix` for bug fixes
-- `tool` for development tooling or documentation changes
-
-And `<short-description>` is a brief, hyphen-separated description of the branch's purpose.
-
-### Commit messages
-
-Commit messages should follow the conventional commits format:
-
-```
-<type>: <short-title>
-
-**Reasoning:**
-
-<explanation of why this change is necessary or beneficial>
-
-**Additions and Changes:**
-
-- <list of additions and changes made in this commit>
-
-**Tests and Regression Protection:**
-
-<tests or checks added to ensure future changes will not break this change>
-
-**Verification:**
-
-<tests, checks, or steps taken to verify this change>
-```
-
-Where `<type>` is one of the branch types (`feat`, `fix`, `tool`), and `<short-title>` is a brief summary of the change.
+The branch naming rules and commit message templates are defined in the [commit skill](.agents/skills/commit/SKILL.md). That file is the single source for them.

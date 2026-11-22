@@ -39,7 +39,7 @@ compat = { depends-on = ["compat-vermin", "compat-syntax"] }
 compat-vermin = "vermin -t=2.4 --violations PlanetSim.py"
 compat-syntax = "pytest -q tests/test_compat.py"
 lint = "ruff check PlanetSim.py tests"
-dead-code = "vulture PlanetSim.py tests --min-confidence 80"
+dead-code = "vulture PlanetSim.py tests --min-confidence 60"
 preflight = { depends-on = [
 	"format-check",
 	"compat",

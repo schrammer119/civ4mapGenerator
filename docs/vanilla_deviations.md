@@ -24,11 +24,11 @@ Future "vanilla features" switch: each item below should map to one toggle.
 These are differences from the engine's behaviour that are not documented as
 design choices and should be fixed or confirmed.
 
-- `iUnique` class-level: `CvBonusClassInfo.iUnique` is read by the engine; script only checks the same bonus type. Tracked in `.claude/FINISH_LINE_TODO.md`.
+- `iUnique` class-level: `CvBonusClassInfo.iUnique` is read by the engine; script only checks the same bonus type. Tracked in `docs/FINISH_LINE_TODO.md`.
 - `iPlayer`: engine uses `countCivPlayersAlive()`; script uses `countCivPlayersEverAlive()`.
 - `bNormalize`: consumed by engine normalization passes (`CvGame::normalizeAddFoodBonuses` and related), not by `addBonuses`. The script does not read it and does not run these passes.
 - `iTilesPer`: engine counts plots that pass `canHaveBonus`; script counts candidates after its own additional gates.
-- `bNoRiverSide`: engine's `isRiverSide()` checks cardinal river crossings; script places resources in `generateTerrainTypes()` with its own river map. The engine applies rivers before bonuses, so the game check is available in `addBonuses()`. Full audit tracked in `.claude/FINISH_LINE_TODO.md`.
+- `bNoRiverSide`: engine's `isRiverSide()` checks cardinal river crossings; script places resources in `generateTerrainTypes()` with its own river map. The engine applies rivers before bonuses, so the game check is available in `addBonuses()`. Full audit tracked in `docs/FINISH_LINE_TODO.md`.
 
 Fixed: `iRandApp1..4` now draw from $[0, n-1]$ (engine `getMapRandNum`); `bRequiresRiver` removed from bonus constraints (not an engine bonus field).
 - Group clustering on unique bonuses inherits the score-weighted ordering from item 5 and the best-score area ordering from item 6.

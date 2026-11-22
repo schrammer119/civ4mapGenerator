@@ -9,10 +9,12 @@ Core consolidation is complete, but resource verification, start-location logic,
 - Phase 0: Fix Incomplete Code Migrations (BLOCKING)
 - Phase 1: Project Structure & Tooling Cleanup
 - Phase H: Fix generation behaviour from human feedback
-- Phase 2: Resolve Code TODOs & Missing Implementations (historical status; current tests need re-verification)
+- Phase 2: Resolve Code TODOs & Missing Implementations (historical status)
 - Phase 3: Complete Resource & Bonus Placement with Visualization
 - Phase 4: Unit Testing Framework
-- Phase F.1 Implement start location based on civilization
+- Phase F.1: Implement start location based on civilization
+- Phase F.3: Add game options API
+- Phase 5.2: Test All Map Sizes
 
 ---
 
@@ -27,41 +29,17 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 - [ ] Implement a placement rule for resources and civilizations based on landmass assignment.
 - [ ] Add unit tests to verify classifications and placements.
 
-### F.3 Add game options API
-
-The game options API allows mods to define custom options that can influence map generation, resource placement, and civilization behavior.
-
-Implemented as map-script custom options for the Pangaea breaker, resource abundance, and civilization-aware starting locations.
-
-- [x] Implement a system to define and register custom game options.
-- [x] Ensure options can be accessed during map generation and resource placement.
-- [x] Add validation for option values and types.
-- [x] Integrate options into map generation logic.
-- [x] Add unit tests to verify correct handling and application of game options.
-
 ---
 
 ## Phase 5: In-Game Testing & Stability
 
 ### 5.1 Basic In-Game Test
 
-- [ ] Copy PlanetSim.py to Civ IV map scripts directory
-- [ ] Launch game and create a new game with PlanetSim selected
-- [ ] Verify map generates without crashes
-- [ ] Check that terrain, resources, rivers appear correctly
+- [x] Copy PlanetSim.py to Civ IV map scripts directory
+- [x] Launch game and create a new game with PlanetSim selected
+- [x] Verify map generates without crashes
+- [x] Check that terrain, resources, rivers appear correctly
 - [ ] Confirm game is playable (no CTD during early turns)
-
-**Owner**: Manual testing
-
-### 5.2 Test All Map Sizes
-
-- [ ] Test Duel map (80x52)
-- [ ] Test Tiny map (80x52)
-- [ ] Test Small map (104x64)
-- [ ] Test Standard map (128x80)
-- [ ] Test Large map (144x96)
-- [ ] Test Huge map (200x120)
-- [ ] Document any size-specific issues
 
 **Owner**: Manual testing
 
@@ -105,15 +83,11 @@ Implemented as map-script custom options for the Pangaea breaker, resource abund
 
 - [ ] Add docstrings explaining PlanetSim features
 - [ ] Document tunable MapConfig parameters for mod users
-- [ ] Create example XML overrides for customization
 
 **Owner**: Documentation
 
 ### 6.2 Create User Guide
 
-- [ ] Create INSTALLATION.md with step-by-step setup
-- [ ] Add FAQ for common issues
-- [ ] Include performance tips
 - [ ] Document parameter tuning guide
 - [ ] Add guide for modders to include in mod packs
 
@@ -131,6 +105,14 @@ Implemented as map-script custom options for the Pangaea breaker, resource abund
 
 ---
 
+## Other Feature TODOs
+
+- [ ] Adjust biome distribution to match the "inflated important areas" concept. I.e. Europe gets more land in typical maps, while deserts and polar caps recieve less, relative to true Earth. We need to adjust the biome distribution accordingly. We can take the land area % from RFC map.
+- [ ] Add proper earth-like custom settings for all bonuses, along with xml overrides for vanilla xml values that are _not_ earth-like
+- [ ] Climate Settings are currently not properly used in the simulation. We need to take in these game-provided settings and adjust the climate generator accordingly. Use the game core as an example of how they are used, but tune the usage for our specific climate model.
+
+---
+
 ## Code TODOs
 
 Every `TODO` in `PlanetSim.py` is tracked here.
@@ -139,9 +121,13 @@ Every `TODO` in `PlanetSim.py` is tracked here.
 - [ ] Audit every random draw for off-by-one errors against engine `getMapRandNum`/`CvRandom` semantics (`_random_below` is the reference; `iRandApp` is fixed).
 - [ ] Implement class-level `iUnique` (`CvBonusClassInfo`). Vanilla `canPlaceBonusAt` blocks any bonus of the class within `plotDistance` on the same area; the script currently checks only the same bonus type (`_should_place_resource`).
 - [ ] Use game API hooks instead of local script globals. Includes `bNoRiverSide`: the engine applies rivers before bonuses (`addGameElements`), so `isRiverSide()` is available in `addBonuses()`, while the script places resources earlier in `generateTerrainTypes()`. Decide whether to move placement to `addBonuses()` and use the game's check.
-- [ ] Tune `MapConfig.resource_decay_radius` and `MapConfig.resource_decay_strength` (score decay after each placement) against resource balance in the smoke run.
-- [ ] Adjust biome distribution to match the "inflated important areas" concept. I.e. Europe gets more land in typical maps, while deserts and polar caps recieve less, relative to true Earth. We need to adjust the biome distribution accordingly. We can take the land area % from RFC map.
-- [ ] Add proper earth-like custom settings for all bonuses, along with xml overrides for vanilla xml values that are _not_ earth-like
+
+---
+
+## Documentation and Agent Tooling
+
+- [ ] Triage Vulture findings at 60% confidence: delete genuinely unused code, or whitelist engine-facing names in `tests/vulture_whitelist.py`.
+- [ ] Write a skill for common extension work: adding a bonus, feature, XML override, or `MapConfig` default.
 
 ---
 

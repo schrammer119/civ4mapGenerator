@@ -4,6 +4,17 @@ PlanetSim is a Civilization IV map script that uses plate and climate models to 
 
 Current status: the mock pipeline and focused pytest suite complete successfully. Resource balance and gameplay quality remain unverified; do not describe Phase 3 as complete based on a single smoke run.
 
+## References
+
+Read [README.md](README.md) first. It defines setup, tasks, branch names, and commit message format.
+
+Consult these when needed:
+
+- [docs/FINISH_LINE_TODO.md](docs/FINISH_LINE_TODO.md): phases, open work, manual in-game tests, and code TODOs.
+- [docs/vanilla_deviations.md](docs/vanilla_deviations.md): intentional and unintentional differences from the engine's resource placement.
+- [.agents/skills/verify-source-changes/SKILL.md](.agents/skills/verify-source-changes/SKILL.md): required checks before accepting a source change.
+- [.agents/skills/commit/SKILL.md](.agents/skills/commit/SKILL.md): commit and branch conventions, including squashing.
+
 ## Priorities
 
 1. Prefer physically grounded generation models.
@@ -12,7 +23,7 @@ Current status: the mock pipeline and focused pytest suite complete successfully
 
 ## Code style
 
-- Development and tests use Pixi's default environment with the latest available Python, NumPy, Matplotlib, pytest, Black, Vermin, Ruff, and Vulture. The shipped `PlanetSim.py` targets Python 2.4; Pixi's `runtime` environment provides Python 2.7, the oldest available here.
+- Development and tests use Pixi's default environment with the latest available Python, NumPy, Matplotlib, pytest, Black, Vermin, Ruff, and Vulture. The shipped `PlanetSim.py` targets Python 2.4; Python 2.7 (Pixi's `runtime` environment) is the only runtime tested; 2.4 is checked statically with Vermin. This is an accepted limitation.
 - Preserve Civ IV API compatibility in the shipped script; verify any in-game interpreter assumptions separately.
 - Use descriptive snake_case names for functions and variables, PascalCase for classes, and constants for configuration values.
 - Keep edits ASCII-only, focused, and compatible with existing public APIs.
@@ -36,22 +47,8 @@ The pipeline uses plate generation, elevation effects, Pangaea breaking (balance
 
 ## Verification
 
-Run the default Pixi environment tasks:
+Run `pixi run preflight` before accepting a change. The check order, profile review, and manual gates are in [verify-source-changes](.agents/skills/verify-source-changes/SKILL.md). Task definitions are in [pixi.toml](pixi.toml).
 
-```powershell
-pixi run unit
-pixi run generate
-pixi run generate-map
-pixi run format
-pixi run compat
-pixi run lint
-pixi run dead-code
-pixi run preflight
-```
+Engine callbacks flagged by Vulture belong in `tests/vulture_whitelist.py`.
 
-Vermin targets Python 2.4 and Python 3 for `PlanetSim.py`. Ruff uses a
-conservative rule set without Python-modernization rules. Review Vulture
-findings for Civ IV callbacks, which are invoked by the game rather than by
-Python code in this repository.
-
-The smoke harness is diagnostic, not a unit test. Its headless checks cover non-empty dimensions, complete plot-type coverage, both land and ocean, and complete terrain/feature/resource arrays. Inspect its exit status, plot distribution, warnings, and resource total; a passing run does not establish resource balance.
+The smoke harness is diagnostic, not a unit test; a passing run does not establish resource balance.
