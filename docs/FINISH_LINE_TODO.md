@@ -131,6 +131,20 @@ Implemented as map-script custom options for the Pangaea breaker, resource abund
 
 ---
 
+## Code TODOs
+
+Every `TODO` in `PlanetSim.py` is tracked here.
+
+- [ ] Fix `_is_valid_river_crossing`: marked "this is broken"; review and correct to the cpp implementation.
+- [ ] Audit every random draw for off-by-one errors against engine `getMapRandNum`/`CvRandom` semantics (`_random_below` is the reference; `iRandApp` is fixed).
+- [ ] Implement class-level `iUnique` (`CvBonusClassInfo`). Vanilla `canPlaceBonusAt` blocks any bonus of the class within `plotDistance` on the same area; the script currently checks only the same bonus type (`_should_place_resource`).
+- [ ] Use game API hooks instead of local script globals. Includes `bNoRiverSide`: the engine applies rivers before bonuses (`addGameElements`), so `isRiverSide()` is available in `addBonuses()`, while the script places resources earlier in `generateTerrainTypes()`. Decide whether to move placement to `addBonuses()` and use the game's check.
+- [ ] Tune `MapConfig.resource_decay_radius` and `MapConfig.resource_decay_strength` (score decay after each placement) against resource balance in the smoke run.
+- [ ] Adjust biome distribution to match the "inflated important areas" concept. I.e. Europe gets more land in typical maps, while deserts and polar caps recieve less, relative to true Earth. We need to adjust the biome distribution accordingly. We can take the land area % from RFC map.
+- [ ] Add proper earth-like custom settings for all bonuses, along with xml overrides for vanilla xml values that are _not_ earth-like
+
+---
+
 ## Standing Directives
 
 1. **Resource verification is blocking**: Continue testing resource distribution and gameplay balance across generated maps; a single passing smoke run does not establish overall balance.

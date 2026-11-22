@@ -123,6 +123,8 @@ class CallbackTests(unittest.TestCase):
         game_map = FakeMap(map_config.iNumPlots)
         PlanetSim.mc = map_config
         PlanetSim.mapCtx = game_map
+        PlanetSim.em = SimpleNamespace(plotTypes=[0] * map_config.iNumPlots)
+        PlanetSim.engine_plot_types = [0] * map_config.iNumPlots
         PlanetSim.cm = SimpleNamespace(
             river_map=[
                 (11, 12, 1, 10.0),
@@ -163,6 +165,8 @@ class CallbackTests(unittest.TestCase):
         game_map = FakeMap(map_config.iNumPlots)
         PlanetSim.mc = map_config
         PlanetSim.mapCtx = game_map
+        PlanetSim.em = SimpleNamespace(plotTypes=[0] * map_config.iNumPlots)
+        PlanetSim.engine_plot_types = [0] * map_config.iNumPlots
         PlanetSim.cm = SimpleNamespace(river_map=[(14, 10, 6, 3.0)])
 
         PlanetSim.addRivers()

@@ -698,21 +698,23 @@ class ResourceTests(unittest.TestCase):
         }
 
         with mock.patch.object(
-            PlanetSim.random, "randint", side_effect=[3, 7, 2, 0]
-        ) as mock_randint:
+            PlanetSim.random, "randrange", side_effect=[3, 7, 2]
+        ) as mock_randrange:
             target = terrain_map._calculate_num_bonuses_to_add(xml_constraints, 100)
 
         # iTilesPer contributes 100 // 5 tiles, scaled by the appearance total.
         self.assertEqual(22, target)
+        # iRandApp is inclusive of [0, n-1]; a zero range draws nothing.
         self.assertEqual(
-            [
-                mock.call(0, 10),
-                mock.call(0, 20),
-                mock.call(0, 5),
-                mock.call(0, 0),
-            ],
-            mock_randint.call_args_list,
+            [mock.call(10), mock.call(20), mock.call(5)],
+            mock_randrange.call_args_list,
         )
+
+    def test_random_below_stays_in_engine_range(self):
+        terrain_map = self.make_terrain_map(width=3, height=3)
+        draws = [terrain_map._random_below(3) for _ in range(200)]
+        self.assertEqual({0, 1, 2}, set(draws))
+        self.assertEqual(0, terrain_map._random_below(0))
 
     def test_no_river_side_rejects_tile_adjacent_to_river(self):
         terrain_map = self.make_terrain_map(width=3, height=3)
