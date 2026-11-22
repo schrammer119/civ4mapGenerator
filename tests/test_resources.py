@@ -716,6 +716,33 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual({0, 1, 2}, set(draws))
         self.assertEqual(0, terrain_map._random_below(0))
 
+    def test_group_roll_uses_engine_draw_range(self):
+        terrain_map = self.make_terrain_map(width=5, height=5)
+        bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
+        terrain_map.bonus_constraints = {
+            bonus_id: {"iGroupRange": 1, "iGroupRand": 100}
+        }
+        terrain_map._can_have_bonus = lambda tile_index, resource_def: True
+        terrain_map._calculate_placement_score = lambda tile_index, resource_def: (
+            1.0 if tile_index == 12 else 0.0
+        )
+        terrain_map._calculate_num_bonuses_to_add = (
+            lambda xml_constraints, num_candidate_tiles: 5
+        )
+
+        with mock.patch.object(
+            PlanetSim.random, "randrange", return_value=0
+        ) as mock_randrange:
+            terrain_map._add_non_unique_bonus_type(
+                {
+                    "base_resource": "BONUS_MARBLE",
+                    "xml_constraints": terrain_map.bonus_constraints[bonus_id],
+                }
+            )
+
+        # Engine rolls getMapRandNum(100) and accepts when the draw is below iGroupRand.
+        self.assertIn(mock.call(100), mock_randrange.call_args_list)
+
     def test_no_river_side_rejects_tile_adjacent_to_river(self):
         terrain_map = self.make_terrain_map(width=3, height=3)
         terrain_map.mc.river_adjacency_map = [False] * terrain_map.mc.iNumPlots

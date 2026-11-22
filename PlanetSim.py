@@ -9442,7 +9442,6 @@ class TerrainMap:
         resource_list.sort(key=lambda x: (x[0], random.randint(0, 99)))
         return [resource_def for _, resource_def in resource_list]
 
-    # TODO: audit every random draw for off-by-one errors against engine getMapRandNum/CvRandom semantics.
     def _random_below(self, upper):
         """Uniform integer in [0, upper - 1]; 0 when upper is 0 (engine getMapRandNum)."""
         if upper <= 0:
@@ -9531,7 +9530,7 @@ class TerrainMap:
                         counts["placed"],
                     ):
                         continue
-                    if random.randint(1, 100) <= group_rand:
+                    if self._random_below(100) < group_rand:
                         self._record_bonus(
                             cluster_tile, bonus_id, xml_constraints, counts
                         )
