@@ -7432,6 +7432,9 @@ class ClimateMap:
 
 
 class TerrainMap:
+    # Game river flags per tile, set by PlaceResources(); None uses PlanetSim rivers
+    river_side_map = None
+
     @profile
     def __init__(self, gc=None, mapConfig=None, elevationMap=None, climateMap=None):
         """Initialize TerrainMap with required data sources"""
@@ -7522,9 +7525,6 @@ class TerrainMap:
 
         # Pass 3: Place secondary features (flood plains, oases, etc.)
         self._place_secondary_features()
-
-        # Pass 4: Place resources based on XML parameters and custom rules
-        self._place_resources()
 
         print("TerrainMap: Terrain generation complete.")
 
@@ -9410,6 +9410,11 @@ class TerrainMap:
                 )
 
     @profile
+    def PlaceResources(self, river_side_map=None):
+        """Place resources after rivers exist; None uses PlanetSim river adjacency."""
+        self.river_side_map = river_side_map
+        self._place_resources()
+
     def _place_resources(self):
         """Place resources using scoring-based system"""
         print("TerrainMap: Placing resources...")
@@ -9690,8 +9695,7 @@ class TerrainMap:
             "bFlatlands", False
         ):
             return False
-        # TODO: audit bNoRiverSide. The engine applies rivers before bonuses, so isRiverSide() is available in addBonuses.
-        river_tile = self.mc.is_adjacent_to_river(tile_index)
+        river_tile = self._is_river_side(tile_index)
         if xml_constraints.get("bNoRiverSide", False) and river_tile:
             return False
 
@@ -9714,6 +9718,12 @@ class TerrainMap:
             return False
 
         return True
+
+    def _is_river_side(self, tile_index):
+        """Game river state when supplied, otherwise PlanetSim river adjacency."""
+        if self.river_side_map is not None:
+            return self.river_side_map[tile_index]
+        return self.mc.is_adjacent_to_river(tile_index)
 
     def _get_water_terrain_ids(self):
         """Cached terrain IDs for water terrains (ocean and coast)"""
@@ -10477,6 +10487,10 @@ def addBonuses():
 
     if mapCtx is None or mc is None or tm is None:
         return
+
+    # The engine has applied rivers by now, so the game is the source of truth
+    river_side_map = [mapCtx.plotByIndex(i).isRiverSide() for i in xrange(mc.iNumPlots)]
+    tm.PlaceResources(river_side_map)
 
     resource_map = getattr(tm, "resource_map", [])
     if not resource_map:

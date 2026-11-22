@@ -15,6 +15,9 @@ class FakePlot(object):
     def __init__(self):
         self.bonus_calls = []
 
+    def isRiverSide(self):
+        return False
+
     def setBonusType(self, bonus_id):
         self.bonus_calls.append(bonus_id)
 
@@ -25,6 +28,14 @@ class FakeMap(object):
 
     def plotByIndex(self, tile_index):
         return self.plots[tile_index]
+
+
+class FakeTerrain(object):
+    resource_map = [-1, 4, -1]
+    river_side_map = None
+
+    def PlaceResources(self, river_side_map=None):
+        self.river_side_map = river_side_map
 
 
 class FakePythonMgr(object):
@@ -323,10 +334,11 @@ class ResourceTests(unittest.TestCase):
         old_mgr = getattr(PlanetSim, "CyPythonMgr", None)
         old_globals = (PlanetSim.mapCtx, PlanetSim.mc, PlanetSim.tm)
         manager = FakePythonMgr()
+        terrain = FakeTerrain()
         try:
             PlanetSim.mapCtx = FakeMap(plots)
             PlanetSim.mc = type("Config", (), {"iNumPlots": 3})()
-            PlanetSim.tm = type("Terrain", (), {"resource_map": [-1, 4, -1]})()
+            PlanetSim.tm = terrain
             PlanetSim.CyPythonMgr = lambda: manager
 
             PlanetSim.addBonuses()
@@ -337,6 +349,7 @@ class ResourceTests(unittest.TestCase):
             else:
                 PlanetSim.CyPythonMgr = old_mgr
 
+        self.assertEqual([False, False, False], terrain.river_side_map)
         self.assertEqual([[-1], [4], [-1]], [plot.bonus_calls for plot in plots])
         self.assertEqual(0, manager.calls)
 
@@ -585,7 +598,14 @@ class ResourceTests(unittest.TestCase):
         try:
             PlanetSim.mapCtx = FakeMap(plots)
             PlanetSim.mc = type("Config", (), {"iNumPlots": 2})()
-            PlanetSim.tm = type("Terrain", (), {"resource_map": [-1, 19]})()
+            PlanetSim.tm = type(
+                "Terrain",
+                (),
+                {
+                    "resource_map": [-1, 19],
+                    "PlaceResources": lambda self, river_side_map=None: None,
+                },
+            )()
             PlanetSim.CyPythonMgr = lambda: FakePythonMgr()
             PlanetSim.addBonuses()
         finally:
@@ -795,7 +815,13 @@ class ResourceTests(unittest.TestCase):
         terrain_map.mc.river_adjacency_map[target_tile] = False
         self.assertTrue(terrain_map._can_have_bonus(target_tile, resource_def))
 
-    def test_hard_constraints_allow_neighbouring_bonus_types(self):
+        # Game river state takes precedence over the local adjacency map
+        terrain_map.mc.river_adjacency_map[target_tile] = True
+        terrain_map.river_side_map = [False] * terrain_map.mc.iNumPlots
+        self.assertTrue(terrain_map._can_have_bonus(target_tile, resource_def))
+
+        terrain_map.river_side_map[target_tile] = True
+        self.assertFalse(terrain_map._can_have_bonus(target_tile, resource_def))
         terrain_map = self.make_terrain_map(width=3, height=3)
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
         other_bonus_id = terrain_map._get_bonus_id("BONUS_COPPER")

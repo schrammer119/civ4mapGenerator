@@ -14,34 +14,12 @@ Core consolidation is complete, but resource verification, start-location logic,
 - Phase 4: Unit Testing Framework
 - Phase F.1: Implement start location based on civilization
 - Phase F.3: Add game options API
+- Phase 5.1: Basic In-Game Test
 - Phase 5.2: Test All Map Sizes
 
 ---
 
-## Phase F: Missing features
-
-### F.2 Add "old world"/"new world" functionality
-
-Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
-
-- [ ] Implement a determination of which landmasses are "old" and which is "new".
-- [x] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
-- [ ] Implement a placement rule for resources and civilizations based on landmass assignment. Remove the `continent_assignments` entry from `tests/vulture_whitelist.py` when finished.
-- [ ] Add unit tests to verify classifications and placements.
-
----
-
 ## Phase 5: In-Game Testing & Stability
-
-### 5.1 Basic In-Game Test
-
-- [x] Copy PlanetSim.py to Civ IV map scripts directory
-- [x] Launch game and create a new game with PlanetSim selected
-- [x] Verify map generates without crashes
-- [x] Check that terrain, resources, rivers appear correctly
-- [ ] Confirm game is playable (no CTD during early turns)
-
-**Owner**: Manual testing
 
 ### 5.3 Test World Wrap Settings
 
@@ -115,9 +93,24 @@ Some mods use an "old world" and "new world" concept. Implement a way to define 
 
 ## Code TODOs
 
-Every `TODO` in `PlanetSim.py` is tracked here.
+- [ ] break up classes a little bit: move resources/bonuses to their own class. Pangaea breaker as well. Follow current layout, naming, structure of other classes. Features perhaps to their own class. The general rule would be: one class per callback. The pangaea breaker breaks this rule because it is a large, optional extra.
+  - Findings: see [game_core_interaction.md](game_core_interaction.md). `em.plotTypes` goes stale after engine `addLakes`; reads in `TerrainMap` resource and feature code and `StartingPlotFinder._is_coastal` treat lake tiles as land. Pass plot types explicitly to `ClimateMap`/`TerrainMap`; read game plot state in `PlaceResources` and start plots.
+- [ ] unify naming convention across the file. Document the convention.
 
-- [ ] Use game API hooks instead of local script globals. Includes `bNoRiverSide`: the engine applies rivers before bonuses (`addGameElements`), so `isRiverSide()` is available in `addBonuses()`, while the script places resources earlier in `generateTerrainTypes()`. Decide whether to move placement to `addBonuses()` and use the game's check.
+---
+
+## Mod TODOs
+
+- [ ] integrate with CoM mod, adding custom rules for new features, terrains, and resources
+
+### F.2 Add "old world"/"new world" functionality
+
+Some mods use an "old world" and "new world" concept. Implement a way to define two separate landmasses and assign resources and perhaps civilizations to each.
+
+- [ ] Implement a determination of which landmasses are "old" and which is "new".
+- [x] If no landmasses are appropriately sized for "old" and "new", implement a mechanism to split existing landmasses into two distinct regions, a.k.a. "Pangaea breaker".
+- [ ] Implement a placement rule for resources and civilizations based on landmass assignment. Remove the `continent_assignments` entry from `tests/vulture_whitelist.py` when finished.
+- [ ] Add unit tests to verify classifications and placements.
 
 ---
 

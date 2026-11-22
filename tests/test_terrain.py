@@ -35,6 +35,7 @@ def generate_planetsim_map(seed):
     climate_map.GenerateClimateMap()
     terrain_map = TerrainMap(gc, map_config, elevation_map, climate_map)
     terrain_map.GenerateTerrain()
+    terrain_map.PlaceResources()
     return elevation_map, climate_map, terrain_map
 
 

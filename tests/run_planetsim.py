@@ -236,6 +236,7 @@ cm.GenerateClimateMap()
 
 tm = TerrainMap(gc, mc, em, cm)
 tm.GenerateTerrain()
+tm.PlaceResources()
 
 print("Map generation completed successfully!")
 print("Map size: %d x %d" % (mc.iNumPlotsX, mc.iNumPlotsY))
