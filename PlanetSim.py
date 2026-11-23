@@ -39,12 +39,12 @@ CUSTOM_MAP_OPTIONS = (
 RESOURCE_ABUNDANCE_MULTIPLIERS = (0.75, 1.0, 1.25)
 
 # Global map instances - shared across all generation functions
-gc = None
-mapCtx = None
-mc = None
-em = None
-cm = None
-tm = None
+game_context = None
+map_ctx = None
+map_config = None
+elevation_map = None
+climate_map = None
+terrain_map = None
 engine_plot_types = None
 
 # private script functions
@@ -147,37 +147,37 @@ class MapConfig:
     SE = 7
     SW = 8
 
-    def __init__(self, gc=None, mapCtx=None):
+    def __init__(self, game_context=None, map_ctx=None):
         """Initializes map dimensions, game settings, and all tunable parameters."""
         # --- Initialize Game Engine References ---
-        if gc is None:
-            self.gc = CyGlobalContext()
+        if game_context is None:
+            self.game_context = CyGlobalContext()
         else:
-            self.gc = gc
-        if mapCtx is None:
-            self.map = self.gc.getMap()
+            self.game_context = game_context
+        if map_ctx is None:
+            self.map = self.game_context.getMap()
         else:
-            self.map = mapCtx
+            self.map = map_ctx
 
         # --- Map Dimensions ---
-        self.iNumPlotsX = self.map.getGridWidth()
-        self.iNumPlotsY = self.map.getGridHeight()
-        self.iNumPlots = self.iNumPlotsX * self.iNumPlotsY
-        self.wrapX = self.map.isWrapX()
-        self.wrapY = self.map.isWrapY()
+        self.num_plots_x = self.map.getGridWidth()
+        self.num_plots_y = self.map.getGridHeight()
+        self.num_plots = self.num_plots_x * self.num_plots_y
+        self.wrap_x = self.map.isWrapX()
+        self.wrap_y = self.map.isWrapY()
 
         # --- Custom Map Options ---
         self._initialize_custom_options()
 
         # --- Pangaea Breaker Settings ---
-        self.pangaeaMinimumSharePercent = 31
-        self.pangaeaRiftExtraDepth = 1
-        self.pangaeaRiftMaxDepth = 3
-        self.pangaeaRiftChance = 0.6
-        self.pangaeaSeamTurnReduction = 0.32  # >(1 - sqrt(2)/2) to add slight bias to angled cuts over straight cuts
-        self.pangaeaBoundaryWalkCount = 6
-        self.pangaeaBoundaryRunLength = 10
-        self.pangaeaBreakAttempts = 5
+        self.pangaea_minimum_share_percent = 31
+        self.pangaea_rift_extra_depth = 1
+        self.pangaea_rift_max_depth = 3
+        self.pangaea_rift_chance = 0.6
+        self.pangaea_seam_turn_reduction = 0.32  # >(1 - sqrt(2)/2) to add slight bias to angled cuts over straight cuts
+        self.pangaea_boundary_walk_count = 6
+        self.pangaea_boundary_run_length = 10
+        self.pangaea_break_attempts = 5
 
         # --- Initialize Parameter Groups ---
         self._initialize_civ_settings()
@@ -194,9 +194,9 @@ class MapConfig:
         self._load_xml_constraints()
 
     @property
-    def iNumPlayers(self):
+    def num_players(self):
         """Get number of players from game engine"""
-        return self.gc.getGame().countCivPlayersEverAlive()
+        return self.game_context.getGame().countCivPlayersEverAlive()
 
     # -------------------------------------------------------------------------
     # Parameter Initialization
@@ -215,174 +215,176 @@ class MapConfig:
                 value = default_value
             self.custom_map_options.append(value)
 
-        self.enablePangaeaBreaker = bool(self.custom_map_options[0])
+        self.enable_pangaea_breaker = bool(self.custom_map_options[0])
         self.resource_quantity_multiplier = RESOURCE_ABUNDANCE_MULTIPLIERS[
             self.custom_map_options[1]
         ]
 
     def _initialize_civ_settings(self):
         """Loads settings directly from Civilization IV's climate and sea level options."""
-        climate_info = self.gc.getClimateInfo(self.map.getClimate())
-        sea_level_info = self.gc.getSeaLevelInfo(self.map.getSeaLevel())
+        climate_info = self.game_context.getClimateInfo(self.map.getClimate())
+        sea_level_info = self.game_context.getSeaLevelInfo(self.map.getSeaLevel())
 
         # --- Sea Level Settings ---
         # Controls the overall percentage of land vs. water.
         # Value is taken directly from the game's "Sea Level" setting.
-        self.seaLevelChange = sea_level_info.getSeaLevelChange()
+        self.sea_level_change = sea_level_info.getSeaLevelChange()
 
         # --- Climate Settings ---
         # These values are taken from the game's "Climate" setting and are
         # primarily used for the default terrain/feature generation if our
         # custom climate model is not fully implemented.
-        self.desertPercentChange = climate_info.getDesertPercentChange()
-        self.jungleLatitude = climate_info.getJungleLatitude()
-        self.hillRange = climate_info.getHillRange()
-        self.peakPercent = climate_info.getPeakPercent()
-        self.snowLatitudeChange = climate_info.getSnowLatitudeChange()
-        self.tundraLatitudeChange = climate_info.getTundraLatitudeChange()
-        self.grassLatitudeChange = climate_info.getGrassLatitudeChange()
-        self.desertBottomLatitudeChange = climate_info.getDesertBottomLatitudeChange()
-        self.desertTopLatitudeChange = climate_info.getDesertTopLatitudeChange()
-        self.iceLatitude = climate_info.getIceLatitude()
-        self.randIceLatitude = climate_info.getRandIceLatitude()
+        self.desert_percent_change = climate_info.getDesertPercentChange()
+        self.jungle_latitude = climate_info.getJungleLatitude()
+        self.hill_range = climate_info.getHillRange()
+        self.peak_percent = climate_info.getPeakPercent()
+        self.snow_latitude_change = climate_info.getSnowLatitudeChange()
+        self.tundra_latitude_change = climate_info.getTundraLatitudeChange()
+        self.grass_latitude_change = climate_info.getGrassLatitudeChange()
+        self.desert_bottom_latitude_change = (
+            climate_info.getDesertBottomLatitudeChange()
+        )
+        self.desert_top_latitude_change = climate_info.getDesertTopLatitudeChange()
+        self.ice_latitude = climate_info.getIceLatitude()
+        self.rand_ice_latitude = climate_info.getRandIceLatitude()
 
     def _initialize_elevation_parameters(self):
         """Initializes all parameters related to the ElevationMap generation."""
         # --- Plate Tectonics ---
-        self.plateCount = 15  # Number of continental plates. More plates create more, smaller continents.
-        self.minPlateDensity = (
+        self.plate_count = 15  # Number of continental plates. More plates create more, smaller continents.
+        self.min_plate_density = (
             0.8  # Minimum density for a plate (0-1). Denser plates become ocean floors.
         )
-        self.hotspotCount = 15  # Number of volcanic hotspots. Creates island chains and volcanic features.
+        self.hotspot_count = 15  # Number of volcanic hotspots. Creates island chains and volcanic features.
 
         # --- Continent Growth ---
-        self.growthFactorMin = (
+        self.growth_factor_min = (
             0.3  # Minimum probability for a tile to join a continent.
         )
-        self.growthFactorRange = (
+        self.growth_factor_range = (
             0.4  # Range of random variation for growth probability.
         )
-        self.roughnessMin = 0.1  # Minimum edge roughness for continents.
-        self.roughnessRange = 0.3  # Range of random variation for edge roughness.
-        self.anisotropyMin = (
+        self.roughness_min = 0.1  # Minimum edge roughness for continents.
+        self.roughness_range = 0.3  # Range of random variation for edge roughness.
+        self.anisotropy_min = (
             0.5  # Minimum directional growth preference, creating elongated shapes.
         )
 
         # --- Plate Dynamics & Forces ---
-        self.plateDensityFactor = 1.3  # Height factor based on plate density
-        self.elevationVelScale = 3e5
-        self.plateVelocityFactor = (
+        self.plate_density_factor = 1.3  # Height factor based on plate density
+        self.elevation_vel_scale = 3e5
+        self.plate_velocity_factor = (
             4.0  # Multiplier for elevation changes caused by plate velocity.
         )
-        self.plateBuoyancyFactor = 0.9  # Multiplier for elevation based on distance from a plate's center (buoyancy).
-        self.baseSlabPull = (
+        self.plate_buoyancy_factor = 0.9  # Multiplier for elevation based on distance from a plate's center (buoyancy).
+        self.base_slab_pull = (
             0.9  # Base strength of the slab-pull force at subduction zones.
         )
-        self.baseEdgeForce = 1.5  # Repulsive force from map edges if wrapping is off.
-        self.dragCoefficient = (
+        self.base_edge_force = 1.5  # Repulsive force from map edges if wrapping is off.
+        self.drag_coefficient = (
             0.1  # Drag force applied to plate motion, preventing runaway speeds.
         )
-        self.edgeInfluenceDistance = 0.25  # How far from a map edge (as % of map size) the repulsive force is felt.
+        self.edge_influence_distance = 0.25  # How far from a map edge (as % of map size) the repulsive force is felt.
 
         # --- Boundary & Mountain Formation ---
-        self.boundaryFactor = (
+        self.boundary_factor = (
             3.5  # Height multiplier for mountains/trenches at plate boundaries.
         )
-        self.boundarySmoothing = 3  # Smoothing radius applied to the preliminary elevation map before boundaries.
-        self.passiveMarginPercentile = 0.2  # Fraction of admitted boundaries below which margins are treated as passive/quiet.
-        self.passiveMarginDamping = 0.15  # Multiplier applied to passive boundary intensity so quiet margins fade naturally.
-        self.collisionDensityPercentile = 0.35  # Density-difference percentile for continent-continent collision treatment.
-        self.minDensityDifference = 0.05  # Minimum density difference required for one plate to subduct under another.
-        self.minBoundaryLength = 3  # Minimum length of a shared border to be considered a major tectonic boundary.
-        self.maxInfluenceDistance = (
+        self.boundary_smoothing = 3  # Smoothing radius applied to the preliminary elevation map before boundaries.
+        self.passive_margin_percentile = 0.2  # Fraction of admitted boundaries below which margins are treated as passive/quiet.
+        self.passive_margin_damping = 0.15  # Multiplier applied to passive boundary intensity so quiet margins fade naturally.
+        self.collision_density_percentile = 0.35  # Density-difference percentile for continent-continent collision treatment.
+        self.min_density_difference = 0.05  # Minimum density difference required for one plate to subduct under another.
+        self.min_boundary_length = 3  # Minimum length of a shared border to be considered a major tectonic boundary.
+        self.max_influence_distance = (
             0.3  # Max distance (% of map size) for plate interaction forces to apply.
         )
 
         # --- Volcanic Activity ---
-        self.hotspotPeriod = 5  # Distance between volcanic islands in a hotspot chain.
-        self.hotspotDecay = 4  # Number of older, smaller volcanoes in a hotspot chain.
-        self.hotspotRadius = 2  # Base radius of a new hotspot volcano.
-        self.hotspotFactor = 0.3  # Height/intensity of hotspot volcanic eruptions.
-        self.maxInfluenceDistanceHotspot = (
+        self.hotspot_period = 5  # Distance between volcanic islands in a hotspot chain.
+        self.hotspot_decay = 4  # Number of older, smaller volcanoes in a hotspot chain.
+        self.hotspot_radius = 2  # Base radius of a new hotspot volcano.
+        self.hotspot_factor = 0.3  # Height/intensity of hotspot volcanic eruptions.
+        self.max_influence_distance_hotspot = (
             0.4  # Max distance (% of map size) a hotspot can influence plate motion.
         )
 
         # --- Erosion ---
-        self.boundaryAgeFactor = 0.5  # How much plate boundaries are eroded over time. Higher values mean more erosion.
-        self.minErosionFactor = 0.3  # Minimum erosion factor to prevent mountains from disappearing completely.
+        self.boundary_age_factor = 0.5  # How much plate boundaries are eroded over time. Higher values mean more erosion.
+        self.min_erosion_factor = 0.3  # Minimum erosion factor to prevent mountains from disappearing completely.
 
         # --- Final Terrain Shaping ---
-        self.landPercent = (
+        self.land_percent = (
             0.38  # Target percentage of land on the map. Adjusted by sea level setting.
         )
-        self.coastPercent = 0.01  # Percentage of shallow water (coast) relative to the total water area.
-        self.perlinNoiseFactor = 0.2  # Amount of Perlin noise to add to the final elevation map for small-scale variety.
-        self.MountainPassNeighbourThreshold = 6  # Maximum clustered peaks/hills allowed before nearby neighbors are demoted.
-        self.basinLakeSize = 10
-        self.enableWrapOptimization = (
+        self.coast_percent = 0.01  # Percentage of shallow water (coast) relative to the total water area.
+        self.perlin_noise_factor = 0.2  # Amount of Perlin noise to add to the final elevation map for small-scale variety.
+        self.mountain_pass_neighbour_threshold = 6  # Maximum clustered peaks/hills allowed before nearby neighbors are demoted.
+        self.basin_lake_size = 10
+        self.enable_wrap_optimization = (
             True  # Enable wrap edge optimization to minimize continent splitting
         )
-        self.maxElev = 4500.0  # Maximum elevation in m
-        self.peakElev = 1000.0
-        self.hillElev = 500.0
+        self.max_elev = 4500.0  # Maximum elevation in m
+        self.peak_elev = 1000.0
+        self.hill_elev = 500.0
 
     def _initialize_climate_parameters(self):
         """Initializes all parameters related to the ClimateMap generation."""
         # --- General Climate ---
-        self.climateSmoothing = (
+        self.climate_smoothing = (
             3  # General smoothing radius for climate maps (temperature, moisture).
         )
-        self.topLatitude = 70.0  # Latitude of the top map edge in degrees.
-        self.bottomLatitude = -70.0  # Latitude of the bottom map edge in degrees.
-        self.gridSpacingX = (
-            40075017.0 / self.iNumPlotsX
+        self.top_latitude = 70.0  # Latitude of the top map edge in degrees.
+        self.bottom_latitude = -70.0  # Latitude of the bottom map edge in degrees.
+        self.grid_spacing_x = (
+            40075017.0 / self.num_plots_x
         )  # Grid spacing in meters - approximate distance between adjacent cells
-        self.gridSpacingY = (
-            (self.topLatitude - self.bottomLatitude)
+        self.grid_spacing_y = (
+            (self.top_latitude - self.bottom_latitude)
             * 40007863.0
             / 180.0
-            / self.iNumPlotsY
+            / self.num_plots_y
         )  # Grid spacing in meters - approximate distance between adjacent cells
 
         # --- Temperature ---
-        self.minimumTemp = -32.0  # Base temperature at the poles (Celsius).
-        self.maximumTemp = 35.0  # Base temperature at the equator (Celsius).
-        self.maxWaterTempC = 29.0  # Maximum possible ocean temperature.
-        self.minWaterTempC = (
+        self.minimum_temp = -32.0  # Base temperature at the poles (Celsius).
+        self.maximum_temp = 35.0  # Base temperature at the equator (Celsius).
+        self.max_water_temp_c = 29.0  # Maximum possible ocean temperature.
+        self.min_water_temp_c = (
             -2.0
         )  # Minimum possible ocean temperature (can be below freezing due to salinity).
-        self.tempLapse = (
+        self.temp_lapse = (
             0.0065  # Temperature decrease in Celsius per metre of elevation.
         )
 
         # --- Solar Radiation ---
-        self.minSolarFactor = (
+        self.min_solar_factor = (
             0.1  # Minimum solar heating at the poles to prevent extreme cold.
         )
-        self.solarHadleyCellEffects = (
+        self.solar_hadley_cell_effects = (
             -0.12
         )  # Adjusts solar radiation to model Hadley Cell effects (cooler equator, warmer subtropics).
-        self.solarFifthOrder = (
+        self.solar_fifth_order = (
             0.04  # A fifth-order term for fine-tuning the solar radiation curve.
         )
 
         # --- Ocean Currents ---
-        self.oceanCurrentK0 = 1.0  # Base conductance for the ocean current solver. Affects overall current speed.
-        self.thermalGradientFactor = (
+        self.ocean_current_k0 = 1.0  # Base conductance for the ocean current solver. Affects overall current speed.
+        self.thermal_gradient_factor = (
             1.4  # Strength of ocean currents driven by temperature differences.
         )
-        self.latitudinalForcingStrength = (
+        self.latitudinal_forcing_strength = (
             1.0  # Strength of primary east-west currents driven by prevailing winds.
         )
-        self.coriolisStrength = (
+        self.coriolis_strength = (
             150  # Strength of the Coriolis effect, which causes currents to form gyres.
         )
-        self.earthRotationRate = 7.27e-5  # Earth's rotation rate in radians/sec. A fundamental physical constant.
-        self.currentSolverIterations = 50  # Max iterations for the ocean current solver. Higher is more accurate but slower.
-        self.solverTolerance = (
+        self.earth_rotation_rate = 7.27e-5  # Earth's rotation rate in radians/sec. A fundamental physical constant.
+        self.current_solver_iterations = 50  # Max iterations for the ocean current solver. Higher is more accurate but slower.
+        self.solver_tolerance = (
             1e-1  # RMSE tolerance for the solver to converge. Lower is more accurate.
         )
-        self.minSolverIterations = (
+        self.min_solver_iterations = (
             5  # Minimum iterations before checking for convergence.
         )
 
@@ -397,7 +399,7 @@ class MapConfig:
             0.001  # Minimum current strength required for a plume to continue flowing.
         )
         self.current_amplification = 20  # Artificial multiplier to make current effects more pronounced for gameplay.
-        self.oceanDiffusionRadius = (
+        self.ocean_diffusion_radius = (
             4  # Radius for smoothing/diffusion of ocean temperatures after transport.
         )
 
@@ -415,80 +417,82 @@ class MapConfig:
 
         # --- Wind ---
         # QG Solver Parameters
-        self.qgCoriolisF0 = 1.03e-4  # Reference Coriolis parameter (1/s) - controls overall rotation effects
-        self.qgBetaParameter = 1.6e-11  # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
-        self.qgMeanLayerDepth = 8000  # Mean atmospheric layer depth (m) - base thickness for PV calculations
-        self.qgThermalExpansion = 60  # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
-        self.qgHadleyStrength = (
+        self.qg_coriolis_f0 = 1.03e-4  # Reference Coriolis parameter (1/s) - controls overall rotation effects
+        self.qg_beta_parameter = 1.6e-11  # Beta-plane parameter (1/m/s) - controls latitude variation of Coriolis
+        self.qg_mean_layer_depth = 8000  # Mean atmospheric layer depth (m) - base thickness for PV calculations
+        self.qg_thermal_expansion = 60  # Thermal expansion coefficient (m/K) - how temperature affects layer thickness
+        self.qg_hadley_strength = (
             2e11  # Hadley cell amplitude (1/s2) - tropical heating strength
         )
 
         # Solver Control
-        self.qgJacobiIterations = (
+        self.qg_jacobi_iterations = (
             200  # Inner Jacobi solver iterations - balance accuracy vs speed
         )
-        self.qgConvergenceTolerance = (
+        self.qg_convergence_tolerance = (
             1e-1  # Solver tolerance - smaller = more accurate but slower
         )
-        self.qgSolverFriction = 7e-12  # jacobi solver damping
+        self.qg_solver_friction = 7e-12  # jacobi solver damping
 
         # Pressure gradient wind parameters
-        self.atmoPres = 101300  # Pa
+        self.atmo_pres = 101300  # Pa
         self.gravity = 9.81  # m/s2
-        self.gasConstant = 287  # J/(kg K)
-        self.qgMeridionalPressureStrength = (
+        self.gas_constant = 287  # J/(kg K)
+        self.qg_meridional_pressure_strength = (
             5e5  # Strength of artificial meridional pressure pattern
         )
-        self.bernoulliFactor = 0.1
+        self.bernoulli_factor = 0.1
 
         # --- Rain ---
         # # Rainfall Model Parameters - Temperature values in Celsius!
-        self.specificHumidityFactor = 0.012
-        self.oceanCE = 2.0e-3
-        self.landCE = 0.8e-3
-        self.rainfallConvectiveBasePercentile = (
+        self.specific_humidity_factor = 0.012
+        self.ocean_ce = 2.0e-3
+        self.land_ce = 0.8e-3
+        self.rainfall_convective_base_percentile = (
             0.05  # Percentile for base convective temperature (10% coldest land)
         )
-        self.rainfallConvectiveMaxPercentile = (
+        self.rainfall_convective_max_percentile = (
             0.2  # Percentile for peak convective temperature (20% hottest land)
         )
-        self.rainfallMaxTransportDistance = 1000  # Maximum transport distance in tiles
-        self.rainfallConvectiveDeclineRate = (
+        self.rainfall_max_transport_distance = (
+            1000  # Maximum transport distance in tiles
+        )
+        self.rainfall_convective_decline_rate = (
             0.05  # Rate of decline above peak temperature per degree
         )
-        self.rainfallConvectiveMinFactor = (
+        self.rainfall_convective_min_factor = (
             0.4  # Minimum convective factor for very hot temperatures
         )
-        self.rainfallConvectiveMaxRate = (
+        self.rainfall_convective_max_rate = (
             0.4  # Maximum convective base rainfall rate at peak temperature
         )
-        self.rainfallConvectiveOceanRate = 0.05
-        self.rainfallOrographicFactor = (
+        self.rainfall_convective_ocean_rate = 0.05
+        self.rainfall_orographic_factor = (
             0.0001  # Multiplier for orographic precipitation (% moisture/1m elevation)
         )
-        self.rainfallFrontalFactor = (
+        self.rainfall_frontal_factor = (
             0.2  # Multiplier for frontal/cyclonic precipitation
         )
-        self.rainfallMinimumPrecipitation = (
+        self.rainfall_minimum_precipitation = (
             0.001  # Minimum absolute precipitation to ensure linear decay
         )
-        self.rainPeakOrographicFactor = 2.0
-        self.rainHillOrographicFactor = 1.3
-        self.rainSmoothing = 2
+        self.rain_peak_orographic_factor = 2.0
+        self.rain_hill_orographic_factor = 1.3
+        self.rain_smoothing = 2
 
         # --- Rivers --- #
-        self.RiverMinBasinSize = 8  # Minimum basin size to qualify for rivers
-        self.riverNodeSmoothing = 4
-        self.RiverTargetCountStandard = (
+        self.river_min_basin_size = 8  # Minimum basin size to qualify for rivers
+        self.river_node_smoothing = 4
+        self.river_target_count_standard = (
             30  # Target number of major rivers for standard map
         )
-        self.RiverFlowAccumulationFactor = (
+        self.river_flow_accumulation_factor = (
             1000.0  # Base factor for flow accumulation calculations
         )
-        self.LakeTargetCount = 9  # Target number of lakes for standard map
+        self.lake_target_count = 9  # Target number of lakes for standard map
 
         # Node-based Flow Parameters (D4 - Cardinal directions only)
-        self.NodeFlowDirections = [
+        self.node_flow_directions = [
             (0, 1),  # North
             (1, 0),  # East
             (0, -1),  # South
@@ -496,45 +500,49 @@ class MapConfig:
         ]
 
         # Enhanced river generation parameters
-        self.RiverSpilloverHeight = 100.0  # Allow slight uphill flow to prevent rigid drainage (elevation units, converts to meters)
-        self.RiverDistanceFlowBonus = (
+        self.river_spillover_height = 100.0  # Allow slight uphill flow to prevent rigid drainage (elevation units, converts to meters)
+        self.river_distance_flow_bonus = (
             2.5  # Flow bonus per distance unit from outlet to encourage longer rivers
         )
-        self.RiverElevationSourceBonus = (
+        self.river_elevation_source_bonus = (
             0.02  # Flow bonus for high elevation sources (mountains)
         )
-        self.RiverPeakSourceBonus = 15.0  # Additional flow bonus for nodes near peaks
-        self.RiverHillSourceBonus = 7.5  # Additional flow bonus for nodes near hills
-        self.RiverFlowPerturbation = (
+        self.river_peak_source_bonus = (
+            15.0  # Additional flow bonus for nodes near peaks
+        )
+        self.river_hill_source_bonus = 7.5  # Additional flow bonus for nodes near hills
+        self.river_flow_perturbation = (
             50.0  # Penalty for straight-line flow to encourage winding rivers
         )
 
         # Strategic river selection parameters
-        self.RiverGlacialCategoryWeight = (
+        self.river_glacial_category_weight = (
             0.3  # Fraction of rivers allocated to glacial-fed systems (allocated first)
         )
-        self.RiverLengthCategoryWeight = 0.4
-        self.RiverDesiredLengthToSplit = 8.0
-        self.glacialPeakCountScore = 10
-        self.riverOceanBonus = 25
+        self.river_length_category_weight = 0.4
+        self.river_desired_length_to_split = 8.0
+        self.glacial_peak_count_score = 10
+        self.river_ocean_bonus = 25
 
         # Enhanced lake parameters
-        self.LakeMaxGrowthSize = 9  # Maximum tiles for lakes (game constraint)
-        self.LakeElevationWeight = 0.6  # Weight for elevation-based lake growth
-        self.LakeOceanProximityWeight = 0.4  # Weight for ocean proximity in lake growth
-        self.LakeOceanConnectionRange = (
+        self.lake_max_growth_size = 9  # Maximum tiles for lakes (game constraint)
+        self.lake_elevation_weight = 0.6  # Weight for elevation-based lake growth
+        self.lake_ocean_proximity_weight = (
+            0.4  # Weight for ocean proximity in lake growth
+        )
+        self.lake_ocean_connection_range = (
             4  # Maximum distance to attempt ocean connections
         )
-        self.lakeBasinSizeFactor = 60.0
-        self.lakeBasinLengthFactor = 12.0
-        self.lakeBasinReliefFactor = 420.0
-        self.lakeBasinRainFactor = 140.0
-        self.lakeCE = 2.4e-3  # Lake evaporation coefficient
-        self.lakeMoistureDiffusionIterations = (
+        self.lake_basin_size_factor = 60.0
+        self.lake_basin_length_factor = 12.0
+        self.lake_basin_relief_factor = 420.0
+        self.lake_basin_rain_factor = 140.0
+        self.lake_ce = 2.4e-3  # Lake evaporation coefficient
+        self.lake_moisture_diffusion_iterations = (
             12  # Diffusion iterations for lake moisture
         )
-        self.largeLakeSizeThreshold = 4  # Minimum size for large lake bonus
-        self.largeLakeMoistureBonus = 1.1  # Moisture multiplier for large lakes
+        self.large_lake_size_threshold = 4  # Minimum size for large lake bonus
+        self.large_lake_moisture_bonus = 1.1  # Moisture multiplier for large lakes
 
     def _initialize_terrain_parameters(self):
         """Initialize terrain-related parameters."""
@@ -740,8 +748,8 @@ class MapConfig:
         """Load terrain constraints from XML TerrainInfos"""
         constraints = {}
 
-        for i in xrange(self.gc.getNumTerrainInfos()):
-            terrain_info = self.gc.getTerrainInfo(i)
+        for i in xrange(self.game_context.getNumTerrainInfos()):
+            terrain_info = self.game_context.getTerrainInfo(i)
             terrain_type = terrain_info.getType()
 
             constraints[i] = {
@@ -755,8 +763,8 @@ class MapConfig:
         """Load feature constraints from XML FeatureInfos"""
         constraints = {}
 
-        for i in xrange(self.gc.getNumFeatureInfos()):
-            feature_info = self.gc.getFeatureInfo(i)
+        for i in xrange(self.game_context.getNumFeatureInfos()):
+            feature_info = self.game_context.getFeatureInfo(i)
             feature_type = feature_info.getType()
 
             constraints[i] = {
@@ -775,13 +783,13 @@ class MapConfig:
         """Load bonus constraints from XML BonusInfos"""
         constraints = {}
 
-        for i in xrange(self.gc.getNumBonusInfos()):
-            bonus_info = self.gc.getBonusInfo(i)
+        for i in xrange(self.game_context.getNumBonusInfos()):
+            bonus_info = self.game_context.getBonusInfo(i)
 
             constraints[i] = {
                 "type_string": bonus_info.getType(),
                 "bonus_class": bonus_info.getBonusClassType(),
-                "iClassUnique": self.gc.getBonusClassInfo(
+                "iClassUnique": self.game_context.getBonusClassInfo(
                     bonus_info.getBonusClassType()
                 ).getUniqueRange(),
                 "iPlacementOrder": bonus_info.getPlacementOrder(),
@@ -819,15 +827,15 @@ class MapConfig:
     def _precalculate_neighbours(self):
         """Pre-calculates and caches neighbour relationships for all tiles for performance."""
         self.neighbours = {}
-        for i in xrange(self.iNumPlots):
+        for i in xrange(self.num_plots):
             self.neighbours[i] = [
                 self._get_neighbour_tile(i, direction) for direction in xrange(9)
             ]
 
     def _get_neighbour_tile(self, i, direction):
         """Gets the index of a neighbouring tile in a given direction, handling wrapping."""
-        x = i % self.iNumPlotsX
-        y = i // self.iNumPlotsX
+        x = i % self.num_plots_x
+        y = i // self.num_plots_x
 
         if direction == self.N:
             y += 1
@@ -853,39 +861,39 @@ class MapConfig:
         x, y = self.wrap_coordinates(x, y)
         if x == -1 or y == -1:
             return -1
-        return y * self.iNumPlotsX + x
+        return y * self.num_plots_x + x
 
     def get_wrapped_distance(self, x1, y1, x2, y2):
         """Calculates the shortest distance between two points, considering map wrapping."""
         dx = x1 - x2
         dy = y1 - y2
 
-        if self.wrapX and abs(dx) > self.iNumPlotsX / 2:
-            dx = dx - copysign(self.iNumPlotsX, dx)
-        if self.wrapY and abs(dy) > self.iNumPlotsY / 2:
-            dy = dy - copysign(self.iNumPlotsY, dy)
+        if self.wrap_x and abs(dx) > self.num_plots_x / 2:
+            dx = dx - copysign(self.num_plots_x, dx)
+        if self.wrap_y and abs(dy) > self.num_plots_y / 2:
+            dy = dy - copysign(self.num_plots_y, dy)
 
         return dx, dy
 
     def wrap_coordinates(self, x, y):
         """Wrap coordinates according to map settings"""
-        if self.wrapX:
-            x = x % self.iNumPlotsX
-        elif not (0 <= x < self.iNumPlotsX):
+        if self.wrap_x:
+            x = x % self.num_plots_x
+        elif not (0 <= x < self.num_plots_x):
             x = -1
 
-        if self.wrapY:
-            y = y % self.iNumPlotsY
-        elif not (0 <= y < self.iNumPlotsY):
+        if self.wrap_y:
+            y = y % self.num_plots_y
+        elif not (0 <= y < self.num_plots_y):
             y = -1
 
         return x, y
 
     def coordinates_in_bounds(self, x, y):
         """Check if coordinates are within map bounds"""
-        if not self.wrapX and (x < 0 or x >= self.iNumPlotsX):
+        if not self.wrap_x and (x < 0 or x >= self.num_plots_x):
             return False
-        if not self.wrapY and (y < 0 or y >= self.iNumPlotsY):
+        if not self.wrap_y and (y < 0 or y >= self.num_plots_y):
             return False
         return True
 
@@ -931,33 +939,35 @@ class MapConfig:
 
     def get_latitude_for_y(self, y):
         """Converts a y-coordinate to its corresponding latitude."""
-        return self.bottomLatitude + (
-            (self.topLatitude - self.bottomLatitude) * float(y) / float(self.iNumPlotsY)
+        return self.bottom_latitude + (
+            (self.top_latitude - self.bottom_latitude)
+            * float(y)
+            / float(self.num_plots_y)
         )
 
     def get_y_for_latitude(self, latitude):
         """Convert latitude to y coordinate"""
-        lat_range = self.topLatitude - self.bottomLatitude
-        normalized_lat = (latitude - self.bottomLatitude) / lat_range
-        y = int(normalized_lat * self.iNumPlotsY)
-        return min(y, self.iNumPlotsY - 1)
+        lat_range = self.top_latitude - self.bottom_latitude
+        normalized_lat = (latitude - self.bottom_latitude) / lat_range
+        y = int(normalized_lat * self.num_plots_y)
+        return min(y, self.num_plots_y - 1)
 
     def calculate_direction_vector(self, i, j):
         """Calculate unit vector (dx, dy) from tile i to tile j"""
-        x_i = i % self.iNumPlotsX
-        y_i = i // self.iNumPlotsX
-        x_j = j % self.iNumPlotsX
-        y_j = j // self.iNumPlotsX
+        x_i = i % self.num_plots_x
+        y_i = i // self.num_plots_x
+        x_j = j % self.num_plots_x
+        y_j = j // self.num_plots_x
 
         # Calculate raw differences
         dx = x_j - x_i
         dy = y_j - y_i
 
         # Handle wrapping
-        if self.wrapX and abs(dx) > self.iNumPlotsX / 2:
-            dx = dx - copysign(self.iNumPlotsX, dx)
-        if self.wrapY and abs(dy) > self.iNumPlotsY / 2:
-            dy = dy - copysign(self.iNumPlotsY, dy)
+        if self.wrap_x and abs(dx) > self.num_plots_x / 2:
+            dx = dx - copysign(self.num_plots_x, dx)
+        if self.wrap_y and abs(dy) > self.num_plots_y / 2:
+            dy = dy - copysign(self.num_plots_y, dy)
 
         # Normalize to unit vector
         distance = math.sqrt(dx * dx + dy * dy)
@@ -1021,21 +1031,21 @@ class MapConfig:
         kernel = [v / kernel_sum for v in kernel]
 
         # Horizontal pass
-        temp_grid = [0.0] * self.iNumPlots
-        for i in xrange(self.iNumPlots):
+        temp_grid = [0.0] * self.num_plots
+        for i in xrange(self.num_plots):
             if filter_func is None or filter_func(i):
-                x = i % self.iNumPlotsX
-                y = i // self.iNumPlotsX
+                x = i % self.num_plots_x
+                y = i // self.num_plots_x
                 weighted_sum = 0.0
                 weight_total = 0.0
 
                 for k in xrange(-radius, radius + 1):
                     neighbour_x = x + k
-                    if self.wrapX:
-                        neighbour_x = neighbour_x % self.iNumPlotsX
-                    elif neighbour_x < 0 or neighbour_x >= self.iNumPlotsX:
+                    if self.wrap_x:
+                        neighbour_x = neighbour_x % self.num_plots_x
+                    elif neighbour_x < 0 or neighbour_x >= self.num_plots_x:
                         continue
-                    neighbour_index = y * self.iNumPlotsX + neighbour_x
+                    neighbour_index = y * self.num_plots_x + neighbour_x
                     if filter_func is None or filter_func(neighbour_index):
                         weighted_sum += grid[neighbour_index] * kernel[k + radius]
                         weight_total += kernel[k + radius]
@@ -1049,22 +1059,22 @@ class MapConfig:
                 temp_grid[i] = grid[i]
 
         # Vertical pass
-        result_grid = [0.0] * self.iNumPlots
-        for i in xrange(self.iNumPlots):
+        result_grid = [0.0] * self.num_plots
+        for i in xrange(self.num_plots):
             if filter_func is None or filter_func(i):
-                x = i % self.iNumPlotsX
-                y = i // self.iNumPlotsX
+                x = i % self.num_plots_x
+                y = i // self.num_plots_x
                 weighted_sum = 0.0
                 weight_total = 0.0
 
                 for k in xrange(-radius, radius + 1):
                     neighbour_y = y + k
-                    if self.wrapY:
-                        neighbour_y = neighbour_y % self.iNumPlotsY
-                    elif neighbour_y < 0 or neighbour_y >= self.iNumPlotsY:
+                    if self.wrap_y:
+                        neighbour_y = neighbour_y % self.num_plots_y
+                    elif neighbour_y < 0 or neighbour_y >= self.num_plots_y:
                         continue
 
-                    neighbour_index = neighbour_y * self.iNumPlotsX + x
+                    neighbour_index = neighbour_y * self.num_plots_x + x
                     if filter_func is None or filter_func(neighbour_index):
                         weighted_sum += temp_grid[neighbour_index] * kernel[k + radius]
                         weight_total += kernel[k + radius]
@@ -1087,8 +1097,8 @@ class MapConfig:
         """Generate a grid of Perlin noise values"""
         perlin = self.Perlin2D(seed)
         grid = []
-        for y in xrange(self.iNumPlotsY):
-            for x in xrange(self.iNumPlotsX):
+        for y in xrange(self.num_plots_y):
+            for x in xrange(self.num_plots_x):
                 normalized_x = x / scale
                 normalized_y = y / scale
                 grid.append(perlin.noise(normalized_x, normalized_y))
@@ -1150,10 +1160,10 @@ class MapConfig:
 
     def get_coords_from_index(self, index):
         """Convert flat index to x,y coordinates"""
-        if index < 0 or index >= self.iNumPlots:
+        if index < 0 or index >= self.num_plots:
             return -1, -1
-        y = index // self.iNumPlotsX
-        x = index % self.iNumPlotsX
+        y = index // self.num_plots_x
+        x = index % self.num_plots_x
         return x, y
 
     def get_index_from_coords(self, x, y):
@@ -1161,7 +1171,7 @@ class MapConfig:
         x, y = self.wrap_coordinates(x, y)
         if not self.coordinates_in_bounds(x, y):
             return -1
-        return y * self.iNumPlotsX + x
+        return y * self.num_plots_x + x
 
     def is_node_valid_for_flow(self, node_x, node_y, flow_direction=None):
         """
@@ -1174,30 +1184,30 @@ class MapConfig:
         # Check basic bounds
         if (
             node_x < 0
-            or node_x >= self.iNumPlotsX
+            or node_x >= self.num_plots_x
             or node_y < 0
-            or node_y >= self.iNumPlotsY
+            or node_y >= self.num_plots_y
         ):
             return False
 
         # Handle non-wrapping boundaries
-        if not self.wrapY:
+        if not self.wrap_y:
             if node_y == 0:  # Bottom boundary - invalid
                 return False
             elif node_y == 1:  # Near bottom boundary - E/W/N only
                 if flow_direction == (0, -1):  # South flow
                     return False
-            elif node_y == self.iNumPlotsY - 1:  # Top boundary - E/W/S only
+            elif node_y == self.num_plots_y - 1:  # Top boundary - E/W/S only
                 if flow_direction == (0, 1):  # North flow
                     return False
 
-        if not self.wrapX:
-            if node_x == self.iNumPlotsX - 1:  # Right boundary - invalid
+        if not self.wrap_x:
+            if node_x == self.num_plots_x - 1:  # Right boundary - invalid
                 return False
             elif node_x == 0:  # Left boundary - E/N/S only
                 if flow_direction == (-1, 0):  # West flow
                     return False
-            elif node_x == self.iNumPlotsX - 2:  # Near right boundary - W/N/S only
+            elif node_x == self.num_plots_x - 2:  # Near right boundary - W/N/S only
                 if flow_direction == (1, 0):  # East flow
                     return False
 
@@ -1207,19 +1217,19 @@ class MapConfig:
         """Get valid neighbouring nodes for D4 flow calculation."""
         neighbours = []
 
-        for dx, dy in self.NodeFlowDirections:
+        for dx, dy in self.node_flow_directions:
             nx = node_x + dx
             ny = node_y + dy
 
             # Handle wrapping
-            if self.wrapX:
-                nx = nx % self.iNumPlotsX
-            elif nx < 0 or nx >= self.iNumPlotsX:
+            if self.wrap_x:
+                nx = nx % self.num_plots_x
+            elif nx < 0 or nx >= self.num_plots_x:
                 continue
 
-            if self.wrapY:
-                ny = ny % self.iNumPlotsY
-            elif ny < 0 or ny >= self.iNumPlotsY:
+            if self.wrap_y:
+                ny = ny % self.num_plots_y
+            elif ny < 0 or ny >= self.num_plots_y:
                 continue
 
             # Check if this flow direction is valid from source node
@@ -1242,17 +1252,17 @@ class MapConfig:
             ty = node_y + dy
 
             # Handle wrapping and bounds
-            if self.wrapX:
-                tx = tx % self.iNumPlotsX
-            elif tx < 0 or tx >= self.iNumPlotsX:
+            if self.wrap_x:
+                tx = tx % self.num_plots_x
+            elif tx < 0 or tx >= self.num_plots_x:
                 continue
 
-            if self.wrapY:
-                ty = ty % self.iNumPlotsY
-            elif ty < 0 or ty >= self.iNumPlotsY:
+            if self.wrap_y:
+                ty = ty % self.num_plots_y
+            elif ty < 0 or ty >= self.num_plots_y:
                 continue
 
-            tile_index = ty * self.iNumPlotsX + tx
+            tile_index = ty * self.num_plots_x + tx
             intersecting_tiles.append(tile_index)
 
         return intersecting_tiles
@@ -1269,17 +1279,17 @@ class MapConfig:
             ny = tile_y + dy
 
             # Handle wrapping and bounds
-            if self.wrapX:
-                nx = nx % self.iNumPlotsX
-            elif nx < 0 or nx >= self.iNumPlotsX:
+            if self.wrap_x:
+                nx = nx % self.num_plots_x
+            elif nx < 0 or nx >= self.num_plots_x:
                 continue
 
-            if self.wrapY:
-                ny = ny % self.iNumPlotsY
-            elif ny < 0 or ny >= self.iNumPlotsY:
+            if self.wrap_y:
+                ny = ny % self.num_plots_y
+            elif ny < 0 or ny >= self.num_plots_y:
                 continue
 
-            node_index = ny * self.iNumPlotsX + nx
+            node_index = ny * self.num_plots_x + nx
             surrounding_nodes.append(node_index)
 
         return surrounding_nodes
@@ -1293,7 +1303,7 @@ class MapConfig:
         """Extract terrain compatibility from FeatureInfo"""
         terrain_list = []
 
-        for i in xrange(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.game_context.getNumTerrainInfos()):
             if feature_info.isTerrain(i):
                 terrain_list.append(i)
 
@@ -1303,7 +1313,7 @@ class MapConfig:
         """Extract terrain compatibility from BonusInfo"""
         terrain_list = []
 
-        for i in xrange(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.game_context.getNumTerrainInfos()):
             if bonus_info.isTerrain(i):
                 terrain_list.append(i)
 
@@ -1313,7 +1323,7 @@ class MapConfig:
         """Extract feature compatibility from BonusInfo"""
         feature_list = []
 
-        for i in xrange(self.gc.getNumFeatureInfos()):
+        for i in xrange(self.game_context.getNumFeatureInfos()):
             if bonus_info.isFeature(i):
                 feature_list.append(i)
 
@@ -1323,7 +1333,7 @@ class MapConfig:
         """Extract feature-terrain compatibility from BonusInfo"""
         feature_terrain_list = []
 
-        for i in xrange(self.gc.getNumTerrainInfos()):
+        for i in xrange(self.game_context.getNumTerrainInfos()):
             if bonus_info.isFeatureTerrain(i):
                 feature_terrain_list.append(i)
 
@@ -1349,7 +1359,7 @@ class MapConfig:
         """Convert feature string to game ID, with error handling"""
         if feature_string is None:
             return -1
-        return self.gc.getInfoTypeForString(feature_string)
+        return self.game_context.getInfoTypeForString(feature_string)
 
     def get_terrain_string_from_id(self, terrain_id):
         """Convert terrain ID back to string for comparison"""
@@ -1404,17 +1414,17 @@ class ElevationMap:
     def __init__(self, map_constants=None):
         # Use provided MapConfig or create new instance
         if map_constants is None:
-            self.mc = MapConfig()
+            self.map_config = MapConfig()
         else:
-            self.mc = map_constants
+            self.map_config = map_constants
 
         # Initialize data structures
         self._initialize_data_structures()
 
     # Public methods
 
-    def IsBelowSeaLevel(self, i):
-        if self.elevationMap[i] < self.seaLevelThreshold:
+    def is_below_sea_level(self, i):
+        if self.elevation_map[i] < self.sea_level_threshold:
             return True
         return False
 
@@ -1424,43 +1434,43 @@ class ElevationMap:
         """Initialize all data structures used by the elevation map"""
 
         # Plate identification and properties
-        self.plateID = [self.mc.plateCount + 1] * self.mc.iNumPlots
-        self.seedList = []
-        self.plumeList = []
+        self.plate_id = [self.map_config.plate_count + 1] * self.map_config.num_plots
+        self.seed_list = []
+        self.plume_list = []
 
         # Velocity and motion maps
-        self.continentU = [0.0] * self.mc.iNumPlots
-        self.continentV = [0.0] * self.mc.iNumPlots
+        self.continent_u = [0.0] * self.map_config.num_plots
+        self.continent_v = [0.0] * self.map_config.num_plots
 
         # Elevation component maps
-        self.elevationBaseMap = [0.0] * self.mc.iNumPlots
-        self.elevationVelMap = [0.0] * self.mc.iNumPlots
-        self.elevationBuoyMap = [0.0] * self.mc.iNumPlots
-        self.elevationPrelMap = [0.0] * self.mc.iNumPlots
-        self.elevationBoundaryMap = [0.0] * self.mc.iNumPlots
-        self.elevationProminenceMap = [0.0] * self.mc.iNumPlots
-        self.elevationMap = [0.0] * self.mc.iNumPlots
-        self.prominenceMap = [0.0] * self.mc.iNumPlots
+        self.elevation_base_map = [0.0] * self.map_config.num_plots
+        self.elevation_vel_map = [0.0] * self.map_config.num_plots
+        self.elevation_buoy_map = [0.0] * self.map_config.num_plots
+        self.elevation_prel_map = [0.0] * self.map_config.num_plots
+        self.elevation_boundary_map = [0.0] * self.map_config.num_plots
+        self.elevation_prominence_map = [0.0] * self.map_config.num_plots
+        self.elevation_map = [0.0] * self.map_config.num_plots
+        self.prominence_map = [0.0] * self.map_config.num_plots
 
         # Post process maps
-        self.aboveSeaLevelMap = [0.0] * self.mc.iNumPlots
-        self.oceanBasinMap = [-1] * self.mc.iNumPlots
-        self.basinSizes = {}
-        self.continentID = [-1] * self.mc.iNumPlots
-        self.continentSizes = {}
-        self.continentMetadata = {}
-        self.isPangaea = False
+        self.above_sea_level_map = [0.0] * self.map_config.num_plots
+        self.ocean_basin_map = [-1] * self.map_config.num_plots
+        self.basin_sizes = {}
+        self.continent_id = [-1] * self.map_config.num_plots
+        self.continent_sizes = {}
+        self.continent_metadata = {}
+        self.is_pangaea = False
 
         # Utility maps
-        self.dx_centroid = [0.0] * self.mc.iNumPlots
-        self.dy_centroid = [0.0] * self.mc.iNumPlots
-        self.d_centroid = [0.0] * self.mc.iNumPlots
+        self.dx_centroid = [0.0] * self.map_config.num_plots
+        self.dy_centroid = [0.0] * self.map_config.num_plots
+        self.d_centroid = [0.0] * self.map_config.num_plots
 
         # Output map
-        self.plotTypes = [PlotTypes.NO_PLOT] * self.mc.iNumPlots
+        self.plot_types = [PlotTypes.NO_PLOT] * self.map_config.num_plots
 
     @profile
-    def GenerateElevationMap(self):
+    def generate_elevation_map(self):
         """Main method to generate the complete elevation map using plate tectonics"""
         print("----Generating Topography System----")
 
@@ -1502,11 +1512,11 @@ class ElevationMap:
         self._calculate_terrain_thresholds()
         self._calculate_plot_types()
         self._decluster_elevation_peaks()
-        self._calculateOceanBasins()
+        self._calculate_ocean_basins()
         self._optimize_wrap_edges()
         self._calculate_elevation_effects()
-        self._calculateContinentIDs()
-        if self.mc.enablePangaeaBreaker:
+        self._calculate_continent_ids()
+        if self.map_config.enable_pangaea_breaker:
             self._break_pangaea()
 
     @profile
@@ -1525,16 +1535,16 @@ class ElevationMap:
 
         while growth_queue:
             plot_index, continent_id = growth_queue.popleft()
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
+            x = plot_index % self.map_config.num_plots_x
+            y = plot_index // self.map_config.num_plots_x
 
-            continent = self.seedList[continent_id]
+            continent = self.seed_list[continent_id]
 
             # Calculate growth probability based on multiple geological factors
             growth_probability = self._calculate_growth_probability(continent, x, y)
 
             # Get neighbours once and cache the check
-            neighbours = self.mc.neighbours[plot_index]
+            neighbours = self.map_config.neighbours[plot_index]
             has_available = False
 
             # Process neighbours in random order for organic growth
@@ -1545,12 +1555,12 @@ class ElevationMap:
                 neighbour_index = neighbours[dir_idx]
                 if (
                     neighbour_index >= 0
-                    and self.plateID[neighbour_index] > self.mc.plateCount
+                    and self.plate_id[neighbour_index] > self.map_config.plate_count
                 ):
 
                     if random.random() < growth_probability:
                         # Claim the neighbouring plot
-                        self.plateID[neighbour_index] = continent_id
+                        self.plate_id[neighbour_index] = continent_id
                         continent["size"] += 1
 
                         # Defer centroid update - just mark for later
@@ -1568,48 +1578,48 @@ class ElevationMap:
 
         # Batch update centroids for all continents that grew
         for continent_id in plots_needing_update:
-            self._update_continent_centroid(self.seedList[continent_id])
+            self._update_continent_centroid(self.seed_list[continent_id])
 
     def _place_continent_seeds(self):
         """Place initial seeds for continental plate growth"""
         # Create shuffled coordinate lists for random placement
-        x_coords = list(xrange(self.mc.iNumPlotsX))
-        y_coords = list(xrange(self.mc.iNumPlotsY))
+        x_coords = list(xrange(self.map_config.num_plots_x))
+        y_coords = list(xrange(self.map_config.num_plots_y))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
         growth_queue = deque()
 
-        for continent_id in xrange(self.mc.plateCount):
+        for continent_id in xrange(self.map_config.plate_count):
             # Place primary seed
             main_x = x_coords[continent_id]
             main_y = y_coords[continent_id]
-            main_index = main_y * self.mc.iNumPlotsX + main_x
+            main_index = main_y * self.map_config.num_plots_x + main_x
 
             # Create continent data structure with geological properties
             continent_data = {
                 "ID": continent_id,
                 "seeds": [{"x": main_x, "y": main_y, "i": main_index}],
-                "growthFactor": self.mc.growthFactorMin
-                + self.mc.growthFactorRange * random.random(),
-                "plateDensity": self.mc.minPlateDensity
-                + (1 - self.mc.minPlateDensity) * random.random(),
+                "growthFactor": self.map_config.growth_factor_min
+                + self.map_config.growth_factor_range * random.random(),
+                "plateDensity": self.map_config.min_plate_density
+                + (1 - self.map_config.min_plate_density) * random.random(),
                 "size": 1,
                 "x_centroid": main_x,
                 "y_centroid": main_y,
                 "mass": 0,
                 "moment": 0,
                 # Organic growth properties
-                "roughness": self.mc.roughnessMin
-                + self.mc.roughnessRange * random.random(),
-                "anisotropy": self.mc.anisotropyMin + random.random(),
+                "roughness": self.map_config.roughness_min
+                + self.map_config.roughness_range * random.random(),
+                "anisotropy": self.map_config.anisotropy_min + random.random(),
                 "growth_angle": random.random() * 2 * math.pi,
                 # Cache for optimization
                 "_nearest_seed_cache": {},
             }
 
-            self.seedList.append(continent_data)
-            self.plateID[main_index] = continent_id
+            self.seed_list.append(continent_data)
+            self.plate_id[main_index] = continent_id
             growth_queue.append((main_index, continent_id))
 
         return growth_queue
@@ -1642,7 +1652,7 @@ class ElevationMap:
 
         min_distance = 1e999
         for seed in continent["seeds"]:
-            dx, dy = self.mc.get_wrapped_distance(x, y, seed["x"], seed["y"])
+            dx, dy = self.map_config.get_wrapped_distance(x, y, seed["x"], seed["y"])
             distance = math.sqrt(dx * dx + dy * dy)
             min_distance = min(min_distance, distance)
 
@@ -1681,10 +1691,10 @@ class ElevationMap:
 
         # More efficient iteration - break early if we can
         plot_count = 0
-        for plot_index in xrange(self.mc.iNumPlots):  # xrange for Python 2.4
-            if self.plateID[plot_index] == continent_id:
-                plot_x = plot_index % self.mc.iNumPlotsX
-                plot_y = plot_index // self.mc.iNumPlotsX
+        for plot_index in xrange(self.map_config.num_plots):  # xrange for Python 2.4
+            if self.plate_id[plot_index] == continent_id:
+                plot_x = plot_index % self.map_config.num_plots_x
+                plot_y = plot_index // self.map_config.num_plots_x
                 continent_coordinates.append((plot_x, plot_y))
                 plot_count += 1
 
@@ -1703,17 +1713,17 @@ class ElevationMap:
         isolation_threshold = 0.6
         flip_probability = 0.3
 
-        for plot_index in xrange(self.mc.iNumPlots):
-            current_continent = self.plateID[plot_index]
+        for plot_index in xrange(self.map_config.num_plots):
+            current_continent = self.plate_id[plot_index]
             same_neighbours = 0
             total_neighbours = 0
 
             # Count neighbours of same continent
             for dir in xrange(1, 9):
-                neighbour_index = self.mc.neighbours[plot_index][dir]
+                neighbour_index = self.map_config.neighbours[plot_index][dir]
                 if neighbour_index >= 0:
                     total_neighbours += 1
-                    if self.plateID[neighbour_index] == current_continent:
+                    if self.plate_id[neighbour_index] == current_continent:
                         same_neighbours += 1
 
             # Process isolated or mostly isolated cells
@@ -1737,41 +1747,41 @@ class ElevationMap:
         """Find the most common continent among neighbours"""
         neighbour_counts = {}
         for dir in xrange(1, 9):
-            neighbour_index = self.mc.neighbours[plot_index][dir]
+            neighbour_index = self.map_config.neighbours[plot_index][dir]
             if neighbour_index >= 0:
-                neighbour_continent = self.plateID[neighbour_index]
+                neighbour_continent = self.plate_id[neighbour_index]
                 neighbour_counts[neighbour_continent] = (
                     neighbour_counts.get(neighbour_continent, 0) + 1
                 )
 
         if neighbour_counts:
             return max([(count, key) for key, count in neighbour_counts.items()])[1]
-        return self.plateID[plot_index]
+        return self.plate_id[plot_index]
 
     def _apply_continent_changes(self, changes):
         """Apply continent ownership changes and update sizes"""
         for plot_index, new_continent in changes:
-            old_continent = self.plateID[plot_index]
-            self.plateID[plot_index] = new_continent
-            self.seedList[old_continent]["size"] -= 1
-            self.seedList[new_continent]["size"] += 1
+            old_continent = self.plate_id[plot_index]
+            self.plate_id[plot_index] = new_continent
+            self.seed_list[old_continent]["size"] -= 1
+            self.seed_list[new_continent]["size"] += 1
 
     @profile
     def _calculate_plate_properties(self):
         """Calculate mass, moments, and other plate properties"""
         # Update continent sizes, centroids, and mass
-        for continent in self.seedList:
+        for continent in self.seed_list:
             continent["mass"] = continent["size"] * continent["plateDensity"]
 
         # Calculate moments of inertia
-        for plot_index in xrange(self.mc.iNumPlots):
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
-            continent_id = self.plateID[plot_index]
+        for plot_index in xrange(self.map_config.num_plots):
+            x = plot_index % self.map_config.num_plots_x
+            y = plot_index // self.map_config.num_plots_x
+            continent_id = self.plate_id[plot_index]
 
-            if continent_id < self.mc.plateCount:
-                continent = self.seedList[continent_id]
-                dx, dy = self.mc.get_wrapped_distance(
+            if continent_id < self.map_config.plate_count:
+                continent = self.seed_list[continent_id]
+                dx, dy = self.map_config.get_wrapped_distance(
                     x, y, continent["x_centroid"], continent["y_centroid"]
                 )
                 continent["moment"] += continent["plateDensity"] * (dx * dx + dy * dy)
@@ -1779,12 +1789,12 @@ class ElevationMap:
     @profile
     def _generate_hotspot_plumes(self):
         """Generate hotspot plume locations"""
-        x_coords = list(xrange(self.mc.iNumPlotsX))
-        y_coords = list(xrange(self.mc.iNumPlotsY))
+        x_coords = list(xrange(self.map_config.num_plots_x))
+        y_coords = list(xrange(self.map_config.num_plots_y))
         random.shuffle(x_coords)
         random.shuffle(y_coords)
 
-        for plume_id in xrange(self.mc.hotspotCount):
+        for plume_id in xrange(self.map_config.hotspot_count):
             x = x_coords[plume_id]
             y = y_coords[plume_id]
 
@@ -1792,20 +1802,28 @@ class ElevationMap:
                 "ID": plume_id,
                 "x": x,
                 "y": y,
-                "x_wrap_plus": (None, x + self.mc.iNumPlotsX)[self.mc.wrapX],
-                "x_wrap_minus": (None, x - self.mc.iNumPlotsX)[self.mc.wrapX],
-                "y_wrap_plus": (None, y + self.mc.iNumPlotsY)[self.mc.wrapY],
-                "y_wrap_minus": (None, y - self.mc.iNumPlotsY)[self.mc.wrapY],
+                "x_wrap_plus": (None, x + self.map_config.num_plots_x)[
+                    self.map_config.wrap_x
+                ],
+                "x_wrap_minus": (None, x - self.map_config.num_plots_x)[
+                    self.map_config.wrap_x
+                ],
+                "y_wrap_plus": (None, y + self.map_config.num_plots_y)[
+                    self.map_config.wrap_y
+                ],
+                "y_wrap_minus": (None, y - self.map_config.num_plots_y)[
+                    self.map_config.wrap_y
+                ],
             }
-            self.plumeList.append(plume_data)
+            self.plume_list.append(plume_data)
 
     @profile
     def _calculate_plate_velocities(self):
         """Calculate realistic plate velocities using multiple force types"""
         # Initialize force arrays
-        translational_u = [0] * self.mc.plateCount
-        translational_v = [0] * self.mc.plateCount
-        rotational_forces = [0] * self.mc.plateCount
+        translational_u = [0] * self.map_config.plate_count
+        translational_v = [0] * self.map_config.plate_count
+        rotational_forces = [0] * self.map_config.plate_count
 
         # Pre-calculate centroid distances for performance
         self._calculate_centroid_distances()
@@ -1830,20 +1848,22 @@ class ElevationMap:
     def _add_hotspot_forces(self, u_forces, v_forces, rotational_forces):
         """Add hotspot plume forces with realistic distance limits"""
         max_influence_dist = (
-            min(self.mc.iNumPlotsX, self.mc.iNumPlotsY)
-            * self.mc.maxInfluenceDistanceHotspot
+            min(self.map_config.num_plots_x, self.map_config.num_plots_y)
+            * self.map_config.max_influence_distance_hotspot
         )
 
-        for plot_index in xrange(self.mc.iNumPlots):
-            continent_id = self.plateID[plot_index]
-            if continent_id >= self.mc.plateCount:
+        for plot_index in xrange(self.map_config.num_plots):
+            continent_id = self.plate_id[plot_index]
+            if continent_id >= self.map_config.plate_count:
                 continue
 
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
+            x = plot_index % self.map_config.num_plots_x
+            y = plot_index // self.map_config.num_plots_x
 
-            for plume in self.plumeList:
-                dx, dy = self.mc.get_wrapped_distance(x, y, plume["x"], plume["y"])
+            for plume in self.plume_list:
+                dx, dy = self.map_config.get_wrapped_distance(
+                    x, y, plume["x"], plume["y"]
+                )
                 distance_squared = dx * dx + dy * dy
 
                 # Limit influence distance to prevent edge effects
@@ -1858,7 +1878,7 @@ class ElevationMap:
                     force_y = force_magnitude * dy / distance
 
                     # Scale by plate mass
-                    continent = self.seedList[continent_id]
+                    continent = self.seed_list[continent_id]
                     mass_factor = 1.0 / max(continent["mass"], 1.0)
                     u_forces[continent_id] += force_x * mass_factor
                     v_forces[continent_id] += force_y * mass_factor
@@ -1883,24 +1903,29 @@ class ElevationMap:
         boundary_segments = {}
 
         # Scan all plots to find plate boundaries
-        for plot_index in xrange(self.mc.iNumPlots):
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
-            current_plate = self.plateID[plot_index]
+        for plot_index in xrange(self.map_config.num_plots):
+            x = plot_index % self.map_config.num_plots_x
+            y = plot_index // self.map_config.num_plots_x
+            current_plate = self.plate_id[plot_index]
 
-            if current_plate >= self.mc.plateCount:
+            if current_plate >= self.map_config.plate_count:
                 continue
 
             # Check cardinal directions for boundaries
-            for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                neighbour_index = self.mc.neighbours[plot_index][direction]
+            for direction in [
+                self.map_config.N,
+                self.map_config.S,
+                self.map_config.E,
+                self.map_config.W,
+            ]:
+                neighbour_index = self.map_config.neighbours[plot_index][direction]
                 if neighbour_index >= 0:
-                    neighbour_plate = self.plateID[neighbour_index]
+                    neighbour_plate = self.plate_id[neighbour_index]
 
                     # Process plate boundary
                     if (
                         neighbour_plate != current_plate
-                        and neighbour_plate < self.mc.plateCount
+                        and neighbour_plate < self.map_config.plate_count
                     ):
                         self._process_boundary_segment(
                             boundary_segments,
@@ -1941,7 +1966,7 @@ class ElevationMap:
             segments = boundary_data["segments"]
             boundary_length = len(segments)
 
-            if boundary_length < self.mc.minBoundaryLength:
+            if boundary_length < self.map_config.min_boundary_length:
                 continue
 
             # Calculate boundary statistics
@@ -1949,11 +1974,11 @@ class ElevationMap:
             avg_y = sum(seg["y"] for seg in segments) / boundary_length
 
             # Determine density difference and subduction potential
-            plate1_density = self.seedList[plate1_id]["plateDensity"]
-            plate2_density = self.seedList[plate2_id]["plateDensity"]
+            plate1_density = self.seed_list[plate1_id]["plateDensity"]
+            plate2_density = self.seed_list[plate2_id]["plateDensity"]
             density_difference = abs(plate1_density - plate2_density)
 
-            if density_difference >= self.mc.minDensityDifference:
+            if density_difference >= self.map_config.min_density_difference:
                 subduction_zone = self._create_subduction_zone(
                     plate1_id,
                     plate2_id,
@@ -2009,10 +2034,10 @@ class ElevationMap:
         boundary_length = zone["boundary_length"]
 
         # Calculate direction from subducting plate centroid to subduction zone
-        plate_centroid_x = self.seedList[subducting_plate]["x_centroid"]
-        plate_centroid_y = self.seedList[subducting_plate]["y_centroid"]
+        plate_centroid_x = self.seed_list[subducting_plate]["x_centroid"]
+        plate_centroid_y = self.seed_list[subducting_plate]["y_centroid"]
 
-        dx, dy = self.mc.get_wrapped_distance(
+        dx, dy = self.map_config.get_wrapped_distance(
             plate_centroid_x, plate_centroid_y, zone["avg_x"], zone["avg_y"]
         )
 
@@ -2030,16 +2055,17 @@ class ElevationMap:
 
         # Distance decay
         max_influence_distance = (
-            min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistance
+            min(self.map_config.num_plots_x, self.map_config.num_plots_y)
+            * self.map_config.max_influence_distance
         )
         distance_factor = max(0.1, 1.0 - (distance / max_influence_distance))
 
         # Plate age approximation
-        age_factor = self.seedList[subducting_plate]["plateDensity"]
+        age_factor = self.seed_list[subducting_plate]["plateDensity"]
 
         # Calculate total force magnitude
         force_magnitude = (
-            self.mc.baseSlabPull
+            self.map_config.base_slab_pull
             * density_factor
             * length_factor
             * distance_factor
@@ -2047,7 +2073,7 @@ class ElevationMap:
         )
 
         # Apply force scaled by plate mass
-        plate_mass = max(self.seedList[subducting_plate]["mass"], 1.0)
+        plate_mass = max(self.seed_list[subducting_plate]["mass"], 1.0)
         force_per_mass = force_magnitude / plate_mass
 
         u_forces[subducting_plate] += force_per_mass * force_dir_x
@@ -2055,7 +2081,7 @@ class ElevationMap:
 
         # Add counter-force to overriding plate
         overriding_plate = zone["overriding_plate"]
-        overriding_mass = max(self.seedList[overriding_plate]["mass"], 1.0)
+        overriding_mass = max(self.seed_list[overriding_plate]["mass"], 1.0)
         counter_force_factor = 0.1
 
         u_forces[overriding_plate] -= (
@@ -2077,17 +2103,18 @@ class ElevationMap:
     def _add_plate_interaction_forces(self, u_forces, v_forces, rotational_forces):
         """Add forces from plate-plate interactions"""
         max_interaction_distance = (
-            min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.maxInfluenceDistance
+            min(self.map_config.num_plots_x, self.map_config.num_plots_y)
+            * self.map_config.max_influence_distance
         )
 
-        for i in xrange(self.mc.plateCount):
-            for j in xrange(i + 1, self.mc.plateCount):
+        for i in xrange(self.map_config.plate_count):
+            for j in xrange(i + 1, self.map_config.plate_count):
                 # Distance between plate centroids
-                dx, dy = self.mc.get_wrapped_distance(
-                    self.seedList[i]["x_centroid"],
-                    self.seedList[i]["y_centroid"],
-                    self.seedList[j]["x_centroid"],
-                    self.seedList[j]["y_centroid"],
+                dx, dy = self.map_config.get_wrapped_distance(
+                    self.seed_list[i]["x_centroid"],
+                    self.seed_list[i]["y_centroid"],
+                    self.seed_list[j]["x_centroid"],
+                    self.seed_list[j]["y_centroid"],
                 )
 
                 distance = math.sqrt(dx * dx + dy * dy)
@@ -2098,8 +2125,8 @@ class ElevationMap:
                     force_y = force_magnitude * dy / distance
 
                     # Apply equal and opposite forces
-                    mass_i = max(self.seedList[i]["mass"], 1.0)
-                    mass_j = max(self.seedList[j]["mass"], 1.0)
+                    mass_i = max(self.seed_list[i]["mass"], 1.0)
+                    mass_j = max(self.seed_list[j]["mass"], 1.0)
 
                     u_forces[i] += force_x / mass_i
                     v_forces[i] += force_y / mass_i
@@ -2109,31 +2136,32 @@ class ElevationMap:
     @profile
     def _apply_basal_drag(self, u_forces, v_forces, rotational_forces):
         """Apply drag force to slow down motion"""
-        for continent_id in xrange(self.mc.plateCount):
+        for continent_id in xrange(self.map_config.plate_count):
             speed = math.sqrt(u_forces[continent_id] ** 2 + v_forces[continent_id] ** 2)
             if speed > 0:
-                drag_factor = 1.0 - self.mc.dragCoefficient * speed
+                drag_factor = 1.0 - self.map_config.drag_coefficient * speed
                 drag_factor = max(0.1, drag_factor)  # Don't stop completely
                 u_forces[continent_id] *= drag_factor
                 v_forces[continent_id] *= drag_factor
 
             # Rotational drag
-            rotational_forces[continent_id] *= 1.0 - self.mc.dragCoefficient
+            rotational_forces[continent_id] *= 1.0 - self.map_config.drag_coefficient
 
     @profile
     def _apply_edge_boundary_forces(self, u_forces, v_forces, rotational_forces):
         """Apply forces from immovable edge boundaries"""
         edge_influence_distance = (
-            min(self.mc.iNumPlotsX, self.mc.iNumPlotsY) * self.mc.edgeInfluenceDistance
+            min(self.map_config.num_plots_x, self.map_config.num_plots_y)
+            * self.map_config.edge_influence_distance
         )
 
-        for continent_id in xrange(self.mc.plateCount):
-            centroid_x = self.seedList[continent_id]["x_centroid"]
-            centroid_y = self.seedList[continent_id]["y_centroid"]
-            plate_mass = max(self.seedList[continent_id]["mass"], 1.0)
+        for continent_id in xrange(self.map_config.plate_count):
+            centroid_x = self.seed_list[continent_id]["x_centroid"]
+            centroid_y = self.seed_list[continent_id]["y_centroid"]
+            plate_mass = max(self.seed_list[continent_id]["mass"], 1.0)
 
             # X-direction edge forces
-            if not self.mc.wrapX:
+            if not self.map_config.wrap_x:
                 self._apply_x_edge_forces(
                     continent_id,
                     centroid_x,
@@ -2144,7 +2172,7 @@ class ElevationMap:
                 )
 
             # Y-direction edge forces
-            if not self.mc.wrapY:
+            if not self.map_config.wrap_y:
                 self._apply_y_edge_forces(
                     continent_id,
                     centroid_y,
@@ -2167,7 +2195,7 @@ class ElevationMap:
         # Left edge force
         dist_to_left = centroid_x
         if dist_to_left < edge_distance:
-            force_magnitude = self.mc.baseEdgeForce * (
+            force_magnitude = self.map_config.base_edge_force * (
                 1.0 - dist_to_left / edge_distance
             )
             u_forces[continent_id] += force_magnitude / plate_mass
@@ -2175,13 +2203,13 @@ class ElevationMap:
             if u_forces[continent_id] < 0:  # Moving toward left edge
                 rotation_force = -u_forces[continent_id] * 0.3
                 rotational_forces[continent_id] += rotation_force / max(
-                    self.seedList[continent_id]["moment"], 1.0
+                    self.seed_list[continent_id]["moment"], 1.0
                 )
 
         # Right edge force
-        dist_to_right = self.mc.iNumPlotsX - centroid_x
+        dist_to_right = self.map_config.num_plots_x - centroid_x
         if dist_to_right < edge_distance:
-            force_magnitude = self.mc.baseEdgeForce * (
+            force_magnitude = self.map_config.base_edge_force * (
                 1.0 - dist_to_right / edge_distance
             )
             u_forces[continent_id] -= force_magnitude / plate_mass
@@ -2189,7 +2217,7 @@ class ElevationMap:
             if u_forces[continent_id] > 0:  # Moving toward right edge
                 rotation_force = -u_forces[continent_id] * 0.3
                 rotational_forces[continent_id] += rotation_force / max(
-                    self.seedList[continent_id]["moment"], 1.0
+                    self.seed_list[continent_id]["moment"], 1.0
                 )
 
     def _apply_y_edge_forces(
@@ -2205,7 +2233,7 @@ class ElevationMap:
         # Bottom edge force
         dist_to_bottom = centroid_y
         if dist_to_bottom < edge_distance:
-            force_magnitude = self.mc.baseEdgeForce * (
+            force_magnitude = self.map_config.base_edge_force * (
                 1.0 - dist_to_bottom / edge_distance
             )
             v_forces[continent_id] += force_magnitude / plate_mass
@@ -2213,13 +2241,13 @@ class ElevationMap:
             if v_forces[continent_id] < 0:  # Moving toward bottom edge
                 rotation_force = -v_forces[continent_id] * 0.3
                 rotational_forces[continent_id] += rotation_force / max(
-                    self.seedList[continent_id]["moment"], 1.0
+                    self.seed_list[continent_id]["moment"], 1.0
                 )
 
         # Top edge force
-        dist_to_top = self.mc.iNumPlotsY - centroid_y
+        dist_to_top = self.map_config.num_plots_y - centroid_y
         if dist_to_top < edge_distance:
-            force_magnitude = self.mc.baseEdgeForce * (
+            force_magnitude = self.map_config.base_edge_force * (
                 1.0 - dist_to_top / edge_distance
             )
             v_forces[continent_id] -= force_magnitude / plate_mass
@@ -2227,19 +2255,19 @@ class ElevationMap:
             if v_forces[continent_id] > 0:  # Moving toward top edge
                 rotation_force = -v_forces[continent_id] * 0.3
                 rotational_forces[continent_id] += rotation_force / max(
-                    self.seedList[continent_id]["moment"], 1.0
+                    self.seed_list[continent_id]["moment"], 1.0
                 )
 
     def _convert_forces_to_velocities(self, u_forces, v_forces, rotational_forces):
         """Convert plate-level forces to per-plot velocities"""
-        for plot_index in xrange(self.mc.iNumPlots):
-            continent_id = self.plateID[plot_index]
-            if continent_id < self.mc.plateCount:
-                self.continentU[plot_index] = (
+        for plot_index in xrange(self.map_config.num_plots):
+            continent_id = self.plate_id[plot_index]
+            if continent_id < self.map_config.plate_count:
+                self.continent_u[plot_index] = (
                     u_forces[continent_id]
                     - rotational_forces[continent_id] * self.dy_centroid[plot_index]
                 )
-                self.continentV[plot_index] = (
+                self.continent_v[plot_index] = (
                     v_forces[continent_id]
                     + rotational_forces[continent_id] * self.dx_centroid[plot_index]
                 )
@@ -2247,17 +2275,17 @@ class ElevationMap:
     @profile
     def _calculate_centroid_distances(self):
         """Pre-calculate distances from each plot to its continent centroid"""
-        for plot_index in xrange(self.mc.iNumPlots):
-            x = plot_index % self.mc.iNumPlotsX
-            y = plot_index // self.mc.iNumPlotsX
-            continent_id = self.plateID[plot_index]
+        for plot_index in xrange(self.map_config.num_plots):
+            x = plot_index % self.map_config.num_plots_x
+            y = plot_index // self.map_config.num_plots_x
+            continent_id = self.plate_id[plot_index]
 
-            if continent_id < self.mc.plateCount:
-                dx, dy = self.mc.get_wrapped_distance(
+            if continent_id < self.map_config.plate_count:
+                dx, dy = self.map_config.get_wrapped_distance(
                     x,
                     y,
-                    self.seedList[continent_id]["x_centroid"],
-                    self.seedList[continent_id]["y_centroid"],
+                    self.seed_list[continent_id]["x_centroid"],
+                    self.seed_list[continent_id]["y_centroid"],
                 )
                 self.dx_centroid[plot_index] = dx
                 self.dy_centroid[plot_index] = dy
@@ -2266,26 +2294,26 @@ class ElevationMap:
     @profile
     def _generate_base_elevation(self):
         """Generate base elevation map based on plate density"""
-        self.elevationBaseMap = [
-            (0.0, 1.0 - self.seedList[continent_id]["plateDensity"])[
-                continent_id < self.mc.plateCount
+        self.elevation_base_map = [
+            (0.0, 1.0 - self.seed_list[continent_id]["plateDensity"])[
+                continent_id < self.map_config.plate_count
             ]
-            for continent_id in self.plateID
+            for continent_id in self.plate_id
         ]
-        self.elevationBaseMap = self.mc.normalize_map(self.elevationBaseMap)
+        self.elevation_base_map = self.map_config.normalize_map(self.elevation_base_map)
 
     @profile
     def _generate_velocity_elevation(self):
         """Generate elevation changes due to plate velocity"""
         self._calculate_velocity_gradient()
-        self.elevationVelMap = self.mc.normalize_map(self.elevationVelMap)
+        self.elevation_vel_map = self.map_config.normalize_map(self.elevation_vel_map)
 
     def _calculate_velocity_gradient(self):
         """Calculate elevation field from velocity field using iterative relaxation"""
         # Group ALL tiles by continent (including stationary ones)
         continent_tiles = {}
-        for i in xrange(self.mc.iNumPlots):
-            continent_id = self.plateID[i]
+        for i in xrange(self.map_config.num_plots):
+            continent_id = self.plate_id[i]
             if continent_id not in continent_tiles:
                 continent_tiles[continent_id] = []
             continent_tiles[continent_id].append(i)
@@ -2300,9 +2328,9 @@ class ElevationMap:
             return
 
         # Cache grid spacing and scaling parameters
-        dx = self.mc.gridSpacingX
-        dy = self.mc.gridSpacingY
-        elev_scale = self.mc.elevationVelScale
+        dx = self.map_config.grid_spacing_x
+        dy = self.map_config.grid_spacing_y
+        elev_scale = self.map_config.elevation_vel_scale
 
         # Create mapping from tile index to local index for faster processing
         tile_to_local = {}
@@ -2323,8 +2351,8 @@ class ElevationMap:
             max_change = 0.0
 
             for local_idx, tile_idx in enumerate(tiles):
-                target_u = self.continentU[tile_idx]
-                target_v = self.continentV[tile_idx]
+                target_u = self.continent_u[tile_idx]
+                target_v = self.continent_v[tile_idx]
 
                 new_elevation = self._calculate_target_elevation(
                     tile_idx,
@@ -2359,7 +2387,7 @@ class ElevationMap:
 
         # Apply results to main elevation map
         for local_idx, tile_idx in enumerate(tiles):
-            self.elevationVelMap[tile_idx] += elevations[local_idx]
+            self.elevation_vel_map[tile_idx] += elevations[local_idx]
 
     def _cumulative_sum_initialization(self, tiles, tile_to_local, dx, dy, elev_scale):
         """O(3N) systematic cumulative sum following grid structure"""
@@ -2369,19 +2397,19 @@ class ElevationMap:
             return elevations
 
         # Pass 1: Horizontal accumulation (U velocity effects)
-        min_x = self.mc.iNumPlots
+        min_x = self.map_config.num_plots
         max_x = -1
-        min_y = tiles[0] // self.mc.iNumPlotsX
-        max_y = tiles[-1] // self.mc.iNumPlotsX
+        min_y = tiles[0] // self.map_config.num_plots_x
+        max_y = tiles[-1] // self.map_config.num_plots_x
 
         row_sum = 0
-        current_row = tiles[0] // self.mc.iNumPlotsX
+        current_row = tiles[0] // self.map_config.num_plots_x
 
         for tile_idx in tiles:
             tile_col = (
-                tile_idx % self.mc.iNumPlotsX
+                tile_idx % self.map_config.num_plots_x
             )  # Replace with your actual grid width
-            tile_row = tile_idx // self.mc.iNumPlotsX
+            tile_row = tile_idx // self.map_config.num_plots_x
 
             # If we've moved to a new row, reset cumulative sum
             if tile_row != current_row:
@@ -2389,7 +2417,7 @@ class ElevationMap:
                 current_row = tile_row
 
             # Accumulate U velocity effect
-            row_sum += self.continentU[tile_idx] * dx / elev_scale
+            row_sum += self.continent_u[tile_idx] * dx / elev_scale
 
             # Apply to this tile
             local_idx = tile_to_local[tile_idx]
@@ -2406,11 +2434,13 @@ class ElevationMap:
             col_sum = 0.0
             for x in xrange(int(min_x), int(max_x) + 1):
                 # Convert x,y back to tile index
-                tile_idx = y * self.mc.iNumPlotsX + x  # Standard grid conversion
+                tile_idx = (
+                    y * self.map_config.num_plots_x + x
+                )  # Standard grid conversion
 
                 if tile_idx in tile_to_local:
                     # Accumulate V velocity effect
-                    col_sum += self.continentV[tile_idx] * dy / elev_scale
+                    col_sum += self.continent_v[tile_idx] * dy / elev_scale
 
                     # Add to existing horizontal effect
                     local_idx = tile_to_local[tile_idx]
@@ -2439,35 +2469,35 @@ class ElevationMap:
         elev_scale,
     ):
         """Calculate target elevation using properly scaled finite differences"""
-        neighbours = self.mc.neighbours[tile_idx]
+        neighbours = self.map_config.neighbours[tile_idx]
 
         # Find valid neighbours on same continent
         if (
-            neighbours[self.mc.E] > 0
-            and self.plateID[neighbours[self.mc.E]] == continent_id
+            neighbours[self.map_config.E] > 0
+            and self.plate_id[neighbours[self.map_config.E]] == continent_id
         ):
-            east_neighbour = neighbours[self.mc.E]
+            east_neighbour = neighbours[self.map_config.E]
         else:
             east_neighbour = -1
         if (
-            neighbours[self.mc.W] > 0
-            and self.plateID[neighbours[self.mc.W]] == continent_id
+            neighbours[self.map_config.W] > 0
+            and self.plate_id[neighbours[self.map_config.W]] == continent_id
         ):
-            west_neighbour = neighbours[self.mc.W]
+            west_neighbour = neighbours[self.map_config.W]
         else:
             west_neighbour = -1
         if (
-            neighbours[self.mc.N] > 0
-            and self.plateID[neighbours[self.mc.N]] == continent_id
+            neighbours[self.map_config.N] > 0
+            and self.plate_id[neighbours[self.map_config.N]] == continent_id
         ):
-            north_neighbour = neighbours[self.mc.N]
+            north_neighbour = neighbours[self.map_config.N]
         else:
             north_neighbour = -1
         if (
-            neighbours[self.mc.S] > 0
-            and self.plateID[neighbours[self.mc.S]] == continent_id
+            neighbours[self.map_config.S] > 0
+            and self.plate_id[neighbours[self.map_config.S]] == continent_id
         ):
-            south_neighbour = neighbours[self.mc.S]
+            south_neighbour = neighbours[self.map_config.S]
         else:
             south_neighbour = -1
 
@@ -2549,7 +2579,7 @@ class ElevationMap:
             max_distance = max(self.d_centroid)
         else:
             max_distance = 1.0
-        self.elevationBuoyMap = self.mc.normalize_map(
+        self.elevation_buoy_map = self.map_config.normalize_map(
             [max_distance - distance for distance in self.d_centroid]
         )
 
@@ -2557,29 +2587,31 @@ class ElevationMap:
     def _combine_preliminary_elevation(self):
         """Combine base, velocity, and buoyancy elevation components"""
         combined_elevation = []
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             elevation = (
-                self.mc.plateDensityFactor * self.elevationBaseMap[i]
-                + self.mc.plateVelocityFactor * self.elevationVelMap[i]
-                + self.mc.plateBuoyancyFactor * self.elevationBuoyMap[i]
+                self.map_config.plate_density_factor * self.elevation_base_map[i]
+                + self.map_config.plate_velocity_factor * self.elevation_vel_map[i]
+                + self.map_config.plate_buoyancy_factor * self.elevation_buoy_map[i]
             )
             combined_elevation.append(elevation)
 
-        self.elevationPrelMap = self.mc.gaussian_blur(
-            combined_elevation, radius=self.mc.boundarySmoothing
+        self.elevation_prel_map = self.map_config.gaussian_blur(
+            combined_elevation, radius=self.map_config.boundary_smoothing
         )
 
     @profile
     def _process_tectonic_boundaries(self):
         """Process all tectonic boundaries to create realistic mountain ranges and rifts"""
-        self.elevationBoundaryMap = [0.0] * self.mc.iNumPlots
+        self.elevation_boundary_map = [0.0] * self.map_config.num_plots
         boundary_interactions = self._collect_boundary_interactions()
 
         for boundary in boundary_interactions:
             self._process_single_boundary(boundary)
 
         self._apply_erosion_effects()
-        self.elevationBoundaryMap = self.mc.normalize_map(self.elevationBoundaryMap)
+        self.elevation_boundary_map = self.map_config.normalize_map(
+            self.elevation_boundary_map
+        )
 
     @profile
     def _collect_boundary_interactions(self):
@@ -2588,25 +2620,25 @@ class ElevationMap:
         admitted_intensities = []
         crush_density_diffs = []
 
-        for plot_index in xrange(self.mc.iNumPlots):
-            current_plate = self.plateID[plot_index]
+        for plot_index in xrange(self.map_config.num_plots):
+            current_plate = self.plate_id[plot_index]
 
-            if current_plate >= self.mc.plateCount:
+            if current_plate >= self.map_config.plate_count:
                 continue
 
             # Check neighbours for plate boundaries
             for direction_idx, direction_name in [
-                (self.mc.N, "NS"),
-                (self.mc.E, "EW"),
-                (self.mc.NE, "NE"),
-                (self.mc.NW, "NW"),
+                (self.map_config.N, "NS"),
+                (self.map_config.E, "EW"),
+                (self.map_config.NE, "NE"),
+                (self.map_config.NW, "NW"),
             ]:
-                neighbour_index = self.mc.neighbours[plot_index][direction_idx]
+                neighbour_index = self.map_config.neighbours[plot_index][direction_idx]
                 if neighbour_index >= 0:
-                    neighbour_plate = self.plateID[neighbour_index]
+                    neighbour_plate = self.plate_id[neighbour_index]
                     if (
                         neighbour_plate != current_plate
-                        and neighbour_plate < self.mc.plateCount
+                        and neighbour_plate < self.map_config.plate_count
                     ):
                         boundary_data = self._analyze_boundary_interaction(
                             plot_index, neighbour_index, direction_name
@@ -2623,15 +2655,17 @@ class ElevationMap:
 
         passive_threshold = 0.0
         if admitted_intensities:
-            passive_threshold = self.mc.find_value_from_percent(
-                admitted_intensities, self.mc.passiveMarginPercentile, descending=False
+            passive_threshold = self.map_config.find_value_from_percent(
+                admitted_intensities,
+                self.map_config.passive_margin_percentile,
+                descending=False,
             )
 
         collision_threshold = 0.0
         if crush_density_diffs:
-            collision_threshold = self.mc.find_value_from_percent(
+            collision_threshold = self.map_config.find_value_from_percent(
                 crush_density_diffs,
-                self.mc.collisionDensityPercentile,
+                self.map_config.collision_density_percentile,
                 descending=False,
             )
 
@@ -2643,15 +2677,15 @@ class ElevationMap:
                     abs(boundary["density_diff"]) <= collision_threshold
                 )
             if boundary["passive"]:
-                boundary["intensity"] *= self.mc.passiveMarginDamping
+                boundary["intensity"] *= self.map_config.passive_margin_damping
 
         return boundary_queue
 
     def _analyze_boundary_interaction(self, plot1, plot2, direction):
         """Analyze the interaction between two plates at a boundary"""
         # Calculate relative motion
-        u_diff = self.continentU[plot1] - self.continentU[plot2]
-        v_diff = self.continentV[plot1] - self.continentV[plot2]
+        u_diff = self.continent_u[plot1] - self.continent_u[plot2]
+        v_diff = self.continent_v[plot1] - self.continent_v[plot2]
 
         # Determine boundary type based on relative motion
         if direction == "NS":
@@ -2662,11 +2696,11 @@ class ElevationMap:
             transform_motion = abs(v_diff)
 
         # Get plate density difference
-        plate1_id = self.plateID[plot1]
-        plate2_id = self.plateID[plot2]
+        plate1_id = self.plate_id[plot1]
+        plate2_id = self.plate_id[plot2]
         density_diff = (
-            self.seedList[plate1_id]["plateDensity"]
-            - self.seedList[plate2_id]["plateDensity"]
+            self.seed_list[plate1_id]["plateDensity"]
+            - self.seed_list[plate2_id]["plateDensity"]
         )
 
         # Determine primary boundary type and intensity
@@ -2703,8 +2737,8 @@ class ElevationMap:
     def _apply_asymmetric_boundary_effects(self, boundary):
         """Create asymmetric mountain ranges and rift valleys"""
         plot_index = boundary["tile"]
-        x = plot_index % self.mc.iNumPlotsX
-        y = plot_index // self.mc.iNumPlotsX
+        x = plot_index % self.map_config.num_plots_x
+        y = plot_index // self.map_config.num_plots_x
 
         boundary_type = boundary["type"]
         intensity = boundary["intensity"]
@@ -2723,9 +2757,9 @@ class ElevationMap:
                 offset_x, offset_y = self._get_offset_coords(
                     x, y, direction, distance * side_multiplier
                 )
-                offset_index = offset_y * self.mc.iNumPlotsX + offset_x
+                offset_index = offset_y * self.map_config.num_plots_x + offset_x
 
-                if offset_index < 0 or offset_index >= self.mc.iNumPlots:
+                if offset_index < 0 or offset_index >= self.map_config.num_plots:
                     continue
 
                 # Generate elevation based on boundary type and geological processes
@@ -2747,7 +2781,7 @@ class ElevationMap:
 
                 # Add natural variation
                 variation = 0.8 + 0.4 * random.random()
-                self.elevationBoundaryMap[offset_index] += base_elevation * variation
+                self.elevation_boundary_map[offset_index] += base_elevation * variation
 
     def _generate_boundary_profile(
         self, boundary_type, intensity, distance, density_diff, collision=False
@@ -2805,8 +2839,8 @@ class ElevationMap:
         boundary_type = boundary["type"]
         base_intensity = boundary["intensity"]
 
-        x = center_index % self.mc.iNumPlotsX
-        y = center_index // self.mc.iNumPlotsX
+        x = center_index % self.map_config.num_plots_x
+        y = center_index // self.map_config.num_plots_x
         extent = max(2, min(6, int(base_intensity * 8)))
 
         for i in xrange(-extent, extent + 1):
@@ -2814,10 +2848,10 @@ class ElevationMap:
                 if i == 0 and j == 0:
                     continue
 
-                target_x, target_y = self.mc.wrap_coordinates(x + i, y + j)
-                target_index = target_y * self.mc.iNumPlotsX + target_x
+                target_x, target_y = self.map_config.wrap_coordinates(x + i, y + j)
+                target_index = target_y * self.map_config.num_plots_x + target_x
 
-                if target_index < 0 or target_index >= self.mc.iNumPlots:
+                if target_index < 0 or target_index >= self.map_config.num_plots:
                     continue
 
                 distance = math.sqrt(i**2 + j**2)
@@ -2836,14 +2870,18 @@ class ElevationMap:
                 elif boundary_type == "rift":
                     roughness_factor *= 0.8  # Rifts are smoother
 
-                self.elevationBoundaryMap[target_index] += roughness * roughness_factor
+                self.elevation_boundary_map[target_index] += (
+                    roughness * roughness_factor
+                )
 
     def _calculate_fractal_roughness(self, x, y):
         """Calculate fractal roughness using multiple octaves of noise"""
         roughness = 0
         for octave in [1, 2, 4]:
             noise_scale = octave * 0.1
-            noise_value = self.mc.get_perlin_noise(x * noise_scale, y * noise_scale)
+            noise_value = self.map_config.get_perlin_noise(
+                x * noise_scale, y * noise_scale
+            )
             roughness += noise_value / octave
         return roughness
 
@@ -2853,13 +2891,13 @@ class ElevationMap:
         end_index = boundary["neighbour_tile"]
         intensity = boundary["intensity"]
 
-        start_x = start_index % self.mc.iNumPlotsX
-        start_y = start_index // self.mc.iNumPlotsX
-        end_x = end_index % self.mc.iNumPlotsX
-        end_y = end_index // self.mc.iNumPlotsX
+        start_x = start_index % self.map_config.num_plots_x
+        start_y = start_index // self.map_config.num_plots_x
+        end_x = end_index % self.map_config.num_plots_x
+        end_y = end_index // self.map_config.num_plots_x
 
         # Calculate fault direction and length
-        dx, dy = self.mc.get_wrapped_distance(start_x, start_y, end_x, end_y)
+        dx, dy = self.map_config.get_wrapped_distance(start_x, start_y, end_x, end_y)
         length = max(1, int(math.sqrt(dx**2 + dy**2)))
 
         if length == 0:
@@ -2881,14 +2919,16 @@ class ElevationMap:
             fault_y += meander * math.sin(direction + math.pi / 2)
 
             # Wrap coordinates and create valley
-            fault_x, fault_y = self.mc.wrap_coordinates(int(fault_x), int(fault_y))
-            fault_index = fault_y * self.mc.iNumPlotsX + fault_x
+            fault_x, fault_y = self.map_config.wrap_coordinates(
+                int(fault_x), int(fault_y)
+            )
+            fault_index = fault_y * self.map_config.num_plots_x + fault_x
 
-            if fault_index >= 0 and fault_index < self.mc.iNumPlots:
+            if fault_index >= 0 and fault_index < self.map_config.num_plots:
                 valley_intensity = intensity * (
                     0.6 + 0.4 * (1 - abs(progress - 0.5) * 2)
                 )
-                self.elevationBoundaryMap[fault_index] -= valley_intensity * (
+                self.elevation_boundary_map[fault_index] -= valley_intensity * (
                     0.8 + 0.4 * random.random()
                 )
 
@@ -2906,54 +2946,56 @@ class ElevationMap:
                     direction + math.pi / 2
                 )
 
-                side_x, side_y = self.mc.wrap_coordinates(int(side_x), int(side_y))
-                side_index = side_y * self.mc.iNumPlotsX + side_x
+                side_x, side_y = self.map_config.wrap_coordinates(
+                    int(side_x), int(side_y)
+                )
+                side_index = side_y * self.map_config.num_plots_x + side_x
 
-                if side_index >= 0 and side_index < self.mc.iNumPlots:
+                if side_index >= 0 and side_index < self.map_config.num_plots:
                     ridge_height = (
                         intensity
                         * (0.4 / ridge_distance)
                         * (0.8 + 0.4 * random.random())
                     )
-                    self.elevationBoundaryMap[side_index] += ridge_height
+                    self.elevation_boundary_map[side_index] += ridge_height
 
     @profile
     def _apply_erosion_effects(self):
         """Simulate erosion and time effects on mountain ranges"""
-        for i in xrange(self.mc.iNumPlots):
-            if self.elevationBoundaryMap[i] > 0:
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_boundary_map[i] > 0:
                 # Simulate erosion with age and randomness
-                erosion_factor = 1.0 - (self.mc.boundaryAgeFactor * 0.4)
+                erosion_factor = 1.0 - (self.map_config.boundary_age_factor * 0.4)
                 erosion_factor *= 0.7 + 0.6 * random.random()
-                erosion_factor = max(self.mc.minErosionFactor, erosion_factor)
-                self.elevationBoundaryMap[i] *= erosion_factor
+                erosion_factor = max(self.map_config.min_erosion_factor, erosion_factor)
+                self.elevation_boundary_map[i] *= erosion_factor
 
     @profile
     def _add_hotspot_volcanic_activity(self):
         """Add hotspot volcanic activity including plate drift effects"""
-        for plume in self.plumeList:
+        for plume in self.plume_list:
             x = plume["x"]
             y = plume["y"]
-            plot_index = y * self.mc.iNumPlotsX + x
-            plate_id = self.plateID[plot_index]
+            plot_index = y * self.map_config.num_plots_x + x
+            plate_id = self.plate_id[plot_index]
 
             # Create hotspot chain as plate moves over stationary plume
-            for age_step in xrange(self.mc.hotspotDecay):
-                if self.plateID[plot_index] != plate_id:
+            for age_step in xrange(self.map_config.hotspot_decay):
+                if self.plate_id[plot_index] != plate_id:
                     break
 
                 # Calculate volcanic intensity (decreases with age)
                 volcanic_intensity = (
-                    math.exp(-float(age_step) / self.mc.hotspotDecay)
-                    * self.mc.hotspotFactor
+                    math.exp(-float(age_step) / self.map_config.hotspot_decay)
+                    * self.map_config.hotspot_factor
                 )
 
                 # Calculate volcano radius (decreases with age)
                 volcano_radius = max(
                     1,
                     int(
-                        self.mc.hotspotRadius
-                        * (1.0 - float(age_step) / self.mc.hotspotDecay)
+                        self.map_config.hotspot_radius
+                        * (1.0 - float(age_step) / self.map_config.hotspot_decay)
                     ),
                 )
 
@@ -2961,22 +3003,22 @@ class ElevationMap:
                 self._add_volcanic_mountain(x, y, volcanic_intensity, volcano_radius)
 
                 # Move backwards along plate motion to simulate historical positions
-                u_velocity = self.continentU[plot_index]
-                v_velocity = self.continentV[plot_index]
+                u_velocity = self.continent_u[plot_index]
+                v_velocity = self.continent_v[plot_index]
 
                 # Move opposite to current plate motion
                 movement_angle = math.atan2(v_velocity, u_velocity) + math.pi
-                step_distance = self.mc.hotspotPeriod
+                step_distance = self.map_config.hotspot_period
 
                 x += int(step_distance * math.cos(movement_angle))
                 y += int(step_distance * math.sin(movement_angle))
 
                 # Handle wrapping and bounds checking
-                x, y = self.mc.wrap_coordinates(x, y)
-                if not self.mc.coordinates_in_bounds(x, y):
+                x, y = self.map_config.wrap_coordinates(x, y)
+                if not self.map_config.coordinates_in_bounds(x, y):
                     break
 
-                plot_index = y * self.mc.iNumPlotsX + x
+                plot_index = y * self.map_config.num_plots_x + x
 
     def _add_volcanic_mountain(self, center_x, center_y, height, radius):
         """Add a single volcanic mountain with realistic shape"""
@@ -3032,26 +3074,28 @@ class ElevationMap:
                     )
                     final_height = base_height * directional_factor * roughness
 
-                    target_x, target_y = self.mc.wrap_coordinates(
+                    target_x, target_y = self.map_config.wrap_coordinates(
                         center_x + dx, center_y + dy
                     )
-                    target_index = target_y * self.mc.iNumPlotsX + target_x
+                    target_index = target_y * self.map_config.num_plots_x + target_x
 
-                    if 0 <= target_index < self.mc.iNumPlots:
-                        self.elevationBoundaryMap[target_index] += max(0, final_height)
+                    if 0 <= target_index < self.map_config.num_plots:
+                        self.elevation_boundary_map[target_index] += max(
+                            0, final_height
+                        )
 
     @profile
     def _combine_final_elevation(self):
         """Combine all elevation components into final elevation map"""
-        for i in xrange(self.mc.iNumPlots):
-            self.elevationProminenceMap[i] = (
-                self.mc.boundaryFactor * self.elevationBoundaryMap[i]
+        for i in xrange(self.map_config.num_plots):
+            self.elevation_prominence_map[i] = (
+                self.map_config.boundary_factor * self.elevation_boundary_map[i]
             )
-            self.elevationMap[i] = (
-                self.elevationPrelMap[i]
-                + self.mc.boundaryFactor * self.elevationBoundaryMap[i]
+            self.elevation_map[i] = (
+                self.elevation_prel_map[i]
+                + self.map_config.boundary_factor * self.elevation_boundary_map[i]
             )
-        self.elevationMap = self.mc.normalize_map(self.elevationMap)
+        self.elevation_map = self.map_config.normalize_map(self.elevation_map)
 
     @profile
     def _add_perlin_noise_variation(self):
@@ -3060,138 +3104,150 @@ class ElevationMap:
         perlin_noise = []
         for i in xrange(3):  # Three octaves
             scale = 4.0 * (2**i)  # 4.0, 8.0, 16.0
-            octave_noise = self.mc.generate_perlin_grid(scale=scale)
+            octave_noise = self.map_config.generate_perlin_grid(scale=scale)
             perlin_noise.append(octave_noise)
 
         # Combine octaves
         combined_noise = []
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             noise_value = sum(perlin_noise[octave][i] for octave in xrange(3))
             combined_noise.append(noise_value)
 
-        combined_noise = self.mc.normalize_map(combined_noise)
+        combined_noise = self.map_config.normalize_map(combined_noise)
 
         # Add to elevation map
-        for i in xrange(self.mc.iNumPlots):
-            self.elevationProminenceMap[i] += (
-                self.mc.perlinNoiseFactor * combined_noise[i]
+        for i in xrange(self.map_config.num_plots):
+            self.elevation_prominence_map[i] += (
+                self.map_config.perlin_noise_factor * combined_noise[i]
             )
-            self.elevationMap[i] += self.mc.perlinNoiseFactor * combined_noise[i]
+            self.elevation_map[i] += (
+                self.map_config.perlin_noise_factor * combined_noise[i]
+            )
 
-        self.elevationMap = self.mc.normalize_map(self.elevationMap)
+        self.elevation_map = self.map_config.normalize_map(self.elevation_map)
 
     @profile
     def _calculate_sea_levels(self):
         """Calculate sea level and coast level thresholds"""
         # Adjust land percentage based on sea level setting
-        adjusted_land_percent = self.mc.landPercent - (self.mc.seaLevelChange / 100.0)
-        self.seaLevelThreshold = self.mc.find_value_from_percent(
-            self.elevationMap, adjusted_land_percent, descending=True
+        adjusted_land_percent = self.map_config.land_percent - (
+            self.map_config.sea_level_change / 100.0
+        )
+        self.sea_level_threshold = self.map_config.find_value_from_percent(
+            self.elevation_map, adjusted_land_percent, descending=True
         )
 
         # Calculate coast level from water tiles only
         water_tiles = [
             elevation
-            for elevation in self.elevationMap
-            if elevation < self.seaLevelThreshold
+            for elevation in self.elevation_map
+            if elevation < self.sea_level_threshold
         ]
 
         if water_tiles:
-            self.coastLevelThreshold = self.mc.find_value_from_percent(
-                water_tiles, self.mc.coastPercent, descending=True
+            self.coast_level_threshold = self.map_config.find_value_from_percent(
+                water_tiles, self.map_config.coast_percent, descending=True
             )
         else:
-            self.coastLevelThreshold = self.seaLevelThreshold
+            self.coast_level_threshold = self.sea_level_threshold
 
     @profile
     def _calculate_prominence_map(self):
         """Calculate prominence map for terrain features"""
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             max_elevation_diff = 0.0
 
-            if self.elevationMap[i] > self.seaLevelThreshold:
+            if self.elevation_map[i] > self.sea_level_threshold:
                 has_land_neighbour = False
-                for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-                    neighbour_index = self.mc.neighbours[i][direction]
+                for direction in [
+                    self.map_config.N,
+                    self.map_config.S,
+                    self.map_config.E,
+                    self.map_config.W,
+                ]:
+                    neighbour_index = self.map_config.neighbours[i][direction]
                     if (
                         neighbour_index >= 0
-                        and neighbour_index < self.mc.iNumPlots
-                        and self.elevationMap[neighbour_index] > self.seaLevelThreshold
+                        and neighbour_index < self.map_config.num_plots
+                        and self.elevation_map[neighbour_index]
+                        > self.sea_level_threshold
                     ):
                         has_land_neighbour = True
                         elevation_diff = (
-                            self.elevationProminenceMap[i]
-                            - self.elevationProminenceMap[neighbour_index]
+                            self.elevation_prominence_map[i]
+                            - self.elevation_prominence_map[neighbour_index]
                         )
                         max_elevation_diff = max(max_elevation_diff, elevation_diff)
 
                 if not has_land_neighbour:
-                    max_elevation_diff = self.elevationProminenceMap[i]
+                    max_elevation_diff = self.elevation_prominence_map[i]
 
-            self.prominenceMap[i] = max_elevation_diff
+            self.prominence_map[i] = max_elevation_diff
 
-        self.prominenceMap = self.mc.normalize_map(self.prominenceMap)
+        self.prominence_map = self.map_config.normalize_map(self.prominence_map)
 
     @profile
     def _calculate_terrain_thresholds(self):
         """Calculate height thresholds for peaks and hills"""
         # Calculate percentages relative to land area
-        peak_percent = (self.mc.peakPercent / 100.0) * self.mc.landPercent
-        hill_percent = peak_percent + (4.0 * self.mc.hillRange / 100.0)
+        peak_percent = (
+            self.map_config.peak_percent / 100.0
+        ) * self.map_config.land_percent
+        hill_percent = peak_percent + (4.0 * self.map_config.hill_range / 100.0)
 
         # Get prominence values for land tiles only
         land_prominence = [
             prominence
-            for i, prominence in enumerate(self.prominenceMap)
-            if self.elevationMap[i] > self.seaLevelThreshold
+            for i, prominence in enumerate(self.prominence_map)
+            if self.elevation_map[i] > self.sea_level_threshold
         ]
 
         if land_prominence:
-            self.peakHeight = self.mc.find_value_from_percent(
+            self.peak_height = self.map_config.find_value_from_percent(
                 land_prominence, peak_percent, True
             )
-            self.hillHeight = self.mc.find_value_from_percent(
+            self.hill_height = self.map_config.find_value_from_percent(
                 land_prominence, hill_percent, True
             )
         else:
-            self.peakHeight = 0.0
-            self.hillHeight = 0.0
+            self.peak_height = 0.0
+            self.hill_height = 0.0
 
     @profile
     def _calculate_plot_types(self):
         # Convert elevation data to plot types
-        for i in xrange(self.mc.iNumPlots):
-            if self.elevationMap[i] <= self.seaLevelThreshold:
-                self.plotTypes[i] = PlotTypes.PLOT_OCEAN
-            elif self.prominenceMap[i] > self.peakHeight:
-                self.plotTypes[i] = PlotTypes.PLOT_PEAK
-            elif self.prominenceMap[i] > self.hillHeight:
-                self.plotTypes[i] = PlotTypes.PLOT_HILLS
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map[i] <= self.sea_level_threshold:
+                self.plot_types[i] = PlotTypes.PLOT_OCEAN
+            elif self.prominence_map[i] > self.peak_height:
+                self.plot_types[i] = PlotTypes.PLOT_PEAK
+            elif self.prominence_map[i] > self.hill_height:
+                self.plot_types[i] = PlotTypes.PLOT_HILLS
             else:
-                self.plotTypes[i] = PlotTypes.PLOT_LAND
+                self.plot_types[i] = PlotTypes.PLOT_LAND
 
     @profile
     def _decluster_elevation_peaks(self):
         """Demote clustered peaks then clustered hills, each pass reading a stable snapshot so demotions don't cascade within a pass."""
         directions = [
-            self.mc.N,
-            self.mc.S,
-            self.mc.E,
-            self.mc.W,
-            self.mc.NE,
-            self.mc.NW,
-            self.mc.SE,
-            self.mc.SW,
+            self.map_config.N,
+            self.map_config.S,
+            self.map_config.E,
+            self.map_config.W,
+            self.map_config.NE,
+            self.map_config.NW,
+            self.map_config.SE,
+            self.map_config.SW,
         ]
 
-        peak_snapshot = list(self.plotTypes)
-        for i in xrange(self.mc.iNumPlots):
+        peak_snapshot = list(self.plot_types)
+        for i in xrange(self.map_config.num_plots):
             if peak_snapshot[i] != PlotTypes.PLOT_PEAK:
                 continue
             neighbour_indices = [
-                self.mc.neighbours[i][d]
+                self.map_config.neighbours[i][d]
                 for d in directions
-                if 0 <= self.mc.neighbours[i][d] < self.mc.iNumPlots
+                if 0 <= self.map_config.neighbours[i][d] < self.map_config.num_plots
             ]
             all_ocean_neighbours = len(neighbour_indices) > 0
             for neighbour_index in neighbour_indices:
@@ -3199,7 +3255,7 @@ class ElevationMap:
                     all_ocean_neighbours = False
                     break
             if all_ocean_neighbours:
-                self.plotTypes[i] = PlotTypes.PLOT_HILLS
+                self.plot_types[i] = PlotTypes.PLOT_HILLS
                 continue  # all-ocean peak islands cannot also have peak neighbours, so cluster check is moot
             self._demote_clustered_neighbours(
                 neighbour_indices,
@@ -3208,14 +3264,14 @@ class ElevationMap:
                 PlotTypes.PLOT_HILLS,
             )
 
-        hill_snapshot = list(self.plotTypes)
-        for i in xrange(self.mc.iNumPlots):
+        hill_snapshot = list(self.plot_types)
+        for i in xrange(self.map_config.num_plots):
             if hill_snapshot[i] != PlotTypes.PLOT_HILLS:
                 continue
             neighbour_indices = [
-                self.mc.neighbours[i][d]
+                self.map_config.neighbours[i][d]
                 for d in directions
-                if 0 <= self.mc.neighbours[i][d] < self.mc.iNumPlots
+                if 0 <= self.map_config.neighbours[i][d] < self.map_config.num_plots
             ]
             self._demote_clustered_neighbours(
                 neighbour_indices,
@@ -3229,44 +3285,47 @@ class ElevationMap:
     ):
         """Once same-type neighbours exceed the pass threshold, demote the 2 lowest-elevation of them."""
         candidates = [
-            (self.elevationMap[n], n)
+            (self.elevation_map[n], n)
             for n in neighbour_indices
             if snapshot[n] == source_type
         ]
-        if len(candidates) > self.mc.MountainPassNeighbourThreshold:
+        if len(candidates) > self.map_config.mountain_pass_neighbour_threshold:
             candidates.sort(key=lambda item: item[0])
             for _, neighbour_index in candidates[:2]:
-                self.plotTypes[neighbour_index] = target_type
+                self.plot_types[neighbour_index] = target_type
 
     @profile
-    def _calculateOceanBasins(self):
+    def _calculate_ocean_basins(self):
         """
         Identifies ocean basins and sizes. Fills in small basins that would end up lakes
         """
 
-        self.oceanBasinMap = [-1] * self.mc.iNumPlots
-        self.basinSizes = {}
+        self.ocean_basin_map = [-1] * self.map_config.num_plots
+        self.basin_sizes = {}
         basin_counter = 0
 
         # Flood fill to identify connected ocean basins
-        for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] == PlotTypes.PLOT_OCEAN:
-                if self.oceanBasinMap[i] == -1:
-                    basin_size = self._floodFillBasin(i, basin_counter)
-                    self.basinSizes[basin_counter] = basin_size
+        for i in xrange(self.map_config.num_plots):
+            if self.plot_types[i] == PlotTypes.PLOT_OCEAN:
+                if self.ocean_basin_map[i] == -1:
+                    basin_size = self._flood_fill_basin(i, basin_counter)
+                    self.basin_sizes[basin_counter] = basin_size
                     basin_counter += 1
 
         # fill in small basins
-        for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] == PlotTypes.PLOT_OCEAN:
-                if self.basinSizes[self.oceanBasinMap[i]] < self.mc.basinLakeSize:
-                    self.plotTypes[i] = PlotTypes.PLOT_LAND
+        for i in xrange(self.map_config.num_plots):
+            if self.plot_types[i] == PlotTypes.PLOT_OCEAN:
+                if (
+                    self.basin_sizes[self.ocean_basin_map[i]]
+                    < self.map_config.basin_lake_size
+                ):
+                    self.plot_types[i] = PlotTypes.PLOT_LAND
 
-    def _floodFillBasin(self, start_tile, basin_id):
+    def _flood_fill_basin(self, start_tile, basin_id):
         """
         Flood fill to identify connected ocean basin and return its size.
         """
-        if self.oceanBasinMap[start_tile] != -1:  # Already processed
+        if self.ocean_basin_map[start_tile] != -1:  # Already processed
             return 0
 
         basin_size = 0
@@ -3277,76 +3336,79 @@ class ElevationMap:
 
             if (
                 current < 0
-                or self.oceanBasinMap[current] != -1
-                or self.plotTypes[current] != PlotTypes.PLOT_OCEAN
+                or self.ocean_basin_map[current] != -1
+                or self.plot_types[current] != PlotTypes.PLOT_OCEAN
             ):
                 continue
 
             # Mark as part of this basin
-            self.oceanBasinMap[current] = basin_id
+            self.ocean_basin_map[current] = basin_id
             basin_size += 1
 
             # Add neighbours to stack
             for dir in xrange(1, 5):
-                neighbour = self.mc.neighbours[current][dir]
+                neighbour = self.map_config.neighbours[current][dir]
                 if (
                     neighbour >= 0
-                    and self.oceanBasinMap[neighbour] == -1
-                    and self.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN
+                    and self.ocean_basin_map[neighbour] == -1
+                    and self.plot_types[neighbour] == PlotTypes.PLOT_OCEAN
                 ):
                     stack.append(neighbour)
 
         return basin_size
 
     @profile
-    def _calculateContinentIDs(self):
+    def _calculate_continent_ids(self):
         """
         Identifies continents and sizes.
         """
 
-        self.continentID = [-1] * self.mc.iNumPlots
-        self.continentSizes = {}
-        self.continentMetadata = {}
+        self.continent_id = [-1] * self.map_config.num_plots
+        self.continent_sizes = {}
+        self.continent_metadata = {}
         continent_counter = 0
 
-        for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] != PlotTypes.PLOT_OCEAN:
-                if self.continentID[i] == -1:
-                    continent_size = self._floodFillContinent(i, continent_counter)
-                    self.continentSizes[continent_counter] = continent_size
+        for i in xrange(self.map_config.num_plots):
+            if self.plot_types[i] != PlotTypes.PLOT_OCEAN:
+                if self.continent_id[i] == -1:
+                    continent_size = self._flood_fill_continent(i, continent_counter)
+                    self.continent_sizes[continent_counter] = continent_size
                     continent_counter += 1
 
-        total_land_tiles = sum(self.continentSizes.values())
+        total_land_tiles = sum(self.continent_sizes.values())
         component_tiles = dict(
-            (continent_id, []) for continent_id in self.continentSizes
+            (continent_id, []) for continent_id in self.continent_sizes
         )
-        for tile_index, continent_id in enumerate(self.continentID):
+        for tile_index, continent_id in enumerate(self.continent_id):
             if continent_id >= 0:
                 component_tiles[continent_id].append(tile_index)
 
         for continent_id, tile_indices in component_tiles.items():
             coordinates = [
-                (tile_index % self.mc.iNumPlotsX, tile_index // self.mc.iNumPlotsX)
+                (
+                    tile_index % self.map_config.num_plots_x,
+                    tile_index // self.map_config.num_plots_x,
+                )
                 for tile_index in tile_indices
             ]
             x_values = [coordinate[0] for coordinate in coordinates]
             y_values = [coordinate[1] for coordinate in coordinates]
             centroid_x, centroid_y = self._calculate_wrap_aware_centroid(coordinates)
-            continent_size = self.continentSizes[continent_id]
-            self.continentMetadata[continent_id] = {
+            continent_size = self.continent_sizes[continent_id]
+            self.continent_metadata[continent_id] = {
                 "size": continent_size,
                 "land_share": continent_size / float(total_land_tiles),
                 "bounds": (min(x_values), min(y_values), max(x_values), max(y_values)),
                 "centroid": (centroid_x, centroid_y),
             }
 
-        self.isPangaea = self._is_pangaea_sizes(self.continentSizes.values())
+        self.is_pangaea = self._is_pangaea_sizes(self.continent_sizes.values())
 
-    def _floodFillContinent(self, start_tile, continent_id):
+    def _flood_fill_continent(self, start_tile, continent_id):
         """
         Flood fill to identify connected continent and return its size.
         """
-        if self.continentID[start_tile] != -1:  # Already processed
+        if self.continent_id[start_tile] != -1:  # Already processed
             return 0
 
         continent_size = 0
@@ -3357,22 +3419,22 @@ class ElevationMap:
 
             if (
                 current < 0
-                or self.continentID[current] != -1
-                or self.plotTypes[current] == PlotTypes.PLOT_OCEAN
+                or self.continent_id[current] != -1
+                or self.plot_types[current] == PlotTypes.PLOT_OCEAN
             ):
                 continue
 
             # Mark as part of this basin
-            self.continentID[current] = continent_id
+            self.continent_id[current] = continent_id
             continent_size += 1
 
             # Add neighbours to stack
             for dir in xrange(1, 9):
-                neighbour = self.mc.neighbours[current][dir]
+                neighbour = self.map_config.neighbours[current][dir]
                 if (
                     neighbour >= 0
-                    and self.continentID[neighbour] == -1
-                    and self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+                    and self.continent_id[neighbour] == -1
+                    and self.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
                 ):
                     stack.append(neighbour)
 
@@ -3386,62 +3448,62 @@ class ElevationMap:
             or (
                 float(sorted_sizes[1])
                 < float(sorted_sizes[0])
-                * (0.01 * float(self.mc.pangaeaMinimumSharePercent))
+                * (0.01 * float(self.map_config.pangaea_minimum_share_percent))
             )
         )
 
     @profile
-    def _calculateCoastContinentIDs(self):
+    def _calculate_coast_continent_ids(self):
         """Label 8-connected land and shallow-coast tiles; sizes count land tiles only."""
-        self.coastContinentID = [-1] * self.mc.iNumPlots
-        self.coastContinentSizes = {}
+        self.coast_continent_id = [-1] * self.map_config.num_plots
+        self.coast_continent_sizes = {}
         continent_counter = 0
-        for i in xrange(self.mc.iNumPlots):
-            if self.coastContinentID[i] == -1 and self._is_coast_passable(i):
-                self.coastContinentSizes[continent_counter] = (
-                    self._floodFillCoastContinent(i, continent_counter)
+        for i in xrange(self.map_config.num_plots):
+            if self.coast_continent_id[i] == -1 and self._is_coast_passable(i):
+                self.coast_continent_sizes[continent_counter] = (
+                    self._flood_fill_coast_continent(i, continent_counter)
                 )
                 continent_counter += 1
 
     def _is_coast_passable(self, tile_index):
-        if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+        if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
             return True
-        if self.elevationMap[tile_index] > self.coastLevelThreshold:
+        if self.elevation_map[tile_index] > self.coast_level_threshold:
             return True
         return _any(
-            self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+            self.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
             for neighbour in self._get_all_neighbours(tile_index)
         )
 
-    def _floodFillCoastContinent(self, start_tile, continent_id):
+    def _flood_fill_coast_continent(self, start_tile, continent_id):
         land_count = 0
-        self.coastContinentID[start_tile] = continent_id
+        self.coast_continent_id[start_tile] = continent_id
         stack = [start_tile]
         while stack:
             current = stack.pop()
-            if self.plotTypes[current] != PlotTypes.PLOT_OCEAN:
+            if self.plot_types[current] != PlotTypes.PLOT_OCEAN:
                 land_count += 1
             for direction in xrange(1, 9):
-                neighbour = self.mc.neighbours[current][direction]
+                neighbour = self.map_config.neighbours[current][direction]
                 if (
                     neighbour >= 0
-                    and self.coastContinentID[neighbour] == -1
+                    and self.coast_continent_id[neighbour] == -1
                     and self._is_coast_passable(neighbour)
                 ):
-                    self.coastContinentID[neighbour] = continent_id
+                    self.coast_continent_id[neighbour] = continent_id
                     stack.append(neighbour)
         return land_count
 
     @profile
     def _break_pangaea(self):
         """Split the largest passable area along a balanced projection, then rift the seam."""
-        if not self.mc.enablePangaeaBreaker:
+        if not self.map_config.enable_pangaea_breaker:
             return False
-        self._calculateCoastContinentIDs()
+        self._calculate_coast_continent_ids()
         if (
-            not self.coastContinentSizes
-            or max(self.coastContinentSizes.values()) == 0
-            or not self._is_pangaea_sizes(self.coastContinentSizes.values())
+            not self.coast_continent_sizes
+            or max(self.coast_continent_sizes.values()) == 0
+            or not self._is_pangaea_sizes(self.coast_continent_sizes.values())
         ):
             print("Pangaea breaker: no pangaea found.")
             return False
@@ -3449,24 +3511,26 @@ class ElevationMap:
 
         largest_id = None
         largest_size = None
-        for continent_id, continent_size in self.coastContinentSizes.items():
+        for continent_id, continent_size in self.coast_continent_sizes.items():
             if largest_size is None or continent_size > largest_size:
                 largest_id = continent_id
                 largest_size = continent_size
-        largest_size = self.coastContinentSizes[largest_id]
+        largest_size = self.coast_continent_sizes[largest_id]
         largest_tiles = set(
             tile_index
-            for tile_index, continent_id in enumerate(self.coastContinentID)
+            for tile_index, continent_id in enumerate(self.coast_continent_id)
             if continent_id == largest_id
         )
-        minimum_size = (self.mc.pangaeaMinimumSharePercent * largest_size) // 100 + 1
+        minimum_size = (
+            self.map_config.pangaea_minimum_share_percent * largest_size
+        ) // 100 + 1
         maximum_size = largest_size - minimum_size
         projection_side = self._select_projection_partition(largest_tiles, minimum_size)
         if projection_side is None:
             print("Pangaea breaker: no balanced projection partition found.")
             return False
         plan = None
-        for _ in xrange(self.mc.pangaeaBreakAttempts):
+        for _ in xrange(self.map_config.pangaea_break_attempts):
             side_a = self._perturb_pangaea_seam(
                 largest_tiles, projection_side, minimum_size, maximum_size
             )
@@ -3481,9 +3545,9 @@ class ElevationMap:
         rift, shoulders = plan
         self._apply_pangaea_rift(rift, shoulders)
 
-        self._calculateOceanBasins()
-        self._calculateContinentIDs()
-        self._calculateCoastContinentIDs()
+        self._calculate_ocean_basins()
+        self._calculate_continent_ids()
+        self._calculate_coast_continent_ids()
         print(
             "Pangaea breaker: rifted the largest continent along %d plots." % len(rift)
         )
@@ -3492,16 +3556,19 @@ class ElevationMap:
     def _get_pangaea_projection_partitions(self, component_tiles):
         """Yield balanced half-plane splits of the component along sixteen projection angles."""
         land_coordinates = [
-            (tile_index % self.mc.iNumPlotsX, tile_index // self.mc.iNumPlotsX)
+            (
+                tile_index % self.map_config.num_plots_x,
+                tile_index // self.map_config.num_plots_x,
+            )
             for tile_index in component_tiles
-            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
         ]
         centroid_x, centroid_y = self._calculate_wrap_aware_centroid(land_coordinates)
         projections = {}
         for tile_index in component_tiles:
-            x = tile_index % self.mc.iNumPlotsX
-            y = tile_index // self.mc.iNumPlotsX
-            dx, dy = self.mc.get_wrapped_distance(x, y, centroid_x, centroid_y)
+            x = tile_index % self.map_config.num_plots_x
+            y = tile_index // self.map_config.num_plots_x
+            dx, dy = self.map_config.get_wrapped_distance(x, y, centroid_x, centroid_y)
             projections[tile_index] = (dx, dy)
 
         quantiles = (1.0 / 3.0, 0.375, 0.4, 0.45, 0.5, 0.55, 0.6, 0.625, 2.0 / 3.0)
@@ -3574,7 +3641,7 @@ class ElevationMap:
             (tile_index, int(tile_index not in side_a))
             for tile_index in component_tiles
         )
-        for _ in xrange(self.mc.pangaeaBoundaryWalkCount):
+        for _ in xrange(self.map_config.pangaea_boundary_walk_count):
             boundary = self._get_pangaea_boundary_tiles(side_of)
             if not boundary:
                 break
@@ -3617,7 +3684,7 @@ class ElevationMap:
         side = side_of[current]
         run = [current]
         seen = set(run)
-        while len(run) < self.mc.pangaeaBoundaryRunLength:
+        while len(run) < self.map_config.pangaea_boundary_run_length:
             options = [
                 neighbour
                 for neighbour in self._get_cardinal_neighbours(current)
@@ -3650,8 +3717,8 @@ class ElevationMap:
 
     def _get_seam_cost_from_pairs(self, pairs):
         """Return seam steps minus a turn reduction per perpendicular turn over cross-edge pairs."""
-        width = self.mc.iNumPlotsX
-        height = self.mc.iNumPlotsY
+        width = self.map_config.num_plots_x
+        height = self.map_config.num_plots_y
         orientations = {}
         segment_count = 0
         for tile_index, neighbour in pairs:
@@ -3681,10 +3748,10 @@ class ElevationMap:
             for end_orientations in orientations.values()
             if len(end_orientations) == 2 and end_orientations[0] != end_orientations[1]
         )
-        return segment_count - self.mc.pangaeaSeamTurnReduction * turns
+        return segment_count - self.map_config.pangaea_seam_turn_reduction * turns
 
     def _land_weight(self, tile_index):
-        if self.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN:
+        if self.plot_types[tile_index] == PlotTypes.PLOT_OCEAN:
             return 0
         return 1
 
@@ -3694,14 +3761,18 @@ class ElevationMap:
     def _get_cardinal_neighbours(self, tile_index):
         return [
             neighbour
-            for neighbour in (self.mc.neighbours[tile_index][d] for d in xrange(1, 5))
+            for neighbour in (
+                self.map_config.neighbours[tile_index][d] for d in xrange(1, 5)
+            )
             if neighbour >= 0
         ]
 
     def _get_all_neighbours(self, tile_index):
         return [
             neighbour
-            for neighbour in (self.mc.neighbours[tile_index][d] for d in xrange(1, 9))
+            for neighbour in (
+                self.map_config.neighbours[tile_index][d] for d in xrange(1, 9)
+            )
             if neighbour >= 0
         ]
 
@@ -3736,7 +3807,8 @@ class ElevationMap:
         bands_a = self._grow_pangaea_rift(seam_a, side_a)
         bands_b = self._grow_pangaea_rift(seam_b, side_b)
         for depth in xrange(
-            self.mc.pangaeaRiftExtraDepth, self.mc.pangaeaRiftMaxDepth + 1
+            self.map_config.pangaea_rift_extra_depth,
+            self.map_config.pangaea_rift_max_depth + 1,
         ):
             rift_a = bands_a[depth]
             rift_b = bands_b[depth]
@@ -3757,12 +3829,12 @@ class ElevationMap:
         land_a = sum(
             1
             for tile_index in side_a - rift - shoulders
-            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
         )
         land_b = sum(
             1
             for tile_index in side_b - rift - shoulders
-            if self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
         )
         if min(land_a, land_b) < minimum_size:
             return False
@@ -3792,14 +3864,14 @@ class ElevationMap:
             elevated = True
         elif tile_index in rift:
             elevated = False
-        elif self.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+        elif self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
             return True
         else:
-            elevated = self.elevationMap[tile_index] > self.coastLevelThreshold
+            elevated = self.elevation_map[tile_index] > self.coast_level_threshold
         if elevated:
             return True
         return _any(
-            self.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+            self.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
             and neighbour not in rift
             and neighbour not in shoulders
             for neighbour in self._get_all_neighbours(tile_index)
@@ -3807,24 +3879,24 @@ class ElevationMap:
 
     def _apply_pangaea_rift(self, rift, shoulders):
         """Lower the rift to deep ocean and the shoulders to coast height."""
-        deep_elevation = self.coastLevelThreshold - 1e-6
-        coast_elevation = (self.coastLevelThreshold + self.seaLevelThreshold) / 2.0
+        deep_elevation = self.coast_level_threshold - 1e-6
+        coast_elevation = (self.coast_level_threshold + self.sea_level_threshold) / 2.0
         for tiles, elevation in (
             (rift, deep_elevation),
             (shoulders, coast_elevation),
         ):
             for tile_index in tiles:
-                self.elevationMap[tile_index] = elevation
-                self.aboveSeaLevelMap[tile_index] = 0.0
-                self.elevationProminenceMap[tile_index] = 0.0
-                self.prominenceMap[tile_index] = 0.0
-                self.plotTypes[tile_index] = PlotTypes.PLOT_OCEAN
+                self.elevation_map[tile_index] = elevation
+                self.above_sea_level_map[tile_index] = 0.0
+                self.elevation_prominence_map[tile_index] = 0.0
+                self.prominence_map[tile_index] = 0.0
+                self.plot_types[tile_index] = PlotTypes.PLOT_OCEAN
 
     def _grow_pangaea_rift(self, seam, own_side):
         """Return cumulative rift bands (depth 0 is the seam), jittered outward into own_side."""
         bands = [set(seam)]
         frontier = set(seam)
-        for _ in xrange(self.mc.pangaeaRiftMaxDepth):
+        for _ in xrange(self.map_config.pangaea_rift_max_depth):
             candidates = set(
                 neighbour
                 for tile_index in frontier
@@ -3834,7 +3906,7 @@ class ElevationMap:
             frontier = set(
                 tile_index
                 for tile_index in sorted(candidates)
-                if random.random() < self.mc.pangaeaRiftChance
+                if random.random() < self.map_config.pangaea_rift_chance
             )
             bands.append(bands[-1] | frontier)
         return bands
@@ -3850,17 +3922,17 @@ class ElevationMap:
     @profile
     def _optimize_wrap_edges(self):
         """Optimize map wrapping to minimize continent splitting across edges"""
-        if not self.mc.enableWrapOptimization:
+        if not self.map_config.enable_wrap_optimization:
             return
 
         # Find optimal offsets for each axis
         x_offset = 0
         y_offset = 0
 
-        if self.mc.wrapX:
+        if self.map_config.wrap_x:
             x_offset = self._find_optimal_x_offset()
 
-        if self.mc.wrapY:
+        if self.map_config.wrap_y:
             y_offset = self._find_optimal_y_offset()
 
         # Apply offsets if any were found
@@ -3875,14 +3947,14 @@ class ElevationMap:
         """Find X offset that places vertical wrap boundary through widest ocean stretch"""
         # First identify all columns that are completely ocean
         all_ocean_columns = []
-        for cut_x in xrange(self.mc.iNumPlotsX):
+        for cut_x in xrange(self.map_config.num_plots_x):
             ocean_count = 0
-            for y in xrange(self.mc.iNumPlotsY):
-                index = y * self.mc.iNumPlotsX + cut_x
-                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
+            for y in xrange(self.map_config.num_plots_y):
+                index = y * self.map_config.num_plots_x + cut_x
+                if self.plot_types[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
-            if ocean_count == self.mc.iNumPlotsY:
+            if ocean_count == self.map_config.num_plots_y:
                 all_ocean_columns.append(cut_x)
 
         # If no all-ocean columns, fall back to best single column
@@ -3891,29 +3963,29 @@ class ElevationMap:
 
         # Find the widest consecutive stretch of all-ocean columns
         widest_stretch = self._find_widest_consecutive_stretch(
-            all_ocean_columns, self.mc.iNumPlotsX
+            all_ocean_columns, self.map_config.num_plots_x
         )
 
         if widest_stretch:
             # Place cut in middle of widest stretch
             middle_position = (widest_stretch[0] + widest_stretch[1]) // 2
-            return (-middle_position) % self.mc.iNumPlotsX
+            return (-middle_position) % self.map_config.num_plots_x
 
         # Fallback to first all-ocean column
-        return (-all_ocean_columns[0]) % self.mc.iNumPlotsX
+        return (-all_ocean_columns[0]) % self.map_config.num_plots_x
 
     def _find_optimal_y_offset(self):
         """Find Y offset that places horizontal wrap boundary through widest ocean stretch"""
         # First identify all rows that are completely ocean
         all_ocean_rows = []
-        for cut_y in xrange(self.mc.iNumPlotsY):
+        for cut_y in xrange(self.map_config.num_plots_y):
             ocean_count = 0
-            for x in xrange(self.mc.iNumPlotsX):
-                index = cut_y * self.mc.iNumPlotsX + x
-                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
+            for x in xrange(self.map_config.num_plots_x):
+                index = cut_y * self.map_config.num_plots_x + x
+                if self.plot_types[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
-            if ocean_count == self.mc.iNumPlotsX:
+            if ocean_count == self.map_config.num_plots_x:
                 all_ocean_rows.append(cut_y)
 
         # If no all-ocean rows, fall back to best single row
@@ -3922,16 +3994,16 @@ class ElevationMap:
 
         # Find the widest consecutive stretch of all-ocean rows
         widest_stretch = self._find_widest_consecutive_stretch(
-            all_ocean_rows, self.mc.iNumPlotsY
+            all_ocean_rows, self.map_config.num_plots_y
         )
 
         if widest_stretch:
             # Place cut in middle of widest stretch
             middle_position = (widest_stretch[0] + widest_stretch[1]) // 2
-            return (-middle_position) % self.mc.iNumPlotsY
+            return (-middle_position) % self.map_config.num_plots_y
 
         # Fallback to first all-ocean row
-        return (-all_ocean_rows[0]) % self.mc.iNumPlotsY
+        return (-all_ocean_rows[0]) % self.map_config.num_plots_y
 
     def _apply_map_offsets(self, x_offset, y_offset):
         """Apply calculated offsets to all map arrays"""
@@ -3940,20 +4012,20 @@ class ElevationMap:
 
         # List of all map arrays that need to be shifted
         map_arrays = [
-            self.plateID,
-            self.continentU,
-            self.continentV,
-            self.elevationBaseMap,
-            self.elevationVelMap,
-            self.elevationBuoyMap,
-            self.elevationPrelMap,
-            self.elevationBoundaryMap,
-            self.elevationProminenceMap,
-            self.elevationMap,
-            self.prominenceMap,
-            self.aboveSeaLevelMap,
-            self.oceanBasinMap,
-            self.plotTypes,
+            self.plate_id,
+            self.continent_u,
+            self.continent_v,
+            self.elevation_base_map,
+            self.elevation_vel_map,
+            self.elevation_buoy_map,
+            self.elevation_prel_map,
+            self.elevation_boundary_map,
+            self.elevation_prominence_map,
+            self.elevation_map,
+            self.prominence_map,
+            self.above_sea_level_map,
+            self.ocean_basin_map,
+            self.plot_types,
             self.dx_centroid,
             self.dy_centroid,
             self.d_centroid,
@@ -3975,26 +4047,30 @@ class ElevationMap:
         temp_array = [0] * len(map_array)
 
         for old_index in xrange(len(map_array)):
-            old_x = old_index % self.mc.iNumPlotsX
-            old_y = old_index // self.mc.iNumPlotsX
+            old_x = old_index % self.map_config.num_plots_x
+            old_y = old_index // self.map_config.num_plots_x
 
             # Calculate new position with offset
-            if self.mc.wrapX:
-                new_x = (old_x + x_offset) % self.mc.iNumPlotsX
+            if self.map_config.wrap_x:
+                new_x = (old_x + x_offset) % self.map_config.num_plots_x
             else:
                 new_x = old_x
-            if self.mc.wrapY:
-                new_y = (old_y + y_offset) % self.mc.iNumPlotsY
+            if self.map_config.wrap_y:
+                new_y = (old_y + y_offset) % self.map_config.num_plots_y
             else:
                 new_y = old_y
 
             # Handle non-wrapping boundaries
-            if not self.mc.wrapX and (new_x < 0 or new_x >= self.mc.iNumPlotsX):
+            if not self.map_config.wrap_x and (
+                new_x < 0 or new_x >= self.map_config.num_plots_x
+            ):
                 continue
-            if not self.mc.wrapY and (new_y < 0 or new_y >= self.mc.iNumPlotsY):
+            if not self.map_config.wrap_y and (
+                new_y < 0 or new_y >= self.map_config.num_plots_y
+            ):
                 continue
 
-            new_index = new_y * self.mc.iNumPlotsX + new_x
+            new_index = new_y * self.map_config.num_plots_x + new_x
             if 0 <= new_index < len(temp_array):
                 temp_array[new_index] = map_array[old_index]
 
@@ -4005,39 +4081,39 @@ class ElevationMap:
     def _update_positions_after_offset(self, x_offset, y_offset):
         """Update continent centroids and seed positions after offset"""
         # Update continent seed positions
-        for continent in self.seedList:
+        for continent in self.seed_list:
             for seed in continent["seeds"]:
-                if self.mc.wrapX:
-                    seed["x"] = (seed["x"] + x_offset) % self.mc.iNumPlotsX
-                if self.mc.wrapY:
-                    seed["y"] = (seed["y"] + y_offset) % self.mc.iNumPlotsY
-                seed["i"] = seed["y"] * self.mc.iNumPlotsX + seed["x"]
+                if self.map_config.wrap_x:
+                    seed["x"] = (seed["x"] + x_offset) % self.map_config.num_plots_x
+                if self.map_config.wrap_y:
+                    seed["y"] = (seed["y"] + y_offset) % self.map_config.num_plots_y
+                seed["i"] = seed["y"] * self.map_config.num_plots_x + seed["x"]
 
             # Update continent centroids
-            if self.mc.wrapX:
+            if self.map_config.wrap_x:
                 continent["x_centroid"] = (
                     continent["x_centroid"] + x_offset
-                ) % self.mc.iNumPlotsX
-            if self.mc.wrapY:
+                ) % self.map_config.num_plots_x
+            if self.map_config.wrap_y:
                 continent["y_centroid"] = (
                     continent["y_centroid"] + y_offset
-                ) % self.mc.iNumPlotsY
+                ) % self.map_config.num_plots_y
 
         # Update plume positions
-        for plume in self.plumeList:
-            if self.mc.wrapX:
-                plume["x"] = (plume["x"] + x_offset) % self.mc.iNumPlotsX
+        for plume in self.plume_list:
+            if self.map_config.wrap_x:
+                plume["x"] = (plume["x"] + x_offset) % self.map_config.num_plots_x
                 if plume["x_wrap_plus"] is not None:
-                    plume["x_wrap_plus"] = plume["x"] + self.mc.iNumPlotsX
+                    plume["x_wrap_plus"] = plume["x"] + self.map_config.num_plots_x
                 if plume["x_wrap_minus"] is not None:
-                    plume["x_wrap_minus"] = plume["x"] - self.mc.iNumPlotsX
+                    plume["x_wrap_minus"] = plume["x"] - self.map_config.num_plots_x
 
-            if self.mc.wrapY:
-                plume["y"] = (plume["y"] + y_offset) % self.mc.iNumPlotsY
+            if self.map_config.wrap_y:
+                plume["y"] = (plume["y"] + y_offset) % self.map_config.num_plots_y
                 if plume["y_wrap_plus"] is not None:
-                    plume["y_wrap_plus"] = plume["y"] + self.mc.iNumPlotsY
+                    plume["y_wrap_plus"] = plume["y"] + self.map_config.num_plots_y
                 if plume["y_wrap_minus"] is not None:
-                    plume["y_wrap_minus"] = plume["y"] - self.mc.iNumPlotsY
+                    plume["y_wrap_minus"] = plume["y"] - self.map_config.num_plots_y
 
     def _find_widest_consecutive_stretch(self, positions, wrap_size):
         """Find the widest consecutive stretch in a list of positions (considering wrapping)"""
@@ -4098,54 +4174,54 @@ class ElevationMap:
         max_ocean_in_cut = -1
         best_cut_position = 0
 
-        for cut_x in xrange(self.mc.iNumPlotsX):
+        for cut_x in xrange(self.map_config.num_plots_x):
             ocean_count = 0
-            for y in xrange(self.mc.iNumPlotsY):
-                index = y * self.mc.iNumPlotsX + cut_x
-                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
+            for y in xrange(self.map_config.num_plots_y):
+                index = y * self.map_config.num_plots_x + cut_x
+                if self.plot_types[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count > max_ocean_in_cut:
                 max_ocean_in_cut = ocean_count
                 best_cut_position = cut_x
 
-        return (-best_cut_position) % self.mc.iNumPlotsX
+        return (-best_cut_position) % self.map_config.num_plots_x
 
     def _find_best_single_y_cut(self):
         """Fallback: find row with most ocean when no all-ocean rows exist"""
         max_ocean_in_cut = -1
         best_cut_position = 0
 
-        for cut_y in xrange(self.mc.iNumPlotsY):
+        for cut_y in xrange(self.map_config.num_plots_y):
             ocean_count = 0
-            for x in xrange(self.mc.iNumPlotsX):
-                index = cut_y * self.mc.iNumPlotsX + x
-                if self.plotTypes[index] == PlotTypes.PLOT_OCEAN:
+            for x in xrange(self.map_config.num_plots_x):
+                index = cut_y * self.map_config.num_plots_x + x
+                if self.plot_types[index] == PlotTypes.PLOT_OCEAN:
                     ocean_count += 1
 
             if ocean_count > max_ocean_in_cut:
                 max_ocean_in_cut = ocean_count
                 best_cut_position = cut_y
 
-        return (-best_cut_position) % self.mc.iNumPlotsY
+        return (-best_cut_position) % self.map_config.num_plots_y
 
     @profile
     def _calculate_elevation_effects(self):
         """Calculate elevation effects on temperature"""
 
-        max_elev = max(self.elevationMap)
-        for i in xrange(self.mc.iNumPlots):
-            if self.plotTypes[i] != PlotTypes.PLOT_OCEAN:
-                self.aboveSeaLevelMap[i] = (
-                    self.mc.maxElev
-                    * (self.elevationMap[i] - self.seaLevelThreshold)
-                    / (max_elev - self.seaLevelThreshold)
+        max_elev = max(self.elevation_map)
+        for i in xrange(self.map_config.num_plots):
+            if self.plot_types[i] != PlotTypes.PLOT_OCEAN:
+                self.above_sea_level_map[i] = (
+                    self.map_config.max_elev
+                    * (self.elevation_map[i] - self.sea_level_threshold)
+                    / (max_elev - self.sea_level_threshold)
                 )
 
-                if self.plotTypes[i] == PlotTypes.PLOT_PEAK:
-                    self.aboveSeaLevelMap[i] += self.mc.peakElev
-                elif self.plotTypes[i] == PlotTypes.PLOT_HILLS:
-                    self.aboveSeaLevelMap[i] += self.mc.hillElev
+                if self.plot_types[i] == PlotTypes.PLOT_PEAK:
+                    self.above_sea_level_map[i] += self.map_config.peak_elev
+                elif self.plot_types[i] == PlotTypes.PLOT_HILLS:
+                    self.above_sea_level_map[i] += self.map_config.hill_elev
 
     def _calculate_wrap_aware_centroid(self, coordinates):
         """Calculate centroid considering map wrapping using circular mean"""
@@ -4156,26 +4232,26 @@ class ElevationMap:
         y_coords = [coord[1] for coord in coordinates]
 
         # Calculate X centroid
-        if self.mc.wrapX:
-            x_angles = [2 * math.pi * x / self.mc.iNumPlotsX for x in x_coords]
+        if self.map_config.wrap_x:
+            x_angles = [2 * math.pi * x / self.map_config.num_plots_x for x in x_coords]
             x_sin_sum = sum(math.sin(angle) for angle in x_angles)
             x_cos_sum = sum(math.cos(angle) for angle in x_angles)
             x_mean_angle = math.atan2(x_sin_sum, x_cos_sum)
             if x_mean_angle < 0:
                 x_mean_angle += 2 * math.pi
-            x_centroid = x_mean_angle * self.mc.iNumPlotsX / (2 * math.pi)
+            x_centroid = x_mean_angle * self.map_config.num_plots_x / (2 * math.pi)
         else:
             x_centroid = sum(x_coords) / len(x_coords)
 
         # Calculate Y centroid
-        if self.mc.wrapY:
-            y_angles = [2 * math.pi * y / self.mc.iNumPlotsY for y in y_coords]
+        if self.map_config.wrap_y:
+            y_angles = [2 * math.pi * y / self.map_config.num_plots_y for y in y_coords]
             y_sin_sum = sum(math.sin(angle) for angle in y_angles)
             y_cos_sum = sum(math.cos(angle) for angle in y_angles)
             y_mean_angle = math.atan2(y_sin_sum, y_cos_sum)
             if y_mean_angle < 0:
                 y_mean_angle += 2 * math.pi
-            y_centroid = y_mean_angle * self.mc.iNumPlotsY / (2 * math.pi)
+            y_centroid = y_mean_angle * self.map_config.num_plots_y / (2 * math.pi)
         else:
             y_centroid = sum(y_coords) / len(y_coords)
 
@@ -4185,41 +4261,41 @@ class ElevationMap:
         """Get coordinates offset by distance in given direction"""
         if direction == "NS":
             new_y = y + distance
-            if self.mc.wrapY:
-                new_y = new_y % self.mc.iNumPlotsY
+            if self.map_config.wrap_y:
+                new_y = new_y % self.map_config.num_plots_y
             else:
-                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.map_config.num_plots_y - 1, new_y))
             return x, new_y
         elif direction == "EW":
             new_x = x + distance
-            if self.mc.wrapX:
-                new_x = new_x % self.mc.iNumPlotsX
+            if self.map_config.wrap_x:
+                new_x = new_x % self.map_config.num_plots_x
             else:
-                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
+                new_x = max(0, min(self.map_config.num_plots_x - 1, new_x))
             return new_x, y
         elif direction == "NE":
             new_x = x + distance
             new_y = y + distance
-            if self.mc.wrapX:
-                new_x = new_x % self.mc.iNumPlotsX
+            if self.map_config.wrap_x:
+                new_x = new_x % self.map_config.num_plots_x
             else:
-                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
-            if self.mc.wrapY:
-                new_y = new_y % self.mc.iNumPlotsY
+                new_x = max(0, min(self.map_config.num_plots_x - 1, new_x))
+            if self.map_config.wrap_y:
+                new_y = new_y % self.map_config.num_plots_y
             else:
-                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.map_config.num_plots_y - 1, new_y))
             return new_x, new_y
         elif direction == "NW":
             new_x = x - distance
             new_y = y + distance
-            if self.mc.wrapX:
-                new_x = new_x % self.mc.iNumPlotsX
+            if self.map_config.wrap_x:
+                new_x = new_x % self.map_config.num_plots_x
             else:
-                new_x = max(0, min(self.mc.iNumPlotsX - 1, new_x))
-            if self.mc.wrapY:
-                new_y = new_y % self.mc.iNumPlotsY
+                new_x = max(0, min(self.map_config.num_plots_x - 1, new_x))
+            if self.map_config.wrap_y:
+                new_y = new_y % self.map_config.num_plots_y
             else:
-                new_y = max(0, min(self.mc.iNumPlotsY - 1, new_y))
+                new_y = max(0, min(self.map_config.num_plots_y - 1, new_y))
             return new_x, new_y
         else:
             return x, y
@@ -4237,13 +4313,13 @@ class ClimateMap:
     def __init__(self, map_config=None, elevation_map=None):
         """Initialize climate map with required dependencies"""
         if map_config is None:
-            self.mc = MapConfig()
+            self.map_config = MapConfig()
         else:
-            self.mc = map_config
+            self.map_config = map_config
         if elevation_map is None:
-            self.em = ElevationMap()
+            self.elevation_map = ElevationMap()
         else:
-            self.em = elevation_map
+            self.elevation_map = elevation_map
 
         # Initialize data structures
         self._initialize_data_structures()
@@ -4251,46 +4327,46 @@ class ClimateMap:
     def _initialize_data_structures(self):
         """Initialize all climate data structures"""
         # Temperature maps
-        self.TemperatureMap = [0.0] * self.mc.iNumPlots
+        self.temperature_map = [0.0] * self.map_config.num_plots
 
         # Ocean current maps
-        self.OceanCurrentU = [0.0] * self.mc.iNumPlots
-        self.OceanCurrentV = [0.0] * self.mc.iNumPlots
+        self.ocean_current_u = [0.0] * self.map_config.num_plots
+        self.ocean_current_v = [0.0] * self.map_config.num_plots
 
         # Wind maps
-        self.streamfunction = [0.0] * self.mc.iNumPlots
-        self.WindU = [0.0] * self.mc.iNumPlots
-        self.WindV = [0.0] * self.mc.iNumPlots
-        self.WindSpeeds = [0.0] * self.mc.iNumPlots
-        self.atmospheric_pressure = [0.0] * self.mc.iNumPlots
+        self.streamfunction = [0.0] * self.map_config.num_plots
+        self.wind_u = [0.0] * self.map_config.num_plots
+        self.wind_v = [0.0] * self.map_config.num_plots
+        self.wind_speeds = [0.0] * self.map_config.num_plots
+        self.atmospheric_pressure = [0.0] * self.map_config.num_plots
 
         # Rainfall maps
-        self.RainfallMap = [0.0] * self.mc.iNumPlots
-        self.rainfallConvectiveBaseTemp = 0.0
-        self.rainfallConvectiveMaxTemp = 0.0
+        self.rainfall_map = [0.0] * self.map_config.num_plots
+        self.rainfall_convective_base_temp = 0.0
+        self.rainfall_convective_max_temp = 0.0
 
-        self.temperature_percentiles = [0.0] * self.mc.iNumPlots
-        self.rainfall_percentiles = [0.0] * self.mc.iNumPlots
+        self.temperature_percentiles = [0.0] * self.map_config.num_plots
+        self.rainfall_percentiles = [0.0] * self.map_config.num_plots
 
         # River system maps
-        self.node_elevations = [0.0] * self.mc.iNumPlots
-        self.flow_directions = [-1] * self.mc.iNumPlots
-        self.watershed_ids = [-1] * self.mc.iNumPlots
-        self.tile_watershed_ids = [-1] * self.mc.iNumPlots
-        self.initial_node_flows = [0.0] * self.mc.iNumPlots
+        self.node_elevations = [0.0] * self.map_config.num_plots
+        self.flow_directions = [-1] * self.map_config.num_plots
+        self.watershed_ids = [-1] * self.map_config.num_plots
+        self.tile_watershed_ids = [-1] * self.map_config.num_plots
+        self.initial_node_flows = [0.0] * self.map_config.num_plots
         self.river_map = []
 
     @profile
-    def GenerateClimateMap(self):
+    def generate_climate_map(self):
         """Main method to generate complete climate system"""
         print("----Generating Climate System----")
-        self.GenerateTemperatureMap()
-        self.GenerateRainfallMap()
+        self.generate_temperature_map()
+        self.generate_rainfall_map()
 
         # Rivers/lakes score basins by rainfall percentile, so percentiles must
         # exist before GenerateRiverMap runs.
         self._calculate_percentiles()
-        self.GenerateRiverMap()
+        self.generate_river_map()
 
         # Lake creation adds moisture and renormalizes RainfallMap, so recalculate
         # percentiles once more against the final post-lake rainfall.
@@ -4300,7 +4376,7 @@ class ClimateMap:
         self._apply_diagonal_ballooning(calibration_factor=3.5)
 
     @profile
-    def GenerateTemperatureMap(self):
+    def generate_temperature_map(self):
         """Generate temperature map including ocean currents and atmospheric effects"""
 
         print("Generating Base Temperature Map")
@@ -4308,7 +4384,7 @@ class ClimateMap:
 
         print(
             "Max Base Temp=%f  Min Base Temp=%f"
-            % (max(self.TemperatureMap), min(self.TemperatureMap))
+            % (max(self.temperature_map), min(self.temperature_map))
         )
 
         print("Generating Ocean Currents")
@@ -4321,29 +4397,37 @@ class ClimateMap:
     @profile
     def _generate_base_temperature(self):
         """Generate base temperature based on latitude and elevation using accurate solar radiation model"""
-        for y in xrange(self.mc.iNumPlotsY):
-            lat = self.mc.get_latitude_for_y(y)
+        for y in xrange(self.map_config.num_plots_y):
+            lat = self.map_config.get_latitude_for_y(y)
 
             # Calculate solar radiation using cosine of latitude (physically accurate)
             solar_factor = self._calculate_solar_radiation(lat)
 
-            for x in xrange(self.mc.iNumPlotsX):
-                i = y * self.mc.iNumPlotsX + x
-                if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+            for x in xrange(self.map_config.num_plots_x):
+                i = y * self.map_config.num_plots_x + x
+                if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
                     # Ocean temperature with thermal inertia
                     base_ocean_temp = (
-                        solar_factor * (self.mc.maxWaterTempC - self.mc.minWaterTempC)
-                        + self.mc.minWaterTempC
+                        solar_factor
+                        * (
+                            self.map_config.max_water_temp_c
+                            - self.map_config.min_water_temp_c
+                        )
+                        + self.map_config.min_water_temp_c
                     )
-                    self.TemperatureMap[i] = base_ocean_temp
+                    self.temperature_map[i] = base_ocean_temp
                 else:
                     # Land temperature with elevation lapse rate
                     base_land_temp = (
-                        solar_factor * (self.mc.maximumTemp - self.mc.minimumTemp)
-                        + self.mc.minimumTemp
+                        solar_factor
+                        * (self.map_config.maximum_temp - self.map_config.minimum_temp)
+                        + self.map_config.minimum_temp
                     )
-                    elevation_cooling = self.em.aboveSeaLevelMap[i] * self.mc.tempLapse
-                    self.TemperatureMap[i] = base_land_temp - elevation_cooling
+                    elevation_cooling = (
+                        self.elevation_map.above_sea_level_map[i]
+                        * self.map_config.temp_lapse
+                    )
+                    self.temperature_map[i] = base_land_temp - elevation_cooling
 
     def _calculate_solar_radiation(self, latitude):
         """Calculate solar radiation factor based on latitude using cosine law"""
@@ -4352,10 +4436,10 @@ class ClimateMap:
 
         # Solar radiation follows cosine of latitude (Lambert's cosine law)
         solar_factor = max(
-            self.mc.minSolarFactor,
+            self.map_config.min_solar_factor,
             math.cos(lat_rad)
-            + self.mc.solarHadleyCellEffects * math.cos(3 * lat_rad)
-            + self.mc.solarFifthOrder * math.cos(5 * lat_rad),
+            + self.map_config.solar_hadley_cell_effects * math.cos(3 * lat_rad)
+            + self.map_config.solar_fifth_order * math.cos(5 * lat_rad),
         )
 
         return solar_factor
@@ -4365,43 +4449,43 @@ class ClimateMap:
         """Generate realistic ocean current patterns using steady-state surface flow model"""
 
         # Step 1: Generate forcing fields
-        force_U, force_V = self._generate_forcing_fields()
+        force_u, force_v = self._generate_forcing_fields()
 
         # Step 2: Precompute connectivity and conductances
-        neighbours, conduct, sumK = self._precompute_ocean_connectivity()
+        neighbours, conduct, sum_k = self._precompute_ocean_connectivity()
 
         # Step 3: Solve pressure with face-based forcing
         pressure = self._solve_pressure_with_face_forcing(
-            neighbours, conduct, sumK, force_U, force_V
+            neighbours, conduct, sum_k, force_u, force_v
         )
 
         # Step 4: Compute velocities with Coriolis effects
         self._compute_ocean_velocities_with_coriolis(
-            neighbours, conduct, pressure, force_U, force_V
+            neighbours, conduct, pressure, force_u, force_v
         )
 
     @profile
     def _generate_forcing_fields(self):
         """Generate forcing fields for ocean currents"""
-        force_U = [0.0] * self.mc.iNumPlots
-        force_V = [0.0] * self.mc.iNumPlots
+        force_u = [0.0] * self.map_config.num_plots
+        force_v = [0.0] * self.map_config.num_plots
         sign = lambda a: (a > 0) - (a < 0)
 
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
-                y = i // self.mc.iNumPlotsX
-                latitude = self.mc.get_latitude_for_y(y)
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
+                y = i // self.map_config.num_plots_x
+                latitude = self.map_config.get_latitude_for_y(y)
                 latitude_rad = math.radians(latitude)
 
                 # Primary latitude-based forcing (east/west only)
-                force_U[i] = (
-                    -self.mc.latitudinalForcingStrength
+                force_u[i] = (
+                    -self.map_config.latitudinal_forcing_strength
                     * math.cos(3 * latitude_rad)
                     * math.cos(latitude_rad)
                 )
-                force_V[i] = (
+                force_v[i] = (
                     -0.3
-                    * self.mc.latitudinalForcingStrength
+                    * self.map_config.latitudinal_forcing_strength
                     * sign(latitude)
                     * math.cos(3 * latitude_rad)
                     * math.cos(latitude_rad)
@@ -4409,10 +4493,10 @@ class ClimateMap:
 
                 # Secondary temperature gradient forcing
                 temp_grad_u, temp_grad_v = self._calculate_temperature_gradients(i)
-                force_U[i] += self.mc.thermalGradientFactor * temp_grad_u
-                force_V[i] += self.mc.thermalGradientFactor * temp_grad_v
+                force_u[i] += self.map_config.thermal_gradient_factor * temp_grad_u
+                force_v[i] += self.map_config.thermal_gradient_factor * temp_grad_v
 
-        return force_U, force_V
+        return force_u, force_v
 
     def _calculate_temperature_gradients(self, i):
         """Calculate temperature gradients at a given tile"""
@@ -4420,28 +4504,34 @@ class ClimateMap:
         grad_u = 0.0
         grad_v = 0.0
         count = 0
-        x_i = i % self.mc.iNumPlotsX
-        y_i = i // self.mc.iNumPlotsX
+        x_i = i % self.map_config.num_plots_x
+        y_i = i // self.map_config.num_plots_x
 
         for dir in xrange(1, 9):
-            neighbour_i = self.mc.neighbours[i][dir]
+            neighbour_i = self.map_config.neighbours[i][dir]
             if neighbour_i >= 0:
-                if self.em.plotTypes[neighbour_i] == PlotTypes.PLOT_OCEAN:
-                    x_j = neighbour_i % self.mc.iNumPlotsX
-                    y_j = neighbour_i // self.mc.iNumPlotsX
+                if self.elevation_map.plot_types[neighbour_i] == PlotTypes.PLOT_OCEAN:
+                    x_j = neighbour_i % self.map_config.num_plots_x
+                    y_j = neighbour_i // self.map_config.num_plots_x
 
                     # Calculate raw differences
                     dx = x_j - x_i
                     dy = y_j - y_i
 
                     # Handle wrapping
-                    if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX / 2:
-                        dx = dx - copysign(self.mc.iNumPlotsX, dx)
-                    if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY / 2:
-                        dy = dy - copysign(self.mc.iNumPlotsY, dy)
+                    if (
+                        self.map_config.wrap_x
+                        and abs(dx) > self.map_config.num_plots_x / 2
+                    ):
+                        dx = dx - copysign(self.map_config.num_plots_x, dx)
+                    if (
+                        self.map_config.wrap_y
+                        and abs(dy) > self.map_config.num_plots_y / 2
+                    ):
+                        dy = dy - copysign(self.map_config.num_plots_y, dy)
 
                     temp_diff = (
-                        self.TemperatureMap[neighbour_i] - self.TemperatureMap[i]
+                        self.temperature_map[neighbour_i] - self.temperature_map[i]
                     )
                     grad_u += temp_diff * dx
                     grad_v += temp_diff * dy
@@ -4456,59 +4546,67 @@ class ClimateMap:
     @profile
     def _precompute_ocean_connectivity(self):
         """Precompute connectivity and conductances for ocean tiles"""
-        neighbours = [[] for _ in xrange(self.mc.iNumPlots)]
-        conduct = [[] for _ in xrange(self.mc.iNumPlots)]
-        sumK = [0.0] * self.mc.iNumPlots
+        neighbours = [[] for _ in xrange(self.map_config.num_plots)]
+        conduct = [[] for _ in xrange(self.map_config.num_plots)]
+        sum_k = [0.0] * self.map_config.num_plots
 
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN:
                 continue
 
             # Calculate depth for this tile
-            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
+            depth_i = max(
+                0.1,
+                self.elevation_map.sea_level_threshold
+                - self.elevation_map.elevation_map[i],
+            )
 
             # Check all 8 neighbours
             for dir in xrange(1, 9):
-                j = self.mc.neighbours[i][dir]
+                j = self.map_config.neighbours[i][dir]
                 if j < 0:
                     continue
-                if self.em.plotTypes[j] != PlotTypes.PLOT_OCEAN:
+                if self.elevation_map.plot_types[j] != PlotTypes.PLOT_OCEAN:
                     continue
 
                 # Calculate depth for neighbour
-                depth_j = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[j])
+                depth_j = max(
+                    0.1,
+                    self.elevation_map.sea_level_threshold
+                    - self.elevation_map.elevation_map[j],
+                )
 
                 # Calculate conductance (no distance correction for simplicity)
-                k = self.mc.oceanCurrentK0 * (depth_i + depth_j) * 0.5
+                k = self.map_config.ocean_current_k0 * (depth_i + depth_j) * 0.5
 
                 neighbours[i].append(j)
                 conduct[i].append(k)
-                sumK[i] += k
+                sum_k[i] += k
 
-        return neighbours, conduct, sumK
+        return neighbours, conduct, sum_k
 
     @profile
     def _solve_pressure_with_face_forcing(
-        self, neighbours, conduct, sumK, force_U, force_V
+        self, neighbours, conduct, sum_k, force_u, force_v
     ):
         """Ultra-optimized version - trades some memory for maximum speed"""
 
         # Cache all frequently used values
-        num_plots = self.mc.iNumPlots
+        num_plots = self.map_config.num_plots
         pressure = [0.0] * num_plots
         pressure_new = [0.0] * num_plots
 
         # Method reference caching
-        is_below_sea_level = self.em.IsBelowSeaLevel
-        min_iterations = self.mc.minSolverIterations
-        max_iterations = self.mc.currentSolverIterations
-        tolerance = self.mc.solverTolerance
+        is_below_sea_level = self.elevation_map.is_below_sea_level
+        min_iterations = self.map_config.min_solver_iterations
+        max_iterations = self.map_config.current_solver_iterations
+        tolerance = self.map_config.solver_tolerance
 
         # Pre-compute ALL calculations that don't depend on pressure
         plot_data = []  # [(plot_index, [(conduct_val, j, F_base), ...], sumK_val), ...]
 
         for i in xrange(num_plots):
-            if not is_below_sea_level(i) or sumK[i] == 0:
+            if not is_below_sea_level(i) or sum_k[i] == 0:
                 continue
 
             neighbours_data = []
@@ -4517,16 +4615,16 @@ class ClimateMap:
 
             for idx, j in enumerate(neighbours_i):
                 # Pre-calculate direction vector
-                dx, dy = self.mc.calculate_direction_vector(i, j)
+                dx, dy = self.map_config.calculate_direction_vector(i, j)
 
                 # Pre-calculate the constant part of face forcing
-                force_U_avg = (force_U[i] + force_U[j]) * 0.5
-                force_V_avg = (force_V[i] + force_V[j]) * 0.5
-                F_base = force_U_avg * dx + force_V_avg * dy
+                force_u_avg = (force_u[i] + force_u[j]) * 0.5
+                force_v_avg = (force_v[i] + force_v[j]) * 0.5
+                f_base = force_u_avg * dx + force_v_avg * dy
 
-                neighbours_data.append((conduct_i[idx], j, F_base))
+                neighbours_data.append((conduct_i[idx], j, f_base))
 
-            plot_data.append((i, neighbours_data, sumK[i]))
+            plot_data.append((i, neighbours_data, sum_k[i]))
 
         # Main iteration loop - now extremely streamlined
         residual = 1e999
@@ -4535,12 +4633,12 @@ class ClimateMap:
             residual_sum = 0.0
             residual_count = len(plot_data)
 
-            for i, neighbours_data, sumK_i in plot_data:
+            for i, neighbours_data, sum_k_i in plot_data:
                 acc = 0.0
-                for conduct_val, j, F_base in neighbours_data:
-                    acc += conduct_val * pressure[j] - F_base
+                for conduct_val, j, f_base in neighbours_data:
+                    acc += conduct_val * pressure[j] - f_base
 
-                pressure_new[i] = acc / sumK_i
+                pressure_new[i] = acc / sum_k_i
 
                 # Inline residual calculation
                 diff = pressure_new[i] - pressure[i]
@@ -4566,31 +4664,35 @@ class ClimateMap:
 
     @profile
     def _compute_ocean_velocities_with_coriolis(
-        self, neighbours, conduct, pressure, force_U, force_V
+        self, neighbours, conduct, pressure, force_u, force_v
     ):
         """Compute final ocean velocities from pressure field with Coriolis effects"""
         # Step 1: Calculate pressure-based fluxes
-        pressure_flux_x = [0.0] * self.mc.iNumPlots
-        pressure_flux_y = [0.0] * self.mc.iNumPlots
+        pressure_flux_x = [0.0] * self.map_config.num_plots
+        pressure_flux_y = [0.0] * self.map_config.num_plots
 
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN:
                 continue
 
-            depth_i = max(0.1, self.em.seaLevelThreshold - self.em.elevationMap[i])
+            depth_i = max(
+                0.1,
+                self.elevation_map.sea_level_threshold
+                - self.elevation_map.elevation_map[i],
+            )
             flux_x = 0.0
             flux_y = 0.0
 
             for idx, j in enumerate(neighbours[i]):
-                dx, dy = self.mc.calculate_direction_vector(i, j)
+                dx, dy = self.map_config.calculate_direction_vector(i, j)
 
                 # Calculate face-based forcing for this edge
-                F_face_ij = (force_U[i] + force_U[j]) * 0.5 * dx + (
-                    force_V[i] + force_V[j]
+                f_face_ij = (force_u[i] + force_u[j]) * 0.5 * dx + (
+                    force_v[i] + force_v[j]
                 ) * 0.5 * dy
 
                 # Total flux is pressure gradient + forcing
-                flow = conduct[i][idx] * (pressure[i] - pressure[j]) + F_face_ij
+                flow = conduct[i][idx] * (pressure[i] - pressure[j]) + f_face_ij
 
                 flux_x += flow * dx
                 flux_y += flow * dy
@@ -4599,21 +4701,21 @@ class ClimateMap:
             pressure_flux_y[i] = flux_y / depth_i
 
         # Step 2: Apply Coriolis rotation to fluxes
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN:
-                self.OceanCurrentU[i] = 0.0
-                self.OceanCurrentV[i] = 0.0
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN:
+                self.ocean_current_u[i] = 0.0
+                self.ocean_current_v[i] = 0.0
                 continue
 
             # Calculate Coriolis parameter
-            y = i // self.mc.iNumPlotsX
-            latitude = self.mc.get_latitude_for_y(y)
+            y = i // self.map_config.num_plots_x
+            latitude = self.map_config.get_latitude_for_y(y)
             latitude_rad = math.radians(latitude)
             f_coriolis = (
                 2
-                * self.mc.earthRotationRate
+                * self.map_config.earth_rotation_rate
                 * math.sin(latitude_rad)
-                * self.mc.coriolisStrength
+                * self.map_config.coriolis_strength
             )
 
             # Apply Coriolis rotation: k x J_p
@@ -4622,8 +4724,8 @@ class ClimateMap:
             coriolis_flux_y = f_coriolis * pressure_flux_x[i]
 
             # Total velocity = pressure-driven + Coriolis-rotated
-            self.OceanCurrentU[i] = pressure_flux_x[i] + coriolis_flux_x
-            self.OceanCurrentV[i] = pressure_flux_y[i] + coriolis_flux_y
+            self.ocean_current_u[i] = pressure_flux_x[i] + coriolis_flux_x
+            self.ocean_current_v[i] = pressure_flux_y[i] + coriolis_flux_y
 
         # maxV = max(abs(x) for x in self.OceanCurrentU + self.OceanCurrentV)
         # self.OceanCurrentU = [u / maxV for u in self.OceanCurrentU]
@@ -4637,40 +4739,44 @@ class ClimateMap:
         """
 
         # Store original temperatures as baseline
-        self.baseTemperatureMap = list(self.TemperatureMap)
+        self.base_temperature_map = list(self.temperature_map)
 
         # Pre-calculate ocean distances and basin information
-        self._calculateOceanDistances()
+        self._calculate_ocean_distances()
 
         # Apply thermal transport via ocean currents
-        self._transportOceanHeat()
+        self._transport_ocean_heat()
 
         # Diffuse ocean heat for more realistic temperature spread
         self._diffuse_ocean_heat()
 
         # Apply maritime effects to adjacent land areas
-        self._applyMaritimeEffects()
+        self._apply_maritime_effects()
 
     @profile
-    def _calculateOceanDistances(self):
+    def _calculate_ocean_distances(self):
         """
         Pre-calculate distance from each land tile to nearest ocean using BFS.
         Also identifies ocean basins and filters out small water bodies.
         """
 
         # Initialize distance map: 0 for ocean, infinity for land
-        self.oceanDistanceMap = [
-            (self.mc.iNumPlots, 0)[self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN]
-            for i in xrange(self.mc.iNumPlots)
+        self.ocean_distance_map = [
+            (self.map_config.num_plots, 0)[
+                self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN
+            ]
+            for i in xrange(self.map_config.num_plots)
         ]
 
         # Flood fill to identify connected ocean basins
         initial_ocean_tiles = []
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
                 if (
-                    self.em.basinSizes[self.em.oceanBasinMap[i]]
-                    >= self.mc.min_basin_size
+                    self.elevation_map.basin_sizes[
+                        self.elevation_map.ocean_basin_map[i]
+                    ]
+                    >= self.map_config.min_basin_size
                 ):
                     initial_ocean_tiles.append((i, 0))
 
@@ -4681,27 +4787,29 @@ class ClimateMap:
 
             # Check all neighbours
             for dir in xrange(1, 9):
-                neighbour = self.mc.neighbours[current_tile][dir]
+                neighbour = self.map_config.neighbours[current_tile][dir]
                 # If neighbour distance is greater than current + 1, update it
                 if (
                     neighbour >= 0
-                    and self.oceanDistanceMap[neighbour] > current_distance + 1
+                    and self.ocean_distance_map[neighbour] > current_distance + 1
                 ):
-                    self.oceanDistanceMap[neighbour] = current_distance + 1
+                    self.ocean_distance_map[neighbour] = current_distance + 1
                     ocean_queue.append((neighbour, current_distance + 1))
 
         # Create distance queue for maritime processing (sorted by distance)
-        self.distanceQueue = []
-        for i in xrange(self.mc.iNumPlots):
+        self.distance_queue = []
+        for i in xrange(self.map_config.num_plots):
             if (
-                0 < self.oceanDistanceMap[i] <= self.mc.maritime_influence_distance
+                0
+                < self.ocean_distance_map[i]
+                <= self.map_config.maritime_influence_distance
             ):  # Land tiles within range
-                self.distanceQueue.append((self.oceanDistanceMap[i], i))
+                self.distance_queue.append((self.ocean_distance_map[i], i))
 
-        self.distanceQueue.sort()  # Sort by distance for processing order
+        self.distance_queue.sort()  # Sort by distance for processing order
 
     @profile
-    def _transportOceanHeat(self):
+    def _transport_ocean_heat(self):
         """
         Calculate thermal anomalies from ocean current heat transport.
         Uses thermal plume model with diffusive mixing.
@@ -4718,35 +4826,39 @@ class ClimateMap:
         }
 
         # Initialize accumulation arrays
-        heat_sum = [0.0] * self.mc.iNumPlots
-        strength_sum = [0.0] * self.mc.iNumPlots
+        heat_sum = [0.0] * self.map_config.num_plots
+        strength_sum = [0.0] * self.map_config.num_plots
 
         # Process each ocean tile as a thermal source
-        for source_tile in xrange(self.mc.iNumPlots):
+        for source_tile in xrange(self.map_config.num_plots):
             # Skip non-ocean tiles
-            if self.em.plotTypes[source_tile] != PlotTypes.PLOT_OCEAN:
+            if self.elevation_map.plot_types[source_tile] != PlotTypes.PLOT_OCEAN:
                 continue
 
             # Skip small basins
-            basin_id = self.em.oceanBasinMap[source_tile]
-            if basin_id != -1 and self.em.basinSizes[basin_id] < self.mc.min_basin_size:
+            basin_id = self.elevation_map.ocean_basin_map[source_tile]
+            if (
+                basin_id != -1
+                and self.elevation_map.basin_sizes[basin_id]
+                < self.map_config.min_basin_size
+            ):
                 continue
 
             # Initialize thermal plume
             plume_index = source_tile
-            temp_enforced = self.baseTemperatureMap[source_tile]
+            temp_enforced = self.base_temperature_map[source_tile]
 
             # Trace thermal plume downstream
-            for step in xrange(self.mc.max_plume_distance):
+            for step in xrange(self.map_config.max_plume_distance):
                 # Get current flow at this position
-                current_u = self.OceanCurrentU[plume_index]
-                current_v = self.OceanCurrentV[plume_index]
+                current_u = self.ocean_current_u[plume_index]
+                current_v = self.ocean_current_v[plume_index]
                 local_strength = (
                     current_u**2 + current_v**2
-                ) ** 0.5 * self.mc.current_amplification
+                ) ** 0.5 * self.map_config.current_amplification
 
                 # Terminate if flow is too weak
-                if local_strength < self.mc.min_strength_threshold:
+                if local_strength < self.map_config.min_strength_threshold:
                     break
 
                 flow_angle = math.atan2(current_v, current_u)
@@ -4754,12 +4866,13 @@ class ClimateMap:
                     int(math.floor((flow_angle + math.pi / 8) / (math.pi / 4))) % 8
                 )
                 mc_dir = direction_map[direction_index]
-                next_neighbour = self.mc.neighbours[plume_index][mc_dir]
+                next_neighbour = self.map_config.neighbours[plume_index][mc_dir]
 
                 # Terminate if invalid neighbour or hit land
                 if (
                     next_neighbour < 0
-                    or self.em.plotTypes[next_neighbour] != PlotTypes.PLOT_OCEAN
+                    or self.elevation_map.plot_types[next_neighbour]
+                    != PlotTypes.PLOT_OCEAN
                 ):
                     break
 
@@ -4767,7 +4880,7 @@ class ClimateMap:
                 plume_index = next_neighbour
 
                 # Apply thermal mixing (water mass adopts local characteristics)
-                local_base_temp = self.baseTemperatureMap[plume_index]
+                local_base_temp = self.base_temperature_map[plume_index]
 
                 # Calculate thermal anomaly contribution
                 thermal_anomaly = temp_enforced - local_base_temp
@@ -4778,39 +4891,40 @@ class ClimateMap:
 
                 # update values for next loop
                 temp_enforced = (
-                    temp_enforced * self.mc.mixing_factor
-                    + local_base_temp * (1.0 - self.mc.mixing_factor)
+                    temp_enforced * self.map_config.mixing_factor
+                    + local_base_temp * (1.0 - self.map_config.mixing_factor)
                 )
 
         # Apply accumulated thermal anomalies
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             if strength_sum[i] > 0:
                 anomaly = heat_sum[i] / strength_sum[i]
-                self.TemperatureMap[i] = self.baseTemperatureMap[i] + anomaly
+                self.temperature_map[i] = self.base_temperature_map[i] + anomaly
 
     @profile
     def _diffuse_ocean_heat(self):
         """Apply diffusion to ocean temperatures to simulate heat spread"""
-        self.TemperatureMap = self.mc.gaussian_blur(
-            self.TemperatureMap,
-            radius=self.mc.oceanDiffusionRadius,
-            filter_func=lambda i: self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN,
+        self.temperature_map = self.map_config.gaussian_blur(
+            self.temperature_map,
+            radius=self.map_config.ocean_diffusion_radius,
+            filter_func=lambda i: self.elevation_map.plot_types[i]
+            == PlotTypes.PLOT_OCEAN,
         )
 
     @profile
-    def _applyMaritimeEffects(self):
+    def _apply_maritime_effects(self):
         """
         Apply maritime climate effects to coastal land areas using pre-calculated distances.
         Uses "baked in" temperature propagation through recursive spreading.
         """
 
         # Store original land temperatures before maritime modification
-        original_temps = list(self.TemperatureMap)
+        original_temps = list(self.temperature_map)
 
         # Process land tiles in distance order (closest to ocean first)
-        for distance, land_tile in self.distanceQueue:
+        for distance, land_tile in self.distance_queue:
             # Skip tiles beyond maritime influence
-            if distance > self.mc.maritime_influence_distance:
+            if distance > self.map_config.maritime_influence_distance:
                 break
 
             # Accumulate maritime influences from closer neighbours
@@ -4818,32 +4932,33 @@ class ClimateMap:
             total_weight = 0.0
 
             for dir in xrange(1, 9):
-                neighbour = self.mc.neighbours[land_tile][dir]
+                neighbour = self.map_config.neighbours[land_tile][dir]
                 if neighbour >= 0:
-                    neighbour_distance = self.oceanDistanceMap[neighbour]
+                    neighbour_distance = self.ocean_distance_map[neighbour]
 
                     # Only consider neighbours closer to ocean AND not blocked by peaks
                     if (
                         neighbour_distance < distance
-                        and self.em.plotTypes[neighbour] != PlotTypes.PLOT_PEAK
+                        and self.elevation_map.plot_types[neighbour]
+                        != PlotTypes.PLOT_PEAK
                     ):
-                        neighbour_temp = self.TemperatureMap[
+                        neighbour_temp = self.temperature_map[
                             neighbour
                         ]  # Already has maritime effects
 
                         # For direct ocean neighbours, check basin size
                         if neighbour_distance == 0:
-                            basin_id = self.em.oceanBasinMap[neighbour]
+                            basin_id = self.elevation_map.ocean_basin_map[neighbour]
                             if (
                                 basin_id != -1
-                                and self.em.basinSizes[basin_id]
-                                < self.mc.min_basin_size
+                                and self.elevation_map.basin_sizes[basin_id]
+                                < self.map_config.min_basin_size
                             ):
                                 continue  # Skip small water bodies
 
                         # Calculate influence with distance decay
                         effective_distance = distance
-                        weight = self.mc.distance_decay**effective_distance
+                        weight = self.map_config.distance_decay**effective_distance
                         temp_diff = neighbour_temp - original_temps[land_tile]
 
                         total_influence += temp_diff * weight
@@ -4853,25 +4968,26 @@ class ClimateMap:
             if total_weight > 0:
                 maritime_effect = (
                     total_influence / total_weight
-                ) * self.mc.maritime_strength
-                self.TemperatureMap[land_tile] = (
+                ) * self.map_config.maritime_strength
+                self.temperature_map[land_tile] = (
                     original_temps[land_tile] + maritime_effect
                 )
 
     @profile
     def _apply_temperature_smoothing(self):
         """Apply smoothing to temperature map"""
-        self.TemperatureMap = self.mc.gaussian_blur(
-            self.TemperatureMap,
-            self.mc.climateSmoothing,
-            filter_func=lambda i: self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN,
+        self.temperature_map = self.map_config.gaussian_blur(
+            self.temperature_map,
+            self.map_config.climate_smoothing,
+            filter_func=lambda i: self.elevation_map.plot_types[i]
+            != PlotTypes.PLOT_OCEAN,
         )
-        self.TemperatureMap = self.mc.gaussian_blur(
-            self.TemperatureMap, self.mc.climateSmoothing
+        self.temperature_map = self.map_config.gaussian_blur(
+            self.temperature_map, self.map_config.climate_smoothing
         )
 
     @profile
-    def GenerateRainfallMap(self):
+    def generate_rainfall_map(self):
         """Generate rainfall map using iterative diffusion instead of particle tracking"""
 
         print("Generating Wind Patterns")
@@ -4919,62 +5035,66 @@ class ClimateMap:
     @profile
     def _calculate_thickness_field(self):
         """Calculate atmospheric layer thickness from elevation and temperature"""
-        thickness_field = [0.0] * self.mc.iNumPlots
+        thickness_field = [0.0] * self.map_config.num_plots
 
         # Calculate reference temperature (global mean)
-        temp_sum = sum(self.TemperatureMap)
-        temp_ref = temp_sum / len(self.TemperatureMap)
+        temp_sum = sum(self.temperature_map)
+        temp_ref = temp_sum / len(self.temperature_map)
 
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             # Base thickness
-            H = self.mc.qgMeanLayerDepth
+            h = self.map_config.qg_mean_layer_depth
 
             # Thermal expansion: warmer air = thicker column
-            temp_anomaly = self.TemperatureMap[i] - temp_ref
-            H += self.mc.qgThermalExpansion * temp_anomaly
+            temp_anomaly = self.temperature_map[i] - temp_ref
+            h += self.map_config.qg_thermal_expansion * temp_anomaly
 
             # Topographic effect: higher elevation = thinner air column above
-            H -= self.em.aboveSeaLevelMap[i]
+            h -= self.elevation_map.above_sea_level_map[i]
 
             # Ensure positive thickness
-            thickness_field[i] = max(0.1, H)
+            thickness_field[i] = max(0.1, h)
 
         return thickness_field
 
     @profile
     def _calculate_meridional_forcing(self):
         """Calculate meridional forcing profile for Hadley/Ferrel/Polar cells"""
-        forcing = [0.0] * self.mc.iNumPlots
+        forcing = [0.0] * self.map_config.num_plots
 
         # Calculate heating profile Q(y) for each latitude
-        Q_profile = {}
-        for y in xrange(self.mc.iNumPlotsY):
-            latitude = self.mc.get_latitude_for_y(y)
+        q_profile = {}
+        for y in xrange(self.map_config.num_plots_y):
+            latitude = self.map_config.get_latitude_for_y(y)
 
             lat_rad = math.radians(latitude)
-            Q_profile[y] = (
-                self.mc.qgHadleyStrength * math.cos(lat_rad) * math.cos(3 * lat_rad)
+            q_profile[y] = (
+                self.map_config.qg_hadley_strength
+                * math.cos(lat_rad)
+                * math.cos(3 * lat_rad)
             )
 
         # Calculate PV forcing: Fm = (f0/H0) * dQ/dy
-        f0_over_H0 = self.mc.qgCoriolisF0 / self.mc.qgMeanLayerDepth  # Convert km to m
-        dy = self.mc.gridSpacingY  # Grid spacing in meters
+        f0_over_h0 = (
+            self.map_config.qg_coriolis_f0 / self.map_config.qg_mean_layer_depth
+        )  # Convert km to m
+        dy = self.map_config.grid_spacing_y  # Grid spacing in meters
 
-        for i in xrange(self.mc.iNumPlots):
-            y = i // self.mc.iNumPlotsX
+        for i in xrange(self.map_config.num_plots):
+            y = i // self.map_config.num_plots_x
 
             # Calculate dQ/dy using finite differences
             if y == 0:
                 # Forward difference at south boundary
-                dQ_dy = (Q_profile[1] - Q_profile[0]) / dy
-            elif y == self.mc.iNumPlotsY - 1:
+                d_q_dy = (q_profile[1] - q_profile[0]) / dy
+            elif y == self.map_config.num_plots_y - 1:
                 # Backward difference at north boundary
-                dQ_dy = (Q_profile[y] - Q_profile[y - 1]) / dy
+                d_q_dy = (q_profile[y] - q_profile[y - 1]) / dy
             else:
                 # Central difference in interior
-                dQ_dy = (Q_profile[y + 1] - Q_profile[y - 1]) / (2.0 * dy)
+                d_q_dy = (q_profile[y + 1] - q_profile[y - 1]) / (2.0 * dy)
 
-            forcing[i] = f0_over_H0 * dQ_dy
+            forcing[i] = f0_over_h0 * d_q_dy
 
         return forcing
 
@@ -4984,42 +5104,42 @@ class ClimateMap:
 
         sign = lambda a: (a > 0) - (a < 0)
         # Pre-allocate arrays
-        num_plots = self.mc.iNumPlots
+        num_plots = self.map_config.num_plots
 
         # Cache frequently used values
-        dx = self.mc.gridSpacingX
-        dy = self.mc.gridSpacingY
-        num_plots_x = self.mc.iNumPlotsX
-        num_plots_y = self.mc.iNumPlotsY
-        wrap_x = self.mc.wrapX
-        wrap_y = self.mc.wrapY
+        dx = self.map_config.grid_spacing_x
+        dy = self.map_config.grid_spacing_y
+        num_plots_x = self.map_config.num_plots_x
+        num_plots_y = self.map_config.num_plots_y
+        wrap_x = self.map_config.wrap_x
+        wrap_y = self.map_config.wrap_y
 
         # Physical parameters
-        pres_atmo = self.mc.atmoPres
-        gravity = self.mc.gravity
-        gasConstant = self.mc.gasConstant
-        layerDepth = self.mc.qgMeanLayerDepth
-        meridional_strength = self.mc.qgMeridionalPressureStrength
-        bernoulli_factor = self.mc.bernoulliFactor
+        pres_atmo = self.map_config.atmo_pres
+        gravity = self.map_config.gravity
+        gas_constant = self.map_config.gas_constant
+        layer_depth = self.map_config.qg_mean_layer_depth
+        meridional_strength = self.map_config.qg_meridional_pressure_strength
+        bernoulli_factor = self.map_config.bernoulli_factor
 
         # Calculate reference temperature for pressure calculation
-        temp_sum = sum(self.TemperatureMap)
-        temp_ref = temp_sum / len(self.TemperatureMap)
+        temp_sum = sum(self.temperature_map)
+        temp_ref = temp_sum / len(self.temperature_map)
 
-        pressure_field = [0.0] * self.mc.iNumPlots
+        pressure_field = [0.0] * self.map_config.num_plots
 
         # Step 1: Calculate pressure field from temperature, elevation, and meridional forcing
         for i in xrange(num_plots):
             y_i = i // num_plots_x
-            latitude = self.mc.get_latitude_for_y(y_i)
+            latitude = self.map_config.get_latitude_for_y(y_i)
             lat_rad = math.radians(latitude)
 
             # barometric pressure at altitude
             pressure_elev = pres_atmo * (
                 math.exp(
                     -gravity
-                    * self.em.aboveSeaLevelMap[i]
-                    / gasConstant
+                    * self.elevation_map.above_sea_level_map[i]
+                    / gas_constant
                     / (temp_ref + 273.15)
                 )
                 - 1.0
@@ -5029,9 +5149,9 @@ class ClimateMap:
             pressure_temp = (
                 -(pressure_elev + pres_atmo)
                 * gravity
-                * layerDepth
-                / gasConstant
-                * (1.0 / (temp_ref + 273.15) - 1.0 / (self.TemperatureMap[i] + 273.15))
+                * layer_depth
+                / gas_constant
+                * (1.0 / (temp_ref + 273.15) - 1.0 / (self.temperature_map[i] + 273.15))
             )
 
             # Artificial meridional pressure pattern for Hadley/Ferrel/Polar cells
@@ -5111,8 +5231,8 @@ class ClimateMap:
                     2.0
                     * dy
                     * abs(dp_dx)
-                    * gasConstant
-                    * (273.15 + self.TemperatureMap[i])
+                    * gas_constant
+                    * (273.15 + self.temperature_map[i])
                     / self.atmospheric_pressure[i]
                 )
                 ** 0.5
@@ -5124,8 +5244,8 @@ class ClimateMap:
                     2.0
                     * dx
                     * abs(dp_dy)
-                    * gasConstant
-                    * (273.15 + self.TemperatureMap[i])
+                    * gas_constant
+                    * (273.15 + self.temperature_map[i])
                     / self.atmospheric_pressure[i]
                 )
                 ** 0.5
@@ -5136,29 +5256,29 @@ class ClimateMap:
         """Solve QG streamfunction equation with nested iteration loops - OPTIMIZED with pressure gradient feedback"""
 
         # Pre-allocate arrays to avoid repeated memory allocation
-        num_plots = self.mc.iNumPlots
+        num_plots = self.map_config.num_plots
         streamfunction = [0.0] * num_plots
         streamfunction_new = [0.0] * num_plots  # Pre-allocate working array
         v_wind = [0.0] * num_plots
         pv_forcing = [0.0] * num_plots  # Pre-allocate PV forcing array
 
         # Cache frequently used values
-        dx = self.mc.gridSpacingX
+        dx = self.map_config.grid_spacing_x
         dx_squared = dx * dx
-        max_iterations = self.mc.qgJacobiIterations
-        convergence_tolerance = self.mc.qgConvergenceTolerance
-        friction_alpha = self.mc.qgSolverFriction
+        max_iterations = self.map_config.qg_jacobi_iterations
+        convergence_tolerance = self.map_config.qg_convergence_tolerance
+        friction_alpha = self.map_config.qg_solver_friction
         dx2_alpha = dx_squared * friction_alpha
 
         # Cache grid parameters
-        num_plots_x = self.mc.iNumPlotsX
-        wrap_x = self.mc.wrapX
-        neighbours = self.mc.neighbours
+        num_plots_x = self.map_config.num_plots_x
+        wrap_x = self.map_config.wrap_x
+        neighbours = self.map_config.neighbours
 
         # Cache QG parameters
-        coriolis_f0 = self.mc.qgCoriolisF0
-        mean_layer_depth = self.mc.qgMeanLayerDepth
-        beta_param = self.mc.qgBetaParameter
+        coriolis_f0 = self.map_config.qg_coriolis_f0
+        mean_layer_depth = self.map_config.qg_mean_layer_depth
+        beta_param = self.map_config.qg_beta_parameter
 
         # Pre-compute all neighbour relationships to avoid repeated lookups
         cardinal_neighbours = []
@@ -5182,7 +5302,7 @@ class ClimateMap:
         beta_values = [0.0] * num_plots
         for i in xrange(num_plots):
             y = i // num_plots_x
-            latitude = self.mc.get_latitude_for_y(y)
+            latitude = self.map_config.get_latitude_for_y(y)
             beta_values[i] = beta_param * math.cos(math.radians(latitude))
 
         # Main Jacobi iteration loop
@@ -5194,10 +5314,10 @@ class ClimateMap:
                 forcing = meridional_forcing[i]  # Start with meridional forcing
 
                 # Topographic PV source: f0 * (H0 - H) / H
-                H_total = thickness_field[i]
-                if H_total > 0:
-                    H_anomaly = mean_layer_depth - H_total
-                    forcing += coriolis_f0 * H_anomaly / H_total
+                h_total = thickness_field[i]
+                if h_total > 0:
+                    h_anomaly = mean_layer_depth - h_total
+                    forcing += coriolis_f0 * h_anomaly / h_total
 
                 # Beta-plane advection: -beta * v (including pressure gradient component)
                 total_v = v_wind[i] + self.pressure_gradient_v[i]
@@ -5281,72 +5401,72 @@ class ClimateMap:
     def _finalize_wind_extraction(self, streamfunction):
         """Extract final u and v wind components from converged streamfunction with pressure gradient winds"""
 
-        dx = self.mc.gridSpacingX
-        dy = self.mc.gridSpacingY
+        dx = self.map_config.grid_spacing_x
+        dy = self.map_config.grid_spacing_y
 
         # Extract streamfunction winds and add pressure gradient contribution
-        for i in xrange(self.mc.iNumPlots):
-            x_i = i % self.mc.iNumPlotsX
-            y_i = i // self.mc.iNumPlotsX
+        for i in xrange(self.map_config.num_plots):
+            x_i = i % self.map_config.num_plots_x
+            y_i = i // self.map_config.num_plots_x
 
             # u = -dpsi/dy (north-south derivative, negative sign)
-            if self.mc.wrapY:
-                y_north = (y_i + 1) % self.mc.iNumPlotsY
-                y_south = (y_i - 1) % self.mc.iNumPlotsY
-                i_north = y_north * self.mc.iNumPlotsX + x_i
-                i_south = y_south * self.mc.iNumPlotsX + x_i
+            if self.map_config.wrap_y:
+                y_north = (y_i + 1) % self.map_config.num_plots_y
+                y_south = (y_i - 1) % self.map_config.num_plots_y
+                i_north = y_north * self.map_config.num_plots_x + x_i
+                i_south = y_south * self.map_config.num_plots_x + x_i
                 dpsi_dy = (streamfunction[i_north] - streamfunction[i_south]) / (
                     2.0 * dy
                 )
             else:
                 if y_i == 0:
                     # Forward difference at south boundary
-                    i_north = (y_i + 1) * self.mc.iNumPlotsX + x_i
+                    i_north = (y_i + 1) * self.map_config.num_plots_x + x_i
                     dpsi_dy = (streamfunction[i_north] - streamfunction[i]) / dy
-                elif y_i == self.mc.iNumPlotsY - 1:
+                elif y_i == self.map_config.num_plots_y - 1:
                     # Backward difference at north boundary
-                    i_south = (y_i - 1) * self.mc.iNumPlotsX + x_i
+                    i_south = (y_i - 1) * self.map_config.num_plots_x + x_i
                     dpsi_dy = (streamfunction[i] - streamfunction[i_south]) / dy
                 else:
                     # Central difference in interior
-                    i_north = (y_i + 1) * self.mc.iNumPlotsX + x_i
-                    i_south = (y_i - 1) * self.mc.iNumPlotsX + x_i
+                    i_north = (y_i + 1) * self.map_config.num_plots_x + x_i
+                    i_south = (y_i - 1) * self.map_config.num_plots_x + x_i
                     dpsi_dy = (streamfunction[i_north] - streamfunction[i_south]) / (
                         2.0 * dy
                     )
 
             # Combine streamfunction u-wind with pre-calculated pressure gradient u-wind
             streamfunction_u = -dpsi_dy
-            self.WindU[i] = streamfunction_u + self.pressure_gradient_u[i]
+            self.wind_u[i] = streamfunction_u + self.pressure_gradient_u[i]
 
             # v = dpsi/dx (east-west derivative)
-            if self.mc.wrapX:
-                x_east = (x_i + 1) % self.mc.iNumPlotsX
-                x_west = (x_i - 1) % self.mc.iNumPlotsX
-                i_east = y_i * self.mc.iNumPlotsX + x_east
-                i_west = y_i * self.mc.iNumPlotsX + x_west
+            if self.map_config.wrap_x:
+                x_east = (x_i + 1) % self.map_config.num_plots_x
+                x_west = (x_i - 1) % self.map_config.num_plots_x
+                i_east = y_i * self.map_config.num_plots_x + x_east
+                i_west = y_i * self.map_config.num_plots_x + x_west
                 dpsi_dx = (streamfunction[i_east] - streamfunction[i_west]) / (2.0 * dx)
             else:
                 if x_i == 0:
-                    i_east = y_i * self.mc.iNumPlotsX + (x_i + 1)
+                    i_east = y_i * self.map_config.num_plots_x + (x_i + 1)
                     dpsi_dx = (streamfunction[i_east] - streamfunction[i]) / dx
-                elif x_i == self.mc.iNumPlotsX - 1:
-                    i_west = y_i * self.mc.iNumPlotsX + (x_i - 1)
+                elif x_i == self.map_config.num_plots_x - 1:
+                    i_west = y_i * self.map_config.num_plots_x + (x_i - 1)
                     dpsi_dx = (streamfunction[i] - streamfunction[i_west]) / dx
                 else:
-                    i_east = y_i * self.mc.iNumPlotsX + (x_i + 1)
-                    i_west = y_i * self.mc.iNumPlotsX + (x_i - 1)
+                    i_east = y_i * self.map_config.num_plots_x + (x_i + 1)
+                    i_west = y_i * self.map_config.num_plots_x + (x_i - 1)
                     dpsi_dx = (streamfunction[i_east] - streamfunction[i_west]) / (
                         2.0 * dx
                     )
 
             # Combine streamfunction v-wind with pre-calculated pressure gradient v-wind
             streamfunction_v = dpsi_dx
-            self.WindV[i] = streamfunction_v + self.pressure_gradient_v[i]
+            self.wind_v[i] = streamfunction_v + self.pressure_gradient_v[i]
 
     def _precalculate_transport_data(self):
         """Pre-calculate all transport-related data to eliminate runtime calculations"""
-        num_plots = self.mc.iNumPlots
+        num_plots = self.map_config.num_plots
 
         # Pre-allocate all arrays
         self._wind_unit_x = [0.0] * num_plots
@@ -5360,44 +5480,48 @@ class ClimateMap:
         self._convective_rates = [0.0] * num_plots
 
         # Constants for repeated use
-        ocean_conv_rate = self.mc.rainfallConvectiveOceanRate
-        max_conv_rate = self.mc.rainfallConvectiveMaxRate
+        ocean_conv_rate = self.map_config.rainfall_convective_ocean_rate
+        max_conv_rate = self.map_config.rainfall_convective_max_rate
 
         for i in xrange(num_plots):
             # Wind and atmospheric calculations
-            wind_u = self.WindU[i]
-            wind_v = self.WindV[i]
+            wind_u = self.wind_u[i]
+            wind_v = self.wind_v[i]
             wind_speed = (wind_u * wind_u + wind_v * wind_v) ** 0.5
-            self.WindSpeeds[i] = wind_speed
+            self.wind_speeds[i] = wind_speed
 
             if wind_speed > 0.0:
                 self._wind_unit_x[i] = wind_u / wind_speed
                 self._wind_unit_y[i] = wind_v / wind_speed
 
             # Latitude and vapor pressure calculations
-            y = i // self.mc.iNumPlotsX
-            lat = self.mc.get_latitude_for_y(y)
-            self._lat_factors[i] = self.mc.specificHumidityFactor * math.cos(
+            y = i // self.map_config.num_plots_x
+            lat = self.map_config.get_latitude_for_y(y)
+            self._lat_factors[i] = self.map_config.specific_humidity_factor * math.cos(
                 math.radians(lat)
             )
 
-            temp = self.TemperatureMap[i]
+            temp = self.temperature_map[i]
             self._saturation_vapor_pressures[i] = 610.94 * math.exp(
                 17.625 * temp / (temp + 243.04)
             )
 
             # Pre-calculate convective rates
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
                 self._convective_rates[i] = ocean_conv_rate
             else:
                 self._convective_rates[i] = max_conv_rate
 
             # Pre-calculate orographic factors
-            plot_type = self.em.plotTypes[i]
+            plot_type = self.elevation_map.plot_types[i]
             if plot_type == PlotTypes.PLOT_PEAK:
-                self._orographic_factors[i] = self.mc.rainPeakOrographicFactor
+                self._orographic_factors[i] = (
+                    self.map_config.rain_peak_orographic_factor
+                )
             elif plot_type == PlotTypes.PLOT_HILLS:
-                self._orographic_factors[i] = self.mc.rainHillOrographicFactor
+                self._orographic_factors[i] = (
+                    self.map_config.rain_hill_orographic_factor
+                )
 
             # Pre-calculate transport weights for this cell
             if wind_speed > 0.0:
@@ -5407,7 +5531,7 @@ class ClimateMap:
         """Pre-calculate transport weights and precipitation effects for a single cell"""
         wind_unit_x = self._wind_unit_x[location]
         wind_unit_y = self._wind_unit_y[location]
-        neighbours = self.mc.neighbours[location]
+        neighbours = self.map_config.neighbours[location]
 
         transport_data = []
 
@@ -5418,35 +5542,45 @@ class ClimateMap:
         if abs_wind_x > abs_wind_y:
             # Process directions in order of transport strength
             directions_and_weights = [
-                ((self.mc.W, self.mc.E)[wind_unit_x > 0.0], 1.0 - abs_wind_y),
-                ((self.mc.S, self.mc.N)[wind_unit_y > 0.0], abs_wind_y),
+                (
+                    (self.map_config.W, self.map_config.E)[wind_unit_x > 0.0],
+                    1.0 - abs_wind_y,
+                ),
+                ((self.map_config.S, self.map_config.N)[wind_unit_y > 0.0], abs_wind_y),
             ]
         else:
             directions_and_weights = [
-                ((self.mc.S, self.mc.N)[wind_unit_y > 0.0], 1.0 - abs_wind_x),
-                ((self.mc.W, self.mc.E)[wind_unit_x > 0.0], abs_wind_x),
+                (
+                    (self.map_config.S, self.map_config.N)[wind_unit_y > 0.0],
+                    1.0 - abs_wind_x,
+                ),
+                ((self.map_config.W, self.map_config.E)[wind_unit_x > 0.0], abs_wind_x),
             ]
 
         # Pre-calculate orographic and temperature effects for each valid neighbour
-        current_elevation = self.em.aboveSeaLevelMap[location]
-        current_temp = self.TemperatureMap[location]
+        current_elevation = self.elevation_map.above_sea_level_map[location]
+        current_temp = self.temperature_map[location]
 
         for direction, weight in directions_and_weights:
             neighbour_location = neighbours[direction]
             if neighbour_location > 0:
                 # Pre-calculate orographic and frontal effects
-                target_elevation = self.em.aboveSeaLevelMap[neighbour_location]
-                target_temp = self.TemperatureMap[neighbour_location]
+                target_elevation = self.elevation_map.above_sea_level_map[
+                    neighbour_location
+                ]
+                target_temp = self.temperature_map[neighbour_location]
 
                 elevation_factor = max(0.0, target_elevation - current_elevation)
                 temperature_factor = max(0.0, current_temp - target_temp)
 
                 orographic_effect = (
                     elevation_factor
-                    * self.mc.rainfallOrographicFactor
+                    * self.map_config.rainfall_orographic_factor
                     * self._orographic_factors[neighbour_location]
                 )
-                frontal_effect = temperature_factor * self.mc.rainfallFrontalFactor
+                frontal_effect = (
+                    temperature_factor * self.map_config.rainfall_frontal_factor
+                )
 
                 total_precipitation_factor = orographic_effect + frontal_effect
 
@@ -5460,41 +5594,45 @@ class ClimateMap:
     def _set_dynamic_temperature_thresholds(self):
         """Set temperature thresholds - optimized with list comprehension"""
         land_temps = [
-            self.TemperatureMap[i]
-            for i in xrange(self.mc.iNumPlots)
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+            self.temperature_map[i]
+            for i in xrange(self.map_config.num_plots)
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
         ]
 
         if not land_temps:
             return
 
-        self.rainfallConvectiveBaseTemp = self.mc.find_value_from_percent(
-            land_temps, self.mc.rainfallConvectiveBasePercentile, descending=False
+        self.rainfall_convective_base_temp = self.map_config.find_value_from_percent(
+            land_temps,
+            self.map_config.rainfall_convective_base_percentile,
+            descending=False,
         )
-        self.rainfallConvectiveMaxTemp = self.mc.find_value_from_percent(
-            land_temps, self.mc.rainfallConvectiveMaxPercentile, descending=True
+        self.rainfall_convective_max_temp = self.map_config.find_value_from_percent(
+            land_temps,
+            self.map_config.rainfall_convective_max_percentile,
+            descending=True,
         )
 
     def _initialize_moisture_grid(self):
         """Initialize moisture grid from evaporation sources"""
-        num_plots = self.mc.iNumPlots
+        num_plots = self.map_config.num_plots
 
         # Initialize moisture grid
         self._moisture_grid = [0.0] * num_plots
         max_moisture = 0.0
 
         # Constants
-        ocean_ce = self.mc.oceanCE
-        land_ce = self.mc.landCE
-        gas_constant = self.mc.gasConstant
+        ocean_ce = self.map_config.ocean_ce
+        land_ce = self.map_config.land_ce
+        gas_constant = self.map_config.gas_constant
 
         # Calculate initial moisture from evaporation
         for i in xrange(num_plots):
-            wind_speed = self.WindSpeeds[i]
+            wind_speed = self.wind_speeds[i]
             q_a = self._lat_factors[i]
             e_s = self._saturation_vapor_pressures[i]
 
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
                 ce = ocean_ce
             else:
                 ce = land_ce
@@ -5502,7 +5640,7 @@ class ClimateMap:
             atm_pressure = self.atmospheric_pressure[i]
             q_s = 0.62198 * e_s / (atm_pressure - e_s)
 
-            temp_kelvin = self.TemperatureMap[i] + 273.15
+            temp_kelvin = self.temperature_map[i] + 273.15
             moisture = (
                 ce
                 * atm_pressure
@@ -5528,39 +5666,39 @@ class ClimateMap:
 
     def _diffuse_moisture_iteratively(self):
         """Use iterative diffusion instead of particle tracking - much faster"""
-        max_iterations = self.mc.rainfallMaxTransportDistance
+        max_iterations = self.map_config.rainfall_max_transport_distance
         min_moisture_threshold = (
-            self.mc.rainfallMinimumPrecipitation * 0.01
+            self.map_config.rainfall_minimum_precipitation * 0.01
         )  # Very small threshold
 
         # Pre-calculate temperature-based precipitation factors
-        base_temp = self.rainfallConvectiveBaseTemp
-        max_temp = self.rainfallConvectiveMaxTemp
+        base_temp = self.rainfall_convective_base_temp
+        max_temp = self.rainfall_convective_max_temp
         if max_temp > base_temp:
             temp_range = max_temp - base_temp
         else:
             temp_range = 1.0
-        decline_rate = self.mc.rainfallConvectiveDeclineRate
-        min_factor = self.mc.rainfallConvectiveMinFactor
-        min_precip = self.mc.rainfallMinimumPrecipitation
+        decline_rate = self.map_config.rainfall_convective_decline_rate
+        min_factor = self.map_config.rainfall_convective_min_factor
+        min_precip = self.map_config.rainfall_minimum_precipitation
 
         # Main diffusion loop - process entire grid each iteration
         for iteration in xrange(max_iterations):
             # Create new moisture grid for this iteration
-            new_moisture_grid = [0.0] * self.mc.iNumPlots
+            new_moisture_grid = [0.0] * self.map_config.num_plots
             total_transported = 0.0
 
             # Process each cell
-            for i in xrange(self.mc.iNumPlots):
+            for i in xrange(self.map_config.num_plots):
                 current_moisture = self._moisture_grid[i]
 
                 # Skip cells with negligible moisture
                 if current_moisture <= min_moisture_threshold:
-                    self.RainfallMap[i] += current_moisture
+                    self.rainfall_map[i] += current_moisture
                     continue
 
                 # Calculate local precipitation (inlined for performance)
-                temp_celsius = self.TemperatureMap[i]
+                temp_celsius = self.temperature_map[i]
                 conv_rate = self._convective_rates[i]
 
                 # Inline temperature-based precipitation calculation
@@ -5580,11 +5718,11 @@ class ClimateMap:
 
                 # Ensure we don't precipitate more than available moisture
                 if local_precipitation >= current_moisture:
-                    self.RainfallMap[i] += current_moisture
+                    self.rainfall_map[i] += current_moisture
                     continue
 
                 # Add local precipitation
-                self.RainfallMap[i] += local_precipitation
+                self.rainfall_map[i] += local_precipitation
                 remaining_moisture = current_moisture - local_precipitation
 
                 # Transport remaining moisture using pre-calculated weights
@@ -5601,48 +5739,50 @@ class ClimateMap:
 
                     if transport_precipitation < transported_amount:
                         # Some moisture survives transport
-                        self.RainfallMap[i] += transport_precipitation
+                        self.rainfall_map[i] += transport_precipitation
                         final_transported = transported_amount - transport_precipitation
                         new_moisture_grid[neighbour_id] += final_transported
                         total_transported += final_transported
                     else:
                         # All moisture precipitates during transport
-                        self.RainfallMap[i] += transported_amount
+                        self.rainfall_map[i] += transported_amount
 
             # Update moisture grid for next iteration
             self._moisture_grid = new_moisture_grid
 
             # Early termination if very little moisture is being transported
-            if total_transported < min_moisture_threshold * self.mc.iNumPlots:
+            if total_transported < min_moisture_threshold * self.map_config.num_plots:
                 break
 
     def _finalize_rainfall_map(self):
         """Final processing of rainfall map"""
         # Set ocean tiles to zero rainfall
         ocean_plot_type = PlotTypes.PLOT_OCEAN
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == ocean_plot_type:
-                self.RainfallMap[i] = 0.0
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] == ocean_plot_type:
+                self.rainfall_map[i] = 0.0
 
         # Apply smoothing (land tiles only)
-        self.RainfallMap = self.mc.gaussian_blur(
-            self.RainfallMap,
-            self.mc.rainSmoothing,
-            filter_func=lambda i: self.em.plotTypes[i] != ocean_plot_type,
+        self.rainfall_map = self.map_config.gaussian_blur(
+            self.rainfall_map,
+            self.map_config.rain_smoothing,
+            filter_func=lambda i: self.elevation_map.plot_types[i] != ocean_plot_type,
         )
 
         # SAVE the original scale before normalization
-        if self.RainfallMap:
-            self.original_rainfall_max = max(self.RainfallMap)
+        if self.rainfall_map:
+            self.original_rainfall_max = max(self.rainfall_map)
         else:
             self.original_rainfall_max = 0.0
 
         # Use max-only normalization
         if self.original_rainfall_max > 0.0:
-            self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
+            self.rainfall_map, _ = self.map_config.normalize_map_max_only(
+                self.rainfall_map
+            )
 
     @profile
-    def GenerateRiverMap(self):
+    def generate_river_map(self):
         """
         Enhanced river generation using realistic watershed modeling and strategic placement.
         Two-pass approach with prefiltering for optimal performance and river quality.
@@ -5651,7 +5791,7 @@ class ClimateMap:
 
         # Scale targets based on map size
         target_rivers = self.scale_river_targets_for_map_size(
-            self.mc.RiverTargetCountStandard
+            self.map_config.river_target_count_standard
         )
 
         # Enhanced elevation and flow modeling
@@ -5685,15 +5825,15 @@ class ClimateMap:
 
         # Start with base node elevations
 
-        for node_i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[node_i] == PlotTypes.PLOT_OCEAN:
+        for node_i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[node_i] == PlotTypes.PLOT_OCEAN:
                 # quick exit for NW ocean tiles (leave elev at 0.0)
                 continue
-            node_x, node_y = self.mc.get_coords_from_index(node_i)
+            node_x, node_y = self.map_config.get_coords_from_index(node_i)
 
             # Node (x,y) is intersection of tiles (x,y), (x+1,y), (x+1,y-1), (x,y-1)
             tile_coords = [(1, 0), (1, -1), (0, -1)]
-            total_elevation = self.em.aboveSeaLevelMap[node_i]
+            total_elevation = self.elevation_map.above_sea_level_map[node_i]
             count = 1
 
             for dx, dy in tile_coords:
@@ -5701,23 +5841,25 @@ class ClimateMap:
                 ty = node_y + dy
 
                 # Handle wrapping and bounds
-                if self.mc.wrapX:
-                    tx = tx % self.mc.iNumPlotsX
-                elif tx < 0 or tx >= self.mc.iNumPlotsX:
+                if self.map_config.wrap_x:
+                    tx = tx % self.map_config.num_plots_x
+                elif tx < 0 or tx >= self.map_config.num_plots_x:
                     continue
 
-                if self.mc.wrapY:
-                    ty = ty % self.mc.iNumPlotsY
-                elif ty < 0 or ty >= self.mc.iNumPlotsY:
+                if self.map_config.wrap_y:
+                    ty = ty % self.map_config.num_plots_y
+                elif ty < 0 or ty >= self.map_config.num_plots_y:
                     continue
 
-                tile_index = ty * self.mc.iNumPlotsX + tx
-                if self.em.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN:
+                tile_index = ty * self.map_config.num_plots_x + tx
+                if self.elevation_map.plot_types[tile_index] == PlotTypes.PLOT_OCEAN:
                     total_elevation = 0.0
                     count = 1
                     break
                 else:
-                    total_elevation += self.em.aboveSeaLevelMap[tile_index]
+                    total_elevation += self.elevation_map.above_sea_level_map[
+                        tile_index
+                    ]
                     count += 1
 
             if count > 0:
@@ -5727,31 +5869,33 @@ class ClimateMap:
             self.node_elevations[node_i] = avg_elevation
 
         # Apply moderate smoothing to reduce noise while preserving major features
-        self.node_elevations = self.mc.gaussian_blur(
+        self.node_elevations = self.map_config.gaussian_blur(
             self.node_elevations,
-            radius=self.mc.riverNodeSmoothing,
+            radius=self.map_config.river_node_smoothing,
             filter_func=lambda i: self.node_elevations[i] > 0.0,
         )
 
     @profile
     def calculate_spillover_flow_directions(self):
         """Calculate flow directions with spillover capability and cycle prevention"""
-        spillover_height = self.mc.RiverSpilloverHeight
+        spillover_height = self.map_config.river_spillover_height
 
         # Calculate flow directions with spillover and ocean outlet detection
         for node_i in xrange(len(self.node_elevations)):
-            node_x, node_y = self.mc.get_coords_from_index(node_i)
+            node_x, node_y = self.map_config.get_coords_from_index(node_i)
 
-            if not self.mc.is_node_valid_for_flow(node_x, node_y):
+            if not self.map_config.is_node_valid_for_flow(node_x, node_y):
                 continue
 
             # Check if node intersects ocean tiles (outlet detection)
-            intersecting_tiles = self.mc.get_node_intersecting_tiles(node_x, node_y)
+            intersecting_tiles = self.map_config.get_node_intersecting_tiles(
+                node_x, node_y
+            )
             is_outlet = False
             for tile_i in intersecting_tiles:
                 if (
-                    0 <= tile_i < self.mc.iNumPlots
-                    and self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN
+                    0 <= tile_i < self.map_config.num_plots
+                    and self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN
                 ):
                     is_outlet = True
                     break
@@ -5761,16 +5905,18 @@ class ClimateMap:
                 continue
 
             current_elevation = self.node_elevations[node_i]
-            neighbours = self.mc.get_valid_node_neighbours(node_x, node_y)
+            neighbours = self.map_config.get_valid_node_neighbours(node_x, node_y)
 
             candidates = []
             for neighbour_x, neighbour_y in neighbours:
-                neighbour_i = self.mc.get_index_from_coords(neighbour_x, neighbour_y)
+                neighbour_i = self.map_config.get_index_from_coords(
+                    neighbour_x, neighbour_y
+                )
                 true_slope = current_elevation - self.node_elevations[neighbour_i]
 
                 # Add position-based perturbation that doesn't modify actual elevation
                 # This creates consistent "preferred" flow directions in different areas
-                perturbation = random.random() * self.mc.RiverFlowPerturbation
+                perturbation = random.random() * self.map_config.river_flow_perturbation
 
                 effective_slope = true_slope + perturbation
 
@@ -5829,9 +5975,11 @@ class ClimateMap:
                 watershed_id = outlet_node  # Use outlet as ID
 
                 reaches_ocean = False
-                neighbours = self.mc.get_node_intersecting_tiles_from_index(outlet_node)
+                neighbours = self.map_config.get_node_intersecting_tiles_from_index(
+                    outlet_node
+                )
                 for n_i in neighbours:
-                    if self.em.plotTypes[n_i] == PlotTypes.PLOT_OCEAN:
+                    if self.elevation_map.plot_types[n_i] == PlotTypes.PLOT_OCEAN:
                         reaches_ocean = True
                         break
 
@@ -5879,26 +6027,29 @@ class ClimateMap:
     def process_tiles_for_watersheds(self):
         """Process tiles to assign watersheds, set continent IDs, and initialize flows"""
 
-        for tile_i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
+        for tile_i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
                 continue
             ocean_neighbour = False
             for dir in xrange(1, 9):
-                neighbour_i = self.mc.neighbours[tile_i][dir]
+                neighbour_i = self.map_config.neighbours[tile_i][dir]
                 if (
-                    0 <= neighbour_i < self.mc.iNumPlots
-                    and self.em.plotTypes[neighbour_i] == PlotTypes.PLOT_OCEAN
+                    0 <= neighbour_i < self.map_config.num_plots
+                    and self.elevation_map.plot_types[neighbour_i]
+                    == PlotTypes.PLOT_OCEAN
                 ):
                     ocean_neighbour = True
                     break
             if ocean_neighbour:
                 continue
 
-            tile_x = tile_i % self.mc.iNumPlotsX
-            tile_y = tile_i // self.mc.iNumPlotsX
+            tile_x = tile_i % self.map_config.num_plots_x
+            tile_y = tile_i // self.map_config.num_plots_x
 
             # Find lowest neighbouring node
-            surrounding_nodes = self.mc.get_tile_surrounding_nodes(tile_x, tile_y)
+            surrounding_nodes = self.map_config.get_tile_surrounding_nodes(
+                tile_x, tile_y
+            )
 
             if surrounding_nodes:
                 elevation_nodes = []
@@ -5916,7 +6067,7 @@ class ClimateMap:
 
                     # Update watershed database with continent ID
                     if watershed_id in self.watershed_database:
-                        continent_id = self.em.continentID[tile_i]
+                        continent_id = self.elevation_map.continent_id[tile_i]
                         if self.watershed_database[watershed_id]["continent_id"] == -1:
                             self.watershed_database[watershed_id][
                                 "continent_id"
@@ -5926,7 +6077,7 @@ class ClimateMap:
                     if 0 <= lowest_node < len(self.initial_node_flows):
                         rainfall = self.rainfall_percentiles[tile_i]
                         self.initial_node_flows[lowest_node] += (
-                            rainfall * self.mc.RiverFlowAccumulationFactor
+                            rainfall * self.map_config.river_flow_accumulation_factor
                         )
 
     @profile
@@ -5938,13 +6089,13 @@ class ClimateMap:
         # Add distance-based bonuses to encourage longer rivers
         for node_i, distance in distances_from_outlets.items():
             if distance > 0 and 0 <= node_i < len(self.enhanced_flows):
-                distance_bonus = distance * self.mc.RiverDistanceFlowBonus
+                distance_bonus = distance * self.map_config.river_distance_flow_bonus
                 self.enhanced_flows[node_i] += distance_bonus
 
         # Add elevation source bonuses
         land_elevations = [elev for elev in self.node_elevations if elev > 0]
         if land_elevations:
-            elevation_threshold = self.mc.find_value_from_percent(
+            elevation_threshold = self.map_config.find_value_from_percent(
                 land_elevations, 75, descending=True
             )
 
@@ -5952,19 +6103,26 @@ class ClimateMap:
                 if self.node_elevations[node_i] > elevation_threshold:
                     elevation_bonus = (
                         self.node_elevations[node_i] - elevation_threshold
-                    ) * self.mc.RiverElevationSourceBonus
+                    ) * self.map_config.river_elevation_source_bonus
                     self.enhanced_flows[node_i] += elevation_bonus
 
                 # Check for nearby peaks/hills
-                intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(
-                    node_i
+                intersecting_tiles = (
+                    self.map_config.get_node_intersecting_tiles_from_index(node_i)
                 )
                 for tile_i in intersecting_tiles:
-                    if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_PEAK:
-                            self.enhanced_flows[node_i] += self.mc.RiverPeakSourceBonus
-                        elif self.em.plotTypes[tile_i] == PlotTypes.PLOT_HILLS:
-                            self.enhanced_flows[node_i] += self.mc.RiverHillSourceBonus
+                    if tile_i >= 0 and tile_i < self.map_config.num_plots:
+                        if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_PEAK:
+                            self.enhanced_flows[
+                                node_i
+                            ] += self.map_config.river_peak_source_bonus
+                        elif (
+                            self.elevation_map.plot_types[tile_i]
+                            == PlotTypes.PLOT_HILLS
+                        ):
+                            self.enhanced_flows[
+                                node_i
+                            ] += self.map_config.river_hill_source_bonus
 
         # Optimized flow accumulation for large watersheds only
         self._process_large_watersheds_flow_accumulation(distances_from_outlets)
@@ -5976,7 +6134,7 @@ class ClimateMap:
         # Identify large watersheds
         large_watersheds = []
         for watershed_id, data in self.watershed_database.items():
-            if data["basin_size"] >= self.mc.RiverMinBasinSize:
+            if data["basin_size"] >= self.map_config.river_min_basin_size:
                 large_watersheds.append(watershed_id)
 
         # Process each large watershed independently
@@ -6068,7 +6226,7 @@ class ClimateMap:
         # Filter eligible watersheds (minimum basin size)
         eligible_watersheds = []
         for watershed_id, data in self.watershed_database.items():
-            if data["basin_size"] >= self.mc.RiverMinBasinSize:
+            if data["basin_size"] >= self.map_config.river_min_basin_size:
                 eligible_watersheds.append(watershed_id)
 
         if not eligible_watersheds:
@@ -6126,9 +6284,11 @@ class ClimateMap:
                 continue
 
             # Allocate budget by categories within continent
-            glacial_count = int(river_budget * self.mc.RiverGlacialCategoryWeight)
+            glacial_count = int(
+                river_budget * self.map_config.river_glacial_category_weight
+            )
             longest_count = int(
-                river_budget * self.mc.RiverLengthCategoryWeight
+                river_budget * self.map_config.river_length_category_weight
             )  # 60% of remaining for longest
             flow_count = (
                 river_budget - longest_count - glacial_count
@@ -6192,19 +6352,21 @@ class ClimateMap:
 
             # Check nodes for glacial potential
             for node_i in data["nodes"]:
-                intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(
-                    node_i
+                intersecting_tiles = (
+                    self.map_config.get_node_intersecting_tiles_from_index(node_i)
                 )
                 for tile_i in intersecting_tiles:
-                    if tile_i >= 0 and tile_i < self.mc.iNumPlots:
-                        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_PEAK:
+                    if tile_i >= 0 and tile_i < self.map_config.num_plots:
+                        if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_PEAK:
                             peak_count += 1
-                        if self.TemperatureMap[tile_i] < 0.3:  # Cold threshold
+                        if self.temperature_map[tile_i] < 0.3:  # Cold threshold
                             cold_area += 1
 
             if peak_count > 0 and cold_area > 0:
                 # Score: peaks + cold area + distance + basin size
-                glacial_score = peak_count * self.mc.glacialPeakCountScore + cold_area
+                glacial_score = (
+                    peak_count * self.map_config.glacial_peak_count_score + cold_area
+                )
                 glacial_candidates.append((glacial_score, watershed_id))
 
         # Select best glacial watersheds
@@ -6250,7 +6412,8 @@ class ClimateMap:
             data = self.watershed_database[watershed_id]
             # Score: basin size + ocean bonus + distance bonus
             score = (
-                data["basin_size"] + (0, self.mc.riverOceanBonus)[data["reaches_ocean"]]
+                data["basin_size"]
+                + (0, self.map_config.river_ocean_bonus)[data["reaches_ocean"]]
             )
             flow_candidates.append((score, watershed_id))
 
@@ -6307,7 +6470,7 @@ class ClimateMap:
 
         for node_i in self.watershed_database[watershed_id]["nodes"]:
             # Score based on elevation + distance from outlet
-            elevation_score = self.node_elevations[node_i] / self.mc.maxElev
+            elevation_score = self.node_elevations[node_i] / self.map_config.max_elev
 
             # Calculate distance from outlet
             distance = 0
@@ -6368,7 +6531,10 @@ class ClimateMap:
         ratio = 0.0
 
         # Test threshold ratios on pre-built network (main trunk already included)
-        while length_to_split_ratio < self.mc.RiverDesiredLengthToSplit and ratio < 1.0:
+        while (
+            length_to_split_ratio < self.map_config.river_desired_length_to_split
+            and ratio < 1.0
+        ):
             ratio += 0.1
             test_threshold = max_flow * ratio
             test_segments = [
@@ -6486,18 +6652,23 @@ class ClimateMap:
                     else:
                         # If lake creation failed, force create a single-tile lake at outlet
                         outlet_node = data["outlet_node"]
-                        outlet_tiles = self.mc.get_node_intersecting_tiles_from_index(
-                            outlet_node
+                        outlet_tiles = (
+                            self.map_config.get_node_intersecting_tiles_from_index(
+                                outlet_node
+                            )
                         )
 
                         # Find first valid land tile for lake placement
                         for tile_i in outlet_tiles:
                             if (
-                                0 <= tile_i < self.mc.iNumPlots
-                                and self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN
+                                0 <= tile_i < self.map_config.num_plots
+                                and self.elevation_map.plot_types[tile_i]
+                                != PlotTypes.PLOT_OCEAN
                             ):
                                 # Force single-tile lake
-                                self.em.plotTypes[tile_i] = PlotTypes.PLOT_OCEAN
+                                self.elevation_map.plot_types[tile_i] = (
+                                    PlotTypes.PLOT_OCEAN
+                                )
                                 placed_lakes.append(
                                     {
                                         "watershed_id": watershed_id,
@@ -6525,7 +6696,7 @@ class ClimateMap:
 
         # Select best endorheic basins for strategic lakes
         endorheic_candidates.sort(reverse=True)
-        target_strategic = max(0, self.mc.LakeTargetCount - len(placed_lakes))
+        target_strategic = max(0, self.map_config.lake_target_count - len(placed_lakes))
 
         for i in xrange(min(target_strategic, len(endorheic_candidates))):
             score, watershed_id = endorheic_candidates[i]
@@ -6548,31 +6719,35 @@ class ClimateMap:
         score = 0
 
         # Base score from basin size
-        score += watershed_data["basin_size"] / self.mc.lakeBasinSizeFactor
+        score += watershed_data["basin_size"] / self.map_config.lake_basin_size_factor
 
         # Distance score (longer basins = better lakes)
-        score += watershed_data["max_distance"] / self.mc.lakeBasinLengthFactor
+        score += (
+            watershed_data["max_distance"] / self.map_config.lake_basin_length_factor
+        )
 
         # Elevation relief (deeper basins = better lakes)
         elevation_relief = (
             watershed_data["max_elevation"] - watershed_data["min_elevation"]
         )
-        score += elevation_relief / self.mc.lakeBasinReliefFactor
+        score += elevation_relief / self.map_config.lake_basin_relief_factor
 
         # Average rainfall in basin (check nodes)
         total_rainfall = 0
         valid_nodes = 0
 
         for node_i in watershed_data["nodes"]:
-            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(node_i)
+            intersecting_tiles = self.map_config.get_node_intersecting_tiles_from_index(
+                node_i
+            )
             for tile_i in intersecting_tiles:
-                if tile_i >= 0 and tile_i < self.mc.iNumPlots:
+                if tile_i >= 0 and tile_i < self.map_config.num_plots:
                     total_rainfall += self.rainfall_percentiles[tile_i]
                     valid_nodes += 1
 
         if valid_nodes > 0:
             avg_rainfall = total_rainfall / valid_nodes
-            score += avg_rainfall * self.mc.lakeBasinRainFactor
+            score += avg_rainfall * self.map_config.lake_basin_rain_factor
 
         return score
 
@@ -6584,7 +6759,7 @@ class ClimateMap:
         if mandatory:
             # For mandatory lakes, MUST be at the outlet node
             outlet_node = data["outlet_node"]
-            intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(
+            intersecting_tiles = self.map_config.get_node_intersecting_tiles_from_index(
                 outlet_node
             )
 
@@ -6595,11 +6770,11 @@ class ClimateMap:
             for tile_i in intersecting_tiles:
                 if (
                     tile_i >= 0
-                    and tile_i < self.mc.iNumPlots
-                    and self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN
+                    and tile_i < self.map_config.num_plots
+                    and self.elevation_map.plot_types[tile_i] != PlotTypes.PLOT_OCEAN
                 ):
 
-                    elevation = self.em.aboveSeaLevelMap[tile_i]
+                    elevation = self.elevation_map.above_sea_level_map[tile_i]
                     if elevation < lowest_elevation:
                         lowest_elevation = elevation
                         center_tile = tile_i
@@ -6609,17 +6784,18 @@ class ClimateMap:
             lowest_elevation = 1e999
 
             for node_i in data["nodes"]:
-                intersecting_tiles = self.mc.get_node_intersecting_tiles_from_index(
-                    node_i
+                intersecting_tiles = (
+                    self.map_config.get_node_intersecting_tiles_from_index(node_i)
                 )
                 for tile_i in intersecting_tiles:
                     if (
                         tile_i >= 0
-                        and tile_i < self.mc.iNumPlots
-                        and self.em.plotTypes[tile_i] != PlotTypes.PLOT_OCEAN
+                        and tile_i < self.map_config.num_plots
+                        and self.elevation_map.plot_types[tile_i]
+                        != PlotTypes.PLOT_OCEAN
                     ):
 
-                        elevation = self.em.aboveSeaLevelMap[tile_i]
+                        elevation = self.elevation_map.above_sea_level_map[tile_i]
                         if elevation < lowest_elevation:
                             lowest_elevation = elevation
                             center_tile = tile_i
@@ -6629,7 +6805,7 @@ class ClimateMap:
 
         # Calculate lake size based on basin characteristics
         score = self.score_basin_for_lake(data)
-        target_size = min(self.mc.LakeMaxGrowthSize, max(1, int(score)))
+        target_size = min(self.map_config.lake_max_growth_size, max(1, int(score)))
 
         # Grow lake from center
         lake_tiles = self.grow_lake_from_center_basin(center_tile, target_size)
@@ -6647,7 +6823,7 @@ class ClimateMap:
         """Grow a lake outward from center tile using elevation preference"""
 
         lake_tiles = [center_tile]
-        self.em.plotTypes[center_tile] = PlotTypes.PLOT_OCEAN
+        self.elevation_map.plot_types[center_tile] = PlotTypes.PLOT_OCEAN
 
         while len(lake_tiles) < target_size:
             # Find candidates for expansion (neighbours of existing lake tiles)
@@ -6655,22 +6831,24 @@ class ClimateMap:
 
             for lake_tile in lake_tiles:
                 for dir in xrange(1, 5):  # All 8 directions
-                    neighbour = self.mc.neighbours[lake_tile][dir]
+                    neighbour = self.map_config.neighbours[lake_tile][dir]
 
                     if (
                         neighbour >= 0
-                        and neighbour < self.mc.iNumPlots
+                        and neighbour < self.map_config.num_plots
                         and neighbour not in lake_tiles
-                        and self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+                        and self.elevation_map.plot_types[neighbour]
+                        != PlotTypes.PLOT_OCEAN
                     ):
 
                         # Score expansion candidate
-                        elevation = self.em.aboveSeaLevelMap[neighbour]
+                        elevation = self.elevation_map.above_sea_level_map[neighbour]
 
                         # Always grow to higher elevation (lakes fill up)
                         # Prefer next lowest elevation
                         min_lake_elevation = min(
-                            self.em.aboveSeaLevelMap[lt] for lt in lake_tiles
+                            self.elevation_map.above_sea_level_map[lt]
+                            for lt in lake_tiles
                         )
                         elevation_score = 1000 - (
                             elevation - min_lake_elevation
@@ -6679,12 +6857,14 @@ class ClimateMap:
                         # Ocean proximity bonus
                         ocean_distance = self.get_distance_to_ocean(neighbour)
                         ocean_score = max(
-                            0, self.mc.LakeOceanConnectionRange - ocean_distance
+                            0,
+                            self.map_config.lake_ocean_connection_range
+                            - ocean_distance,
                         )
 
                         total_score = (
-                            elevation_score * self.mc.LakeElevationWeight
-                            + ocean_score * self.mc.LakeOceanProximityWeight
+                            elevation_score * self.map_config.lake_elevation_weight
+                            + ocean_score * self.map_config.lake_ocean_proximity_weight
                         )
 
                         candidates.append((total_score, neighbour))
@@ -6697,17 +6877,17 @@ class ClimateMap:
             best_candidate = candidates[0][1]
 
             lake_tiles.append(best_candidate)
-            self.em.plotTypes[best_candidate] = PlotTypes.PLOT_OCEAN
+            self.elevation_map.plot_types[best_candidate] = PlotTypes.PLOT_OCEAN
 
         return lake_tiles
 
     def get_distance_to_ocean(self, tile_i):
         """Get distance from tile to nearest ocean"""
 
-        if hasattr(self, "oceanDistanceMap") and 0 <= tile_i < len(
-            self.oceanDistanceMap
+        if hasattr(self, "ocean_distance_map") and 0 <= tile_i < len(
+            self.ocean_distance_map
         ):
-            return self.oceanDistanceMap[tile_i]
+            return self.ocean_distance_map[tile_i]
 
         # Simple BFS search
         queue = deque([(tile_i, 0)])
@@ -6716,25 +6896,25 @@ class ClimateMap:
         while queue:
             current_tile, distance = queue.popleft()
 
-            if distance > self.mc.LakeOceanConnectionRange:
+            if distance > self.map_config.lake_ocean_connection_range:
                 break
 
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbour = self.mc.neighbours[current_tile][dir]
+                neighbour = self.map_config.neighbours[current_tile][dir]
 
                 if (
                     neighbour >= 0
-                    and neighbour < self.mc.iNumPlots
+                    and neighbour < self.map_config.num_plots
                     and neighbour not in visited
                 ):
 
-                    if self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN:
+                    if self.elevation_map.plot_types[neighbour] == PlotTypes.PLOT_OCEAN:
                         return distance + 1
 
                     visited.add(neighbour)
                     queue.append((neighbour, distance + 1))
 
-        return self.mc.LakeOceanConnectionRange + 1
+        return self.map_config.lake_ocean_connection_range + 1
 
     def attempt_ocean_connection(self, lake):
         """Attempt to connect a lake to the ocean if beneficial"""
@@ -6745,12 +6925,12 @@ class ClimateMap:
 
         for lake_tile in lake["final_tiles"]:
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbour = self.mc.neighbours[lake_tile][dir]
+                neighbour = self.map_config.neighbours[lake_tile][dir]
 
                 if (
                     neighbour >= 0
-                    and neighbour < self.mc.iNumPlots
-                    and self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+                    and neighbour < self.map_config.num_plots
+                    and self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
                 ):
 
                     path = self.find_path_to_ocean(
@@ -6765,8 +6945,8 @@ class ClimateMap:
         if best_path and len(best_path) <= 2:
             for tile_i in best_path:
                 # Don't remove peaks for connections
-                if self.em.plotTypes[tile_i] != PlotTypes.PLOT_PEAK:
-                    self.em.plotTypes[tile_i] = PlotTypes.PLOT_OCEAN
+                if self.elevation_map.plot_types[tile_i] != PlotTypes.PLOT_PEAK:
+                    self.elevation_map.plot_types[tile_i] = PlotTypes.PLOT_OCEAN
 
             lake["connected_to_ocean"] = True
 
@@ -6783,17 +6963,17 @@ class ClimateMap:
                 continue
 
             for dir in xrange(1, 5):  # Cardinal directions only
-                neighbour = self.mc.neighbours[current_tile][dir]
+                neighbour = self.map_config.neighbours[current_tile][dir]
 
                 if (
                     neighbour >= 0
-                    and neighbour < self.mc.iNumPlots
+                    and neighbour < self.map_config.num_plots
                     and neighbour not in visited
                 ):
 
                     new_path = path + [neighbour]
 
-                    if self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN:
+                    if self.elevation_map.plot_types[neighbour] == PlotTypes.PLOT_OCEAN:
                         return new_path
 
                     visited.add(neighbour)
@@ -6806,18 +6986,18 @@ class ClimateMap:
         Place a river segment with proper directional validation.
         Fixed the southward flow bug.
         """
-        from_x, from_y = self.mc.get_coords_from_index(from_node)
-        to_x, to_y = self.mc.get_coords_from_index(to_node)
+        from_x, from_y = self.map_config.get_coords_from_index(from_node)
+        to_x, to_y = self.map_config.get_coords_from_index(to_node)
 
         # Calculate flow direction
         dx = to_x - from_x
         dy = to_y - from_y
 
         # Handle wrapping
-        if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
-            dx = dx - int(copysign(self.mc.iNumPlotsX, dx))
-        if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
-            dy = dy - int(copysign(self.mc.iNumPlotsY, dy))
+        if self.map_config.wrap_x and abs(dx) > self.map_config.num_plots_x // 2:
+            dx = dx - int(copysign(self.map_config.num_plots_x, dx))
+        if self.map_config.wrap_y and abs(dy) > self.map_config.num_plots_y // 2:
+            dy = dy - int(copysign(self.map_config.num_plots_y, dy))
 
         # Place river on appropriate tile edge with proper validation
         if abs(dx) > abs(dy):  # Primarily horizontal flow
@@ -6825,16 +7005,16 @@ class ClimateMap:
                 tile_x = to_x
                 tile_y = to_y
                 if self.is_valid_north_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if 0 <= tile_i < self.mc.iNumPlots:
+                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
+                    if 0 <= tile_i < self.map_config.num_plots:
                         self.river_map.append((from_node, to_node, river_id, flow))
                         return True
             else:  # Westward flow: place north_of_rivers on from_tile
                 tile_x = from_x
                 tile_y = from_y
                 if self.is_valid_north_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if 0 <= tile_i < self.mc.iNumPlots:
+                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
+                    if 0 <= tile_i < self.map_config.num_plots:
                         self.river_map.append((from_node, to_node, river_id, flow))
                         return True
         else:  # Primarily vertical flow
@@ -6842,16 +7022,16 @@ class ClimateMap:
                 tile_x = from_x
                 tile_y = from_y
                 if self.is_valid_west_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if 0 <= tile_i < self.mc.iNumPlots:
+                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
+                    if 0 <= tile_i < self.map_config.num_plots:
                         self.river_map.append((from_node, to_node, river_id, flow))
                         return True
             else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
                 tile_x = from_x  # Fixed: was to_y in original code
                 tile_y = to_y
                 if self.is_valid_west_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.mc.iNumPlotsX + tile_x
-                    if 0 <= tile_i < self.mc.iNumPlots:
+                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
+                    if 0 <= tile_i < self.map_config.num_plots:
                         self.river_map.append((from_node, to_node, river_id, flow))
                         return True
 
@@ -6865,44 +7045,44 @@ class ClimateMap:
         # Check bounds
         if (
             tile_x < 0
-            or tile_x >= self.mc.iNumPlotsX
+            or tile_x >= self.map_config.num_plots_x
             or tile_y < 0
-            or tile_y >= self.mc.iNumPlotsY
+            or tile_y >= self.map_config.num_plots_y
         ):
             return False
 
-        tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+        tile_i = tile_y * self.map_config.num_plots_x + tile_x
 
         # Don't place rivers on water tiles
-        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
+        if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
             return False
 
         # Check eastern tile (critical constraint)
-        east_neighbour = self.mc.neighbours[tile_i][self.mc.E]
+        east_neighbour = self.map_config.neighbours[tile_i][self.map_config.E]
         if (
             east_neighbour != -1
-            and east_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[east_neighbour] == PlotTypes.PLOT_OCEAN
+            and east_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[east_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             return False
 
         # Check NE and SE tiles - only one can be ocean
-        ne_neighbour = self.mc.neighbours[tile_i][self.mc.NE]
-        se_neighbour = self.mc.neighbours[tile_i][self.mc.SE]
+        ne_neighbour = self.map_config.neighbours[tile_i][self.map_config.NE]
+        se_neighbour = self.map_config.neighbours[tile_i][self.map_config.SE]
 
         ocean_count = 0
 
         if (
             ne_neighbour != -1
-            and ne_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[ne_neighbour] == PlotTypes.PLOT_OCEAN
+            and ne_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[ne_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             ocean_count += 1
 
         if (
             se_neighbour != -1
-            and se_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[se_neighbour] == PlotTypes.PLOT_OCEAN
+            and se_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[se_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             ocean_count += 1
 
@@ -6917,44 +7097,44 @@ class ClimateMap:
         # Check bounds
         if (
             tile_x < 0
-            or tile_x >= self.mc.iNumPlotsX
+            or tile_x >= self.map_config.num_plots_x
             or tile_y < 0
-            or tile_y >= self.mc.iNumPlotsY
+            or tile_y >= self.map_config.num_plots_y
         ):
             return False
 
-        tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+        tile_i = tile_y * self.map_config.num_plots_x + tile_x
 
         # Don't place rivers on water tiles
-        if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
+        if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
             return False
 
         # Check southern tile (critical constraint)
-        south_neighbour = self.mc.neighbours[tile_i][self.mc.S]
+        south_neighbour = self.map_config.neighbours[tile_i][self.map_config.S]
         if (
             south_neighbour != -1
-            and south_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[south_neighbour] == PlotTypes.PLOT_OCEAN
+            and south_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[south_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             return False
 
         # Check SE and SW tiles - only one can be ocean
-        se_neighbour = self.mc.neighbours[tile_i][self.mc.SE]
-        sw_neighbour = self.mc.neighbours[tile_i][self.mc.SW]
+        se_neighbour = self.map_config.neighbours[tile_i][self.map_config.SE]
+        sw_neighbour = self.map_config.neighbours[tile_i][self.map_config.SW]
 
         ocean_count = 0
 
         if (
             se_neighbour != -1
-            and se_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[se_neighbour] == PlotTypes.PLOT_OCEAN
+            and se_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[se_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             ocean_count += 1
 
         if (
             sw_neighbour != -1
-            and sw_neighbour < self.mc.iNumPlots
-            and self.em.plotTypes[sw_neighbour] == PlotTypes.PLOT_OCEAN
+            and sw_neighbour < self.map_config.num_plots
+            and self.elevation_map.plot_types[sw_neighbour] == PlotTypes.PLOT_OCEAN
         ):
             ocean_count += 1
 
@@ -6966,8 +7146,8 @@ class ClimateMap:
         standard_land_tiles = 144 * 96 * 0.38  # Standard map land area
         actual_land_tiles = sum(
             1
-            for i in xrange(self.mc.iNumPlots)
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+            for i in xrange(self.map_config.num_plots)
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
         )
 
         if actual_land_tiles == 0:
@@ -6995,9 +7175,11 @@ class ClimateMap:
             # Get all nodes that touch this lake
             lake_nodes = set()
             for tile_i in lake_tiles:
-                tile_x = tile_i % self.mc.iNumPlotsX
-                tile_y = tile_i // self.mc.iNumPlotsX
-                surrounding_nodes = self.mc.get_tile_surrounding_nodes(tile_x, tile_y)
+                tile_x = tile_i % self.map_config.num_plots_x
+                tile_y = tile_i // self.map_config.num_plots_x
+                surrounding_nodes = self.map_config.get_tile_surrounding_nodes(
+                    tile_x, tile_y
+                )
                 lake_nodes.update(surrounding_nodes)
 
             # Remove river segments that flow OUT of the lake (except from outlet)
@@ -7021,16 +7203,16 @@ class ClimateMap:
             placed_segments = []
 
         for from_node, to_node, river_id, flow in list(self.river_map):
-            from_x, from_y = self.mc.get_coords_from_index(from_node)
-            to_x, to_y = self.mc.get_coords_from_index(to_node)
+            from_x, from_y = self.map_config.get_coords_from_index(from_node)
+            to_x, to_y = self.map_config.get_coords_from_index(to_node)
 
             dx = to_x - from_x
             dy = to_y - from_y
 
-            if self.mc.wrapX and abs(dx) > self.mc.iNumPlotsX // 2:
-                dx = dx - int(copysign(self.mc.iNumPlotsX, dx))
-            if self.mc.wrapY and abs(dy) > self.mc.iNumPlotsY // 2:
-                dy = dy - int(copysign(self.mc.iNumPlotsY, dy))
+            if self.map_config.wrap_x and abs(dx) > self.map_config.num_plots_x // 2:
+                dx = dx - int(copysign(self.map_config.num_plots_x, dx))
+            if self.map_config.wrap_y and abs(dy) > self.map_config.num_plots_y // 2:
+                dy = dy - int(copysign(self.map_config.num_plots_y, dy))
 
             tile_x = -1
             tile_y = -1
@@ -7057,28 +7239,32 @@ class ClimateMap:
                     is_west_river = True
 
             if tile_x >= 0 and tile_y >= 0:
-                tile_i = tile_y * self.mc.iNumPlotsX + tile_x
+                tile_i = tile_y * self.map_config.num_plots_x + tile_x
 
-                if 0 <= tile_i < self.mc.iNumPlots:
+                if 0 <= tile_i < self.map_config.num_plots:
                     should_remove = False
 
-                    if self.em.plotTypes[tile_i] == PlotTypes.PLOT_OCEAN:
+                    if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
                         should_remove = True
                     elif is_north_river:
-                        south_neighbour = self.mc.neighbours[tile_i][self.mc.S]
+                        south_neighbour = self.map_config.neighbours[tile_i][
+                            self.map_config.S
+                        ]
                         if (
                             south_neighbour >= 0
-                            and south_neighbour < self.mc.iNumPlots
-                            and self.em.plotTypes[south_neighbour]
+                            and south_neighbour < self.map_config.num_plots
+                            and self.elevation_map.plot_types[south_neighbour]
                             == PlotTypes.PLOT_OCEAN
                         ):
                             should_remove = True
                     elif is_west_river:
-                        east_neighbour = self.mc.neighbours[tile_i][self.mc.E]
+                        east_neighbour = self.map_config.neighbours[tile_i][
+                            self.map_config.E
+                        ]
                         if (
                             east_neighbour >= 0
-                            and east_neighbour < self.mc.iNumPlots
-                            and self.em.plotTypes[east_neighbour]
+                            and east_neighbour < self.map_config.num_plots
+                            and self.elevation_map.plot_types[east_neighbour]
                             == PlotTypes.PLOT_OCEAN
                         ):
                             should_remove = True
@@ -7130,11 +7316,11 @@ class ClimateMap:
     def _calculate_lake_moisture_physical(self):
         """Calculate lake moisture in original physical units (same as ocean/land moisture)"""
 
-        lake_moisture_physical = [0.0] * self.mc.iNumPlots
+        lake_moisture_physical = [0.0] * self.map_config.num_plots
 
         # Physical constants (same as original moisture calculation)
-        gas_constant = self.mc.gasConstant
-        lake_ce = self.mc.lakeCE
+        gas_constant = self.map_config.gas_constant
+        lake_ce = self.map_config.lake_ce
 
         # Process each lake from the database
         for lake in self.lake_data["lakes"]:
@@ -7142,16 +7328,16 @@ class ClimateMap:
             lake_size = lake["final_size"]
 
             # Size bonus for larger lakes (enhanced circulation effects)
-            if lake_size >= self.mc.largeLakeSizeThreshold:
-                size_multiplier = self.mc.largeLakeMoistureBonus
+            if lake_size >= self.map_config.large_lake_size_threshold:
+                size_multiplier = self.map_config.large_lake_moisture_bonus
             else:
                 size_multiplier = 1.0
 
             # Calculate moisture for each lake tile using same physics as ocean
             for tile_i in lake_tiles:
-                if 0 <= tile_i < self.mc.iNumPlots:
+                if 0 <= tile_i < self.map_config.num_plots:
                     # Use existing atmospheric data
-                    wind_speed = self.WindSpeeds[tile_i]
+                    wind_speed = self.wind_speeds[tile_i]
                     q_a = self._lat_factors[tile_i]
                     e_s = self._saturation_vapor_pressures[tile_i]
                     atm_pressure = self.atmospheric_pressure[tile_i]
@@ -7160,7 +7346,7 @@ class ClimateMap:
                     q_s = 0.62198 * e_s / (atm_pressure - e_s)
 
                     # Lake evaporation in physical units (higher coefficient than ocean)
-                    temp_kelvin = self.TemperatureMap[tile_i] + 273.15
+                    temp_kelvin = self.temperature_map[tile_i] + 273.15
                     moisture = (
                         lake_ce
                         * atm_pressure
@@ -7178,12 +7364,12 @@ class ClimateMap:
     def _scale_lake_moisture_to_normalized(self, lake_moisture_physical):
         """Scale lake moisture to normalized units using original moisture scale"""
 
-        lake_moisture_normalized = [0.0] * self.mc.iNumPlots
+        lake_moisture_normalized = [0.0] * self.map_config.num_plots
 
         if self.original_moisture_max > 0.0:
             # Scale lake moisture to same normalized range as original moisture
             scale_factor = 1.0 / self.original_moisture_max
-            for i in xrange(self.mc.iNumPlots):
+            for i in xrange(self.map_config.num_plots):
                 lake_moisture_normalized[i] = lake_moisture_physical[i] * scale_factor
 
         return lake_moisture_normalized
@@ -7194,30 +7380,30 @@ class ClimateMap:
         Returns rainfall in physical units (needs scaling by original_rainfall_max before adding to main map).
         """
 
-        lake_rainfall = [0.0] * self.mc.iNumPlots
+        lake_rainfall = [0.0] * self.map_config.num_plots
         current_moisture = list(lake_moisture_normalized)
 
         # Use shorter diffusion for lakes
-        max_iterations = self.mc.lakeMoistureDiffusionIterations
-        min_moisture_threshold = self.mc.rainfallMinimumPrecipitation * 0.01
+        max_iterations = self.map_config.lake_moisture_diffusion_iterations
+        min_moisture_threshold = self.map_config.rainfall_minimum_precipitation * 0.01
 
         # Pre-calculate temperature factors (same as original rainfall)
-        base_temp = self.rainfallConvectiveBaseTemp
-        max_temp = self.rainfallConvectiveMaxTemp
+        base_temp = self.rainfall_convective_base_temp
+        max_temp = self.rainfall_convective_max_temp
         if max_temp > base_temp:
             temp_range = max_temp - base_temp
         else:
             temp_range = 1.0
-        decline_rate = self.mc.rainfallConvectiveDeclineRate
-        min_factor = self.mc.rainfallConvectiveMinFactor
-        min_precip = self.mc.rainfallMinimumPrecipitation
+        decline_rate = self.map_config.rainfall_convective_decline_rate
+        min_factor = self.map_config.rainfall_convective_min_factor
+        min_precip = self.map_config.rainfall_minimum_precipitation
 
         # Main diffusion loop (identical physics to original rainfall)
         for iteration in xrange(max_iterations):
-            new_moisture_grid = [0.0] * self.mc.iNumPlots
+            new_moisture_grid = [0.0] * self.map_config.num_plots
             total_transported = 0.0
 
-            for i in xrange(self.mc.iNumPlots):
+            for i in xrange(self.map_config.num_plots):
                 moisture = current_moisture[i]
 
                 if moisture <= min_moisture_threshold:
@@ -7225,7 +7411,7 @@ class ClimateMap:
                     continue
 
                 # Temperature-based precipitation (same calculation as original)
-                temp_celsius = self.TemperatureMap[i]
+                temp_celsius = self.temperature_map[i]
                 conv_rate = self._convective_rates[i]
 
                 if temp_celsius <= base_temp:
@@ -7267,7 +7453,7 @@ class ClimateMap:
 
             current_moisture = new_moisture_grid
 
-            if total_transported < min_moisture_threshold * self.mc.iNumPlots:
+            if total_transported < min_moisture_threshold * self.map_config.num_plots:
                 break
 
         return lake_rainfall
@@ -7288,13 +7474,15 @@ class ClimateMap:
         scale_factor = 1.0 / self.original_rainfall_max
 
         # Add scaled lake rainfall to existing normalized rainfall map
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             scaled_lake_rain = lake_rainfall_from_diffusion[i] * scale_factor
-            self.RainfallMap[i] += scaled_lake_rain
+            self.rainfall_map[i] += scaled_lake_rain
 
         # Renormalize the combined result using max-only normalization
-        if max(self.RainfallMap) > 0.0:
-            self.RainfallMap, _ = self.mc.normalize_map_max_only(self.RainfallMap)
+        if max(self.rainfall_map) > 0.0:
+            self.rainfall_map, _ = self.map_config.normalize_map_max_only(
+                self.rainfall_map
+            )
 
     @profile
     def _calculate_percentiles(self):
@@ -7302,11 +7490,11 @@ class ClimateMap:
         # Get land-only data
         land_indices = [
             i
-            for i in xrange(self.mc.iNumPlots)
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+            for i in xrange(self.map_config.num_plots)
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
         ]
-        land_temps = [self.TemperatureMap[i] for i in land_indices]
-        land_rainfall = [self.RainfallMap[i] for i in land_indices]
+        land_temps = [self.temperature_map[i] for i in land_indices]
+        land_rainfall = [self.rainfall_map[i] for i in land_indices]
 
         # Calculate percentiles for land only
         temp_percentiles_land = self._build_percentile_map(land_temps)
@@ -7319,12 +7507,12 @@ class ClimateMap:
         # Ocean temps for ocean biomes
         ocean_indices = [
             i
-            for i in xrange(self.mc.iNumPlots)
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN
+            for i in xrange(self.map_config.num_plots)
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN
         ]
-        ocean_temps = [self.TemperatureMap[i] for i in ocean_indices]
+        ocean_temps = [self.temperature_map[i] for i in ocean_indices]
         temp_percentiles_ocean = self._build_percentile_map(ocean_temps)
-        self.temperature_percentiles_water = [0.0] * self.mc.iNumPlots
+        self.temperature_percentiles_water = [0.0] * self.map_config.num_plots
         for i, ocean_idx in enumerate(ocean_indices):
             self.temperature_percentiles_water[ocean_idx] = temp_percentiles_ocean[i]
 
@@ -7374,8 +7562,8 @@ class ClimateMap:
         # Get land-only indices for processing
         land_indices = [
             i
-            for i in xrange(self.mc.iNumPlots)
-            if self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+            for i in xrange(self.map_config.num_plots)
+            if self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
         ]
 
         if not land_indices:
@@ -7436,51 +7624,59 @@ class TerrainMap:
     river_side_map = None
 
     @profile
-    def __init__(self, gc=None, mapConfig=None, elevationMap=None, climateMap=None):
+    def __init__(
+        self, game_context=None, config=None, elevation_map=None, climate_map=None
+    ):
         """Initialize TerrainMap with required data sources"""
-        if gc is None:
-            self.gc = CyGlobalContext()
+        if game_context is None:
+            self.game_context = CyGlobalContext()
         else:
-            self.gc = gc
-        if mapConfig is None:
-            self.mc = MapConfig()
+            self.game_context = game_context
+        if config is None:
+            self.map_config = MapConfig()
         else:
-            self.mc = mapConfig
-        if elevationMap is None:
-            self.em = ElevationMap()
+            self.map_config = config
+        if elevation_map is None:
+            self.elevation_map = ElevationMap()
         else:
-            self.em = elevationMap
-        if climateMap is None:
-            self.cm = ClimateMap()
+            self.elevation_map = elevation_map
+        if climate_map is None:
+            self.climate_map = ClimateMap()
         else:
-            self.cm = climateMap
+            self.climate_map = climate_map
 
         # Load XML constraints from game engine (handled by MapConfig)
-        self.terrain_constraints = self.mc.terrain_constraints  # From XML TerrainInfos
-        self.feature_constraints = self.mc.feature_constraints  # From XML FeatureInfos
-        self.bonus_constraints = self.mc.bonus_constraints  # From XML BonusInfos
+        self.terrain_constraints = (
+            self.map_config.terrain_constraints
+        )  # From XML TerrainInfos
+        self.feature_constraints = (
+            self.map_config.feature_constraints
+        )  # From XML FeatureInfos
+        self.bonus_constraints = (
+            self.map_config.bonus_constraints
+        )  # From XML BonusInfos
 
         # Core biome grid - 101x101 = 10201 cells (1% resolution)
-        self.BIOME_GRID_SIZE = 101
+        self.biome_grid_size = 101
         self.biome_grid = {}
 
         # Results arrays - using -1 for NO_TERRAIN/NO_FEATURE/NO_BONUS
-        self.terrain_map = [-1] * self.mc.iNumPlots
-        self.feature_map = [-1] * self.mc.iNumPlots
-        self.feature_subtype_map = [-1] * self.mc.iNumPlots
-        self.resource_map = [-1] * self.mc.iNumPlots
-        self.biome_assignments = [""] * self.mc.iNumPlots
+        self.terrain_map = [-1] * self.map_config.num_plots
+        self.feature_map = [-1] * self.map_config.num_plots
+        self.feature_subtype_map = [-1] * self.map_config.num_plots
+        self.resource_map = [-1] * self.map_config.num_plots
+        self.biome_assignments = [""] * self.map_config.num_plots
         self.resource_targets = {}
-        self.landAreaID = [-1] * self.mc.iNumPlots
-        self.landAreaSizes = {}
-        self.bonusAreaID = [-1] * self.mc.iNumPlots
-        self.bonusAreaSizes = {}
-        self.world_ids = [-1] * self.mc.iNumPlots
+        self.land_area_id = [-1] * self.map_config.num_plots
+        self.land_area_sizes = {}
+        self.bonus_area_id = [-1] * self.map_config.num_plots
+        self.bonus_area_sizes = {}
+        self.world_ids = [-1] * self.map_config.num_plots
         self.world_sizes = {}
-        self.isPotentialCityWork = [False] * self.mc.iNumPlots
+        self.is_potential_city_work = [False] * self.map_config.num_plots
 
-        self.mc.feature_map = self.feature_map
-        self.mc.resource_map = self.resource_map
+        self.map_config.feature_map = self.feature_map
+        self.map_config.resource_map = self.resource_map
 
         # Feature tracking
         self.placed_features = {}  # Track placed features by type
@@ -7497,9 +7693,13 @@ class TerrainMap:
             "plot_flat": self._get_plot_flat_map(),
             "plot_hills": self._get_plot_hills_map(),
             "plot_peaks": self._get_plot_peaks_map(),
-            "elevation": self.mc.normalize_map(self.em.aboveSeaLevelMap),
-            "wind_speed": self.mc.normalize_map(self.cm.WindSpeeds),
-            "pressure": self.mc.normalize_map(self.cm.atmospheric_pressure),
+            "elevation": self.map_config.normalize_map(
+                self.elevation_map.above_sea_level_map
+            ),
+            "wind_speed": self.map_config.normalize_map(self.climate_map.wind_speeds),
+            "pressure": self.map_config.normalize_map(
+                self.climate_map.atmospheric_pressure
+            ),
             "neighbours": None,  # Calculated during selection
         }
 
@@ -7510,13 +7710,13 @@ class TerrainMap:
         self._precalculate_adjacency_maps()
 
     @profile
-    def GenerateTerrain(self):
+    def generate_terrain(self):
         """Main method called by PlanetSim - generates all terrain and features"""
         print("TerrainMap: Generating biomes and terrain...")
 
         # Pass 1: Assign biomes to all tiles (land and water)
         self._assign_biomes()
-        self._calculateLandIDs()
+        self._calculate_land_ids()
         self._calculate_world_ids()
         self._calculate_bonus_area_ids()
 
@@ -8300,30 +8500,38 @@ class TerrainMap:
         print("TerrainMap: Pre-calculating adjacency maps...")
 
         # Initialize adjacency maps
-        river_adjacency_map = [False] * self.mc.iNumPlots
-        coast_adjacency_map = [False] * self.mc.iNumPlots
+        river_adjacency_map = [False] * self.map_config.num_plots
+        coast_adjacency_map = [False] * self.map_config.num_plots
 
         # Reconstruct the two Civ river flags from the canonical river edges.
         north_of_river = set()
         west_of_river = set()
-        for from_node, to_node, _, _ in self.cm.river_map:
-            from_x, from_y = self.cm.mc.get_coords_from_index(from_node)
-            to_x, to_y = self.cm.mc.get_coords_from_index(to_node)
+        for from_node, to_node, _, _ in self.climate_map.river_map:
+            from_x, from_y = self.climate_map.map_config.get_coords_from_index(
+                from_node
+            )
+            to_x, to_y = self.climate_map.map_config.get_coords_from_index(to_node)
 
             dx = to_x - from_x
             dy = to_y - from_y
 
-            if self.cm.mc.wrapX and abs(dx) > self.cm.mc.iNumPlotsX // 2:
-                dx = dx - int(copysign(self.cm.mc.iNumPlotsX, dx))
-            if self.cm.mc.wrapY and abs(dy) > self.cm.mc.iNumPlotsY // 2:
-                dy = dy - int(copysign(self.cm.mc.iNumPlotsY, dy))
+            if (
+                self.climate_map.map_config.wrap_x
+                and abs(dx) > self.climate_map.map_config.num_plots_x // 2
+            ):
+                dx = dx - int(copysign(self.climate_map.map_config.num_plots_x, dx))
+            if (
+                self.climate_map.map_config.wrap_y
+                and abs(dy) > self.climate_map.map_config.num_plots_y // 2
+            ):
+                dy = dy - int(copysign(self.climate_map.map_config.num_plots_y, dy))
 
             if abs(dx) > abs(dy):
                 if dx > 0:
                     edge_x, edge_y = to_x, to_y
                 else:
                     edge_x, edge_y = from_x, from_y
-                edge_index = self.mc.get_index_from_coords(edge_x, edge_y)
+                edge_index = self.map_config.get_index_from_coords(edge_x, edge_y)
                 if edge_index != -1:
                     north_of_river.add(edge_index)
             else:
@@ -8331,13 +8539,18 @@ class TerrainMap:
                     edge_x, edge_y = from_x, from_y
                 else:
                     edge_x, edge_y = from_x, to_y
-                edge_index = self.mc.get_index_from_coords(edge_x, edge_y)
+                edge_index = self.map_config.get_index_from_coords(edge_x, edge_y)
                 if edge_index != -1:
                     west_of_river.add(edge_index)
 
         # Civ's river-side eligibility is based on the four cardinal edges.
-        for tile_index in xrange(self.mc.iNumPlots):
-            for direction in (self.mc.N, self.mc.E, self.mc.S, self.mc.W):
+        for tile_index in xrange(self.map_config.num_plots):
+            for direction in (
+                self.map_config.N,
+                self.map_config.E,
+                self.map_config.S,
+                self.map_config.W,
+            ):
                 if self._is_valid_river_crossing(
                     tile_index, direction, north_of_river, west_of_river
                 ):
@@ -8345,41 +8558,43 @@ class TerrainMap:
                     break
 
         # Calculate coast adjacency
-        for i in xrange(self.mc.iNumPlots):
-            if self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN:
+        for i in xrange(self.map_config.num_plots):
+            if self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN:
                 coast_adjacency_map[i] = True
                 continue
 
             # Check adjacent tiles for ocean
             for direction in xrange(1, 9):
-                adj_index = self.mc.neighbours[i][direction]
+                adj_index = self.map_config.neighbours[i][direction]
                 if (
                     adj_index != -1
-                    and self.em.plotTypes[adj_index] == PlotTypes.PLOT_OCEAN
+                    and self.elevation_map.plot_types[adj_index] == PlotTypes.PLOT_OCEAN
                 ):
                     coast_adjacency_map[i] = True
                     break
 
         # Calculate city workable map
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             # determine if their is a workable tile in the fat cross (21 tiles around the city)
             if (
-                self.em.plotTypes[i] == PlotTypes.PLOT_OCEAN
-                or self.em.plotTypes[i] == PlotTypes.PLOT_PEAK
+                self.elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN
+                or self.elevation_map.plot_types[i] == PlotTypes.PLOT_PEAK
             ):
                 # check direct neighbours first
                 for direction in xrange(1, 9):
-                    adj_index = self.mc.neighbours[i][direction]
+                    adj_index = self.map_config.neighbours[i][direction]
                     if (
                         adj_index != -1
-                        and self.em.plotTypes[adj_index] != PlotTypes.PLOT_OCEAN
-                        and self.em.plotTypes[adj_index] != PlotTypes.PLOT_PEAK
+                        and self.elevation_map.plot_types[adj_index]
+                        != PlotTypes.PLOT_OCEAN
+                        and self.elevation_map.plot_types[adj_index]
+                        != PlotTypes.PLOT_PEAK
                     ):
-                        self.isPotentialCityWork[i] = True
+                        self.is_potential_city_work[i] = True
                         break
 
                 # continue to fat cross if no workable tile found in direct neighbours
-                if not self.isPotentialCityWork[i]:
+                if not self.is_potential_city_work[i]:
                     fat_neighbours = [
                         (2, -1),
                         (2, 0),
@@ -8396,29 +8611,31 @@ class TerrainMap:
                     ]
                     for direction in xrange(12):
                         dx, dy = fat_neighbours[direction]
-                        x, y = self.mc.get_coords_from_index(i)
-                        if self.mc.wrapX:
-                            adj_x = (x + dx) % self.mc.iNumPlotsX
+                        x, y = self.map_config.get_coords_from_index(i)
+                        if self.map_config.wrap_x:
+                            adj_x = (x + dx) % self.map_config.num_plots_x
                         else:
                             adj_x = x + dx
-                        if self.mc.wrapY:
-                            adj_y = (y + dy) % self.mc.iNumPlotsY
+                        if self.map_config.wrap_y:
+                            adj_y = (y + dy) % self.map_config.num_plots_y
                         else:
                             adj_y = y + dy
-                        adj_i = self.mc.get_index_from_coords(adj_x, adj_y)
+                        adj_i = self.map_config.get_index_from_coords(adj_x, adj_y)
                         if (
                             adj_i != -1
-                            and self.em.plotTypes[adj_i] != PlotTypes.PLOT_OCEAN
-                            and self.em.plotTypes[adj_i] != PlotTypes.PLOT_PEAK
+                            and self.elevation_map.plot_types[adj_i]
+                            != PlotTypes.PLOT_OCEAN
+                            and self.elevation_map.plot_types[adj_i]
+                            != PlotTypes.PLOT_PEAK
                         ):
-                            self.isPotentialCityWork[i] = True
+                            self.is_potential_city_work[i] = True
                             break
             else:
                 # tile can be a city
-                self.isPotentialCityWork[i] = True
+                self.is_potential_city_work[i] = True
 
         # Set the calculated maps in MapConfig
-        self.mc.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
+        self.map_config.set_adjacency_maps(river_adjacency_map, coast_adjacency_map)
 
     def _is_valid_river_crossing(
         self, tile_index, direction, north_of_river, west_of_river
@@ -8426,33 +8643,42 @@ class TerrainMap:
         """Reproduce CvPlot::updateRiverCrossing for one tile and direction."""
 
         def is_water(index):
-            return index != -1 and self.em.plotTypes[index] == PlotTypes.PLOT_OCEAN
+            return (
+                index != -1
+                and self.elevation_map.plot_types[index] == PlotTypes.PLOT_OCEAN
+            )
 
-        neighbour = self.mc.neighbours[tile_index][direction]
+        neighbour = self.map_config.neighbours[tile_index][direction]
         if is_water(neighbour) or is_water(tile_index):
             return False
 
-        if direction == self.mc.N:
+        if direction == self.map_config.N:
             return neighbour in north_of_river
-        if direction == self.mc.E:
+        if direction == self.map_config.E:
             return tile_index in west_of_river
-        if direction == self.mc.S:
+        if direction == self.map_config.S:
             return tile_index in north_of_river
-        if direction == self.mc.W:
+        if direction == self.map_config.W:
             return neighbour in west_of_river
 
         corner = {
-            self.mc.NE: self.mc.neighbours[tile_index][self.mc.N],
-            self.mc.SE: tile_index,
-            self.mc.SW: self.mc.neighbours[tile_index][self.mc.W],
-            self.mc.NW: self.mc.neighbours[tile_index][self.mc.NW],
+            self.map_config.NE: self.map_config.neighbours[tile_index][
+                self.map_config.N
+            ],
+            self.map_config.SE: tile_index,
+            self.map_config.SW: self.map_config.neighbours[tile_index][
+                self.map_config.W
+            ],
+            self.map_config.NW: self.map_config.neighbours[tile_index][
+                self.map_config.NW
+            ],
         }[direction]
         if corner == -1:
             return False
 
-        north_east = self.mc.neighbours[corner][self.mc.E]
-        south_east = self.mc.neighbours[corner][self.mc.SE]
-        south_west = self.mc.neighbours[corner][self.mc.S]
+        north_east = self.map_config.neighbours[corner][self.map_config.E]
+        south_east = self.map_config.neighbours[corner][self.map_config.SE]
+        south_west = self.map_config.neighbours[corner][self.map_config.S]
         north_west = corner
         if -1 in (north_east, south_east, south_west):
             return False
@@ -8467,7 +8693,7 @@ class TerrainMap:
         if ne_north and nw_north:
             return True
 
-        if direction in (self.mc.NE, self.mc.SW):
+        if direction in (self.map_config.NE, self.map_config.SW):
             return (
                 (ne_north and (nw_west or is_water(north_west)))
                 or ((ne_north or is_water(south_east)) and nw_west)
@@ -8484,11 +8710,11 @@ class TerrainMap:
 
     def _build_biome_grid(self):
         """Build the 20x20 fuzzy biome grid"""
-        for temp_idx in xrange(self.BIOME_GRID_SIZE):
-            temp_percentile = temp_idx / float(self.BIOME_GRID_SIZE - 1)
+        for temp_idx in xrange(self.biome_grid_size):
+            temp_percentile = temp_idx / float(self.biome_grid_size - 1)
 
-            for precip_idx in xrange(self.BIOME_GRID_SIZE):
-                precip_percentile = precip_idx / float(self.BIOME_GRID_SIZE - 1)
+            for precip_idx in xrange(self.biome_grid_size):
+                precip_percentile = precip_idx / float(self.biome_grid_size - 1)
 
                 # Find all biomes that could exist in this climate zone
                 candidates = []
@@ -8534,7 +8760,7 @@ class TerrainMap:
         """Assign biomes to all tiles (land and water) using fuzzy logic + secondary factors"""
         # Store temporary assignments for neighbour calculation
         self._temp_biome_assignments = {}
-        shuffle_list = list(xrange(self.mc.iNumPlots))
+        shuffle_list = list(xrange(self.map_config.num_plots))
         random.shuffle(shuffle_list)
 
         for tile_index in shuffle_list:
@@ -8544,18 +8770,18 @@ class TerrainMap:
 
             # Set base terrain
             biome_def = self.biome_definitions[biome_name]
-            self.terrain_map[tile_index] = self.gc.getInfoTypeForString(
+            self.terrain_map[tile_index] = self.game_context.getInfoTypeForString(
                 biome_def["terrain"]
             )
 
     def _select_biome_for_tile(self, tile_index):
         """Select the best biome for a tile using fuzzy logic + secondary factors"""
         # Get climate percentiles
-        temp_percentile = self.cm.temperature_percentiles[tile_index]
-        precip_percentile = self.cm.rainfall_percentiles[tile_index]
+        temp_percentile = self.climate_map.temperature_percentiles[tile_index]
+        precip_percentile = self.climate_map.rainfall_percentiles[tile_index]
 
         # Determine if water or land biome
-        plot_type = self.em.plotTypes[tile_index]
+        plot_type = self.elevation_map.plot_types[tile_index]
         is_water = plot_type == PlotTypes.PLOT_OCEAN
         if is_water:
             is_coast = self._is_coastal_water(tile_index)
@@ -8576,13 +8802,13 @@ class TerrainMap:
 
         # Find grid position
         if is_water:
-            temp_percentile = self.cm.temperature_percentiles_water[tile_index]
+            temp_percentile = self.climate_map.temperature_percentiles_water[tile_index]
         temp_idx = min(
-            int(temp_percentile * (self.BIOME_GRID_SIZE - 1)), self.BIOME_GRID_SIZE - 1
+            int(temp_percentile * (self.biome_grid_size - 1)), self.biome_grid_size - 1
         )
         precip_idx = min(
-            int(precip_percentile * (self.BIOME_GRID_SIZE - 1)),
-            self.BIOME_GRID_SIZE - 1,
+            int(precip_percentile * (self.biome_grid_size - 1)),
+            self.biome_grid_size - 1,
         )
 
         # Get candidate biomes from grid
@@ -8615,9 +8841,9 @@ class TerrainMap:
     def _is_coastal_water(self, tile_index):
         """Check if water tile is adjacent to land (coastal water)"""
         for direction in xrange(1, 9):
-            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
             if neighbour_idx >= 0:
-                neighbour_plot = self.em.plotTypes[neighbour_idx]
+                neighbour_plot = self.elevation_map.plot_types[neighbour_idx]
                 if neighbour_plot != PlotTypes.PLOT_OCEAN:  # Adjacent to land
                     return True
         return False
@@ -8643,7 +8869,7 @@ class TerrainMap:
         total_neighbours = 0
 
         for direction in xrange(1, 9):  # All 8 directions
-            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
             if neighbour_idx >= 0 and neighbour_idx < len(self._temp_biome_assignments):
                 neighbour_biome = self._temp_biome_assignments.get(neighbour_idx, None)
                 if neighbour_biome == biome_name:
@@ -8685,7 +8911,7 @@ class TerrainMap:
             else:  # Cold-Wet
                 return "tundra"  # Tundra/no feature
 
-    def _calculateLandIDs(self):
+    def _calculate_land_ids(self):
         """
         Identifies accessible land areas and sizes.
         """
@@ -8694,58 +8920,60 @@ class TerrainMap:
         land_area_counter = 0
 
         # Flood fill to identify connected ocean basins
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             if (
-                self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
-                and self.em.plotTypes[i] != PlotTypes.PLOT_PEAK
+                self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
+                and self.elevation_map.plot_types[i] != PlotTypes.PLOT_PEAK
             ):
-                if self.landAreaID[i] == -1:
-                    land_area_size = self._floodFillLandArea(i, land_area_counter)
-                    self.landAreaSizes[land_area_counter] = land_area_size
+                if self.land_area_id[i] == -1:
+                    land_area_size = self._flood_fill_land_area(i, land_area_counter)
+                    self.land_area_sizes[land_area_counter] = land_area_size
                     land_area_counter += 1
 
     def _calculate_bonus_area_ids(self):
         """Calculate contiguous land and water areas for iMinAreaSize."""
-        self.bonusAreaID = [-1] * self.mc.iNumPlots
-        self.bonusAreaSizes = {}
+        self.bonus_area_id = [-1] * self.map_config.num_plots
+        self.bonus_area_sizes = {}
         area_id = 0
 
-        for start_tile in xrange(self.mc.iNumPlots):
-            if self.bonusAreaID[start_tile] != -1:
+        for start_tile in xrange(self.map_config.num_plots):
+            if self.bonus_area_id[start_tile] != -1:
                 continue
 
-            area_is_water = self.em.plotTypes[start_tile] == PlotTypes.PLOT_OCEAN
+            area_is_water = (
+                self.elevation_map.plot_types[start_tile] == PlotTypes.PLOT_OCEAN
+            )
             stack = [start_tile]
             area_size = 0
             while stack:
                 current = stack.pop()
-                if self.bonusAreaID[current] != -1:
+                if self.bonus_area_id[current] != -1:
                     continue
                 if (
-                    self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN
+                    self.elevation_map.plot_types[current] == PlotTypes.PLOT_OCEAN
                 ) != area_is_water:
                     continue
 
-                self.bonusAreaID[current] = area_id
+                self.bonus_area_id[current] = area_id
                 area_size += 1
                 for direction in xrange(1, 9):
-                    neighbour = self.mc.neighbours[current][direction]
-                    if neighbour < 0 or self.bonusAreaID[neighbour] != -1:
+                    neighbour = self.map_config.neighbours[current][direction]
+                    if neighbour < 0 or self.bonus_area_id[neighbour] != -1:
                         continue
                     neighbour_is_water = (
-                        self.em.plotTypes[neighbour] == PlotTypes.PLOT_OCEAN
+                        self.elevation_map.plot_types[neighbour] == PlotTypes.PLOT_OCEAN
                     )
                     if neighbour_is_water == area_is_water:
                         stack.append(neighbour)
 
-            self.bonusAreaSizes[area_id] = area_size
+            self.bonus_area_sizes[area_id] = area_size
             area_id += 1
 
-    def _floodFillLandArea(self, start_tile, land_area_id):
+    def _flood_fill_land_area(self, start_tile, land_area_id):
         """
         Flood fill to identify connected land area and return its size.
         """
-        if self.landAreaID[start_tile] != -1:  # Already processed
+        if self.land_area_id[start_tile] != -1:  # Already processed
             return 0
 
         land_area_size = 0
@@ -8756,24 +8984,24 @@ class TerrainMap:
 
             if (
                 current < 0
-                or self.landAreaID[current] != -1
-                or self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN
-                or self.em.plotTypes[current] == PlotTypes.PLOT_PEAK
+                or self.land_area_id[current] != -1
+                or self.elevation_map.plot_types[current] == PlotTypes.PLOT_OCEAN
+                or self.elevation_map.plot_types[current] == PlotTypes.PLOT_PEAK
             ):
                 continue
 
             # Mark as part of this basin
-            self.landAreaID[current] = land_area_id
+            self.land_area_id[current] = land_area_id
             land_area_size += 1
 
             # Add neighbours to stack
             for dir in xrange(1, 9):
-                neighbour = self.mc.neighbours[current][dir]
+                neighbour = self.map_config.neighbours[current][dir]
                 if (
                     neighbour >= 0
-                    and self.landAreaID[neighbour] == -1
-                    and self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
-                    and self.em.plotTypes[neighbour] != PlotTypes.PLOT_PEAK
+                    and self.land_area_id[neighbour] == -1
+                    and self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
+                    and self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_PEAK
                 ):
                     stack.append(neighbour)
 
@@ -8782,24 +9010,24 @@ class TerrainMap:
     def _calculate_world_ids(self):
         """Calculate world IDs for all tiles based on biome assignments"""
 
-        coast_terrain_id = self.gc.getInfoTypeForString("TERRAIN_COAST")
+        coast_terrain_id = self.game_context.getInfoTypeForString("TERRAIN_COAST")
         world_id_counter = 0
-        for i in xrange(self.mc.iNumPlots):
+        for i in xrange(self.map_config.num_plots):
             if (
-                self.em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+                self.elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
                 or self.terrain_map[i] == coast_terrain_id
             ):
                 if self.world_ids[i] == -1:
-                    continent_size = self._floodFillWorlds(i, world_id_counter)
+                    continent_size = self._flood_fill_worlds(i, world_id_counter)
                     self.world_sizes[world_id_counter] = continent_size
                     world_id_counter += 1
 
-    def _floodFillWorlds(self, start_index, world_id):
+    def _flood_fill_worlds(self, start_index, world_id):
         """Flood fill algorithm to assign world IDs to connected land and coast tiles"""
         if self.world_ids[start_index] != -1:  # Already processed
             return 0
 
-        coast_terrain_id = self.gc.getInfoTypeForString("TERRAIN_COAST")
+        coast_terrain_id = self.game_context.getInfoTypeForString("TERRAIN_COAST")
         world_size = 0
         stack = [start_index]
 
@@ -8810,7 +9038,7 @@ class TerrainMap:
                 current < 0
                 or self.world_ids[current] != -1
                 or (
-                    self.em.plotTypes[current] == PlotTypes.PLOT_OCEAN
+                    self.elevation_map.plot_types[current] == PlotTypes.PLOT_OCEAN
                     and self.terrain_map[current] != coast_terrain_id
                 )
             ):
@@ -8822,12 +9050,12 @@ class TerrainMap:
 
             # Add neighbours to stack
             for dir in xrange(1, 9):
-                neighbour = self.mc.neighbours[current][dir]
+                neighbour = self.map_config.neighbours[current][dir]
                 if (
                     neighbour >= 0
                     and self.world_ids[neighbour] == -1
                     and (
-                        self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN
+                        self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
                         or self.terrain_map[neighbour] == coast_terrain_id
                     )
                 ):
@@ -8843,11 +9071,11 @@ class TerrainMap:
 
         # Extract lake tiles from ClimateMap for special ice generation rules
         self.lake_tiles = set()
-        if hasattr(self.cm, "lake_data") and self.cm.lake_data:
-            for lake in self.cm.lake_data["lakes"]:
+        if hasattr(self.climate_map, "lake_data") and self.climate_map.lake_data:
+            for lake in self.climate_map.lake_data["lakes"]:
                 self.lake_tiles.update(lake["final_tiles"])
 
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             biome_name = self.biome_assignments[tile_index]
             biome_def = self.biome_definitions[biome_name]
             feature_def = biome_def["feature"]
@@ -8857,7 +9085,7 @@ class TerrainMap:
 
             # Check if this tile should get the feature
             if self._should_place_feature(tile_index, feature_def):
-                self.feature_map[tile_index] = self.gc.getInfoTypeForString(
+                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
                     feature_def["type"]
                 )
                 self.feature_subtype_map[tile_index] = feature_def.get("subtype", 0)
@@ -8880,7 +9108,7 @@ class TerrainMap:
 
         # Modify probability based on clustering
         if cluster_factor > 0.0:
-            feature_id = self.gc.getInfoTypeForString(feature_def["type"])
+            feature_id = self.game_context.getInfoTypeForString(feature_def["type"])
             neighbour_bonus = self._calculate_cluster_bonus(
                 tile_index, feature_id, cluster_factor
             )
@@ -8921,12 +9149,12 @@ class TerrainMap:
 
         # Determine temperature percentile for water tiles (0.0 cold .. 1.0 warm)
         if self.terrain_map[tile_index] in [
-            self.gc.getInfoTypeForString("TERRAIN_COAST"),
-            self.gc.getInfoTypeForString("TERRAIN_OCEAN"),
+            self.game_context.getInfoTypeForString("TERRAIN_COAST"),
+            self.game_context.getInfoTypeForString("TERRAIN_OCEAN"),
         ]:
-            temp_pct = self.cm.temperature_percentiles_water[tile_index]
+            temp_pct = self.climate_map.temperature_percentiles_water[tile_index]
         else:
-            temp_pct = self.cm.temperature_percentiles[tile_index]
+            temp_pct = self.climate_map.temperature_percentiles[tile_index]
 
         biome_def = self.biome_definitions[self.biome_assignments[tile_index]]
         min_temp, max_temp = biome_def.get("temp_range", (0.0, 1.0))
@@ -8951,7 +9179,7 @@ class TerrainMap:
         total_neighbours = 0
 
         for direction in xrange(1, 9):
-            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
             if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
                 if self.feature_map[neighbour_idx] == feature_id:
                     feature_neighbours += 1
@@ -8965,11 +9193,16 @@ class TerrainMap:
     def _count_snow_neighbors(self, tile_index):
         """Count cardinal neighbors (N,S,E,W) with snow terrain"""
         snow_count = 0
-        terrain_snow_id = self.gc.getInfoTypeForString("TERRAIN_SNOW")
+        terrain_snow_id = self.game_context.getInfoTypeForString("TERRAIN_SNOW")
 
         # Check only cardinal directions (N,S,E,W)
-        for direction in [self.mc.N, self.mc.S, self.mc.E, self.mc.W]:
-            neighbor_idx = self.mc.neighbours[tile_index][direction]
+        for direction in [
+            self.map_config.N,
+            self.map_config.S,
+            self.map_config.E,
+            self.map_config.W,
+        ]:
+            neighbor_idx = self.map_config.neighbours[tile_index][direction]
             if neighbor_idx >= 0 and neighbor_idx < len(self.terrain_map):
                 if self.terrain_map[neighbor_idx] == terrain_snow_id:
                     snow_count += 1
@@ -9012,9 +9245,9 @@ class TerrainMap:
         to_visit = []
 
         # Add neighbouring tiles with the same feature
-        feature_id = self.gc.getInfoTypeForString(feature_type)
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
         for direction in xrange(1, 9):
-            neighbour_idx = self.mc.neighbours[tile_index][direction]
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
             if (
                 neighbour_idx >= 0
                 and neighbour_idx < len(self.feature_map)
@@ -9034,7 +9267,7 @@ class TerrainMap:
 
             # Add neighbours of current tile
             for direction in xrange(1, 9):
-                neighbour_idx = self.mc.neighbours[current][direction]
+                neighbour_idx = self.map_config.neighbours[current][direction]
                 if (
                     neighbour_idx >= 0
                     and neighbour_idx not in visited
@@ -9060,7 +9293,7 @@ class TerrainMap:
             return False
 
         # Check procedural rules
-        plot_type = self.em.plotTypes[tile_index]
+        plot_type = self.elevation_map.plot_types[tile_index]
 
         if rules.get("avoid_peaks", False) and plot_type == PlotTypes.PLOT_PEAK:
             return False
@@ -9074,7 +9307,7 @@ class TerrainMap:
                 return False
 
         if rules.get("prefer_rivers", False):
-            if not self.mc.is_adjacent_to_river(tile_index):
+            if not self.map_config.is_adjacent_to_river(tile_index):
                 if random.random() > 0.5:  # 50% penalty for non-river
                     return False
 
@@ -9084,29 +9317,29 @@ class TerrainMap:
         self, tile_index, feature_type, is_floodplains=False
     ):
         """Check XML-defined feature constraints (implemented by MapConfig)"""
-        feature_id = self.gc.getInfoTypeForString(feature_type)
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
         constraints = self.feature_constraints.get(feature_id, {})
 
         # Example constraints checking (MapConfig handles the details)
         if constraints.get("bRequiresFlatlands", False):
-            if self.em.plotTypes[tile_index] != PlotTypes.PLOT_LAND:
+            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_LAND:
                 return False
 
         if constraints.get("bNoCoast", False):
             # Check if adjacent to coast (MapConfig provides this check)
-            if self.mc.is_adjacent_to_coast(tile_index):
+            if self.map_config.is_adjacent_to_coast(tile_index):
                 return False
 
         if constraints.get("bRequiresRiver", False):
-            if not self.mc.is_adjacent_to_river(tile_index):
+            if not self.map_config.is_adjacent_to_river(tile_index):
                 return False
 
         if constraints.get("bNoRiver", False):
-            if self.mc.is_adjacent_to_river(tile_index):
+            if self.map_config.is_adjacent_to_river(tile_index):
                 return False
 
         if constraints.get("bNoAdjacent", False):
-            if self.mc.is_adjacent_to_feature(tile_index, feature_type):
+            if self.map_config.is_adjacent_to_feature(tile_index, feature_type):
                 return False
 
         # Check terrain compatibility
@@ -9166,7 +9399,7 @@ class TerrainMap:
         """Find tiles that meet the rule conditions"""
         eligible = []
 
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             if self._tile_meets_rule_conditions(tile_index, rule, base_feature):
                 eligible.append(tile_index)
 
@@ -9189,19 +9422,20 @@ class TerrainMap:
             return True  # No conditions means always eligible
 
         if "river_tile" in conditions:
-            if not self.mc.is_adjacent_to_river(tile_index):
+            if not self.map_config.is_adjacent_to_river(tile_index):
                 return False
 
         if "terrain_match" in conditions:
             terrain_filter = [
-                self.gc.getInfoTypeForString(t) for t in rule.get("terrain_filter", [])
+                self.game_context.getInfoTypeForString(t)
+                for t in rule.get("terrain_filter", [])
             ]
             if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
                 return False
 
         if "plot_match" in conditions:
             plot_requirements = rule.get("plot_requirements", [])
-            plot_type = self.em.plotTypes[tile_index]
+            plot_type = self.elevation_map.plot_types[tile_index]
             meets_plot_req = False
             for req in plot_requirements:
                 if req == "plot_flat" and plot_type == PlotTypes.PLOT_LAND:
@@ -9222,13 +9456,13 @@ class TerrainMap:
         climate_req = rule.get("climate_requirements", {})
         if "climate_match" in conditions and climate_req:
             if "temp_range" in climate_req:
-                temp = self.cm.temperature_percentiles[tile_index]
+                temp = self.climate_map.temperature_percentiles[tile_index]
                 temp_range = climate_req.get("temp_range")
                 if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
                     return False
 
             if "precip_range" in climate_req:
-                precip = self.cm.rainfall_percentiles[tile_index]
+                precip = self.climate_map.rainfall_percentiles[tile_index]
                 precip_range = climate_req.get("precip_range")
                 if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
                     return False
@@ -9270,11 +9504,16 @@ class TerrainMap:
             # Check minimum distance
             too_close = False
             for placed_tile in placed_features:
-                x1, y1 = self.mc.get_coords_from_index(candidate)
-                x2, y2 = self.mc.get_coords_from_index(placed_tile)
+                x1, y1 = self.map_config.get_coords_from_index(candidate)
+                x2, y2 = self.map_config.get_coords_from_index(placed_tile)
                 if (
                     math.sqrt(
-                        sum(x**2 for x in self.mc.get_wrapped_distance(x1, y1, x2, y2))
+                        sum(
+                            x**2
+                            for x in self.map_config.get_wrapped_distance(
+                                x1, y1, x2, y2
+                            )
+                        )
                     )
                     < min_distance
                 ):
@@ -9283,8 +9522,8 @@ class TerrainMap:
 
             if not too_close and self.feature_map[
                 candidate
-            ] == self.gc.getInfoTypeForString("NO_FEATURE"):
-                feature_id = self.gc.getInfoTypeForString(feature_type)
+            ] == self.game_context.getInfoTypeForString("NO_FEATURE"):
+                feature_id = self.game_context.getInfoTypeForString(feature_type)
                 self.feature_map[candidate] = feature_id
                 self.feature_subtype_map[candidate] = feature_subtype
                 placed_features.append(candidate)
@@ -9300,12 +9539,14 @@ class TerrainMap:
         cluster_size = rule.get("cluster_size", 3)
 
         target_clusters = max(1, int(len(eligible_tiles) * density / cluster_size))
-        feature_id = self.gc.getInfoTypeForString(feature_type)
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
 
         for _ in xrange(target_clusters):
             # Pick random center
             center = random.choice(eligible_tiles)
-            if self.feature_map[center] != self.gc.getInfoTypeForString("NO_FEATURE"):
+            if self.feature_map[center] != self.game_context.getInfoTypeForString(
+                "NO_FEATURE"
+            ):
                 continue
 
             # Place cluster around center
@@ -9316,7 +9557,7 @@ class TerrainMap:
                 if (
                     tile in eligible_tiles
                     and self.feature_map[tile]
-                    == self.gc.getInfoTypeForString("NO_FEATURE")
+                    == self.game_context.getInfoTypeForString("NO_FEATURE")
                     and placed_in_cluster < cluster_size
                 ):
                     self.feature_map[tile] = feature_id
@@ -9328,10 +9569,10 @@ class TerrainMap:
     ):
         """Place features using probability method"""
         probability = rule.get("probability", 0.5)
-        feature_id = self.gc.getInfoTypeForString(feature_type)
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
 
         for tile_index in eligible_tiles:
-            if self.feature_map[tile_index] == self.gc.getInfoTypeForString(
+            if self.feature_map[tile_index] == self.game_context.getInfoTypeForString(
                 "NO_FEATURE"
             ):
                 if random.random() <= probability:
@@ -9341,16 +9582,16 @@ class TerrainMap:
     def _get_tiles_in_radius(self, center_tile, radius):
         """Get all tiles within radius of center tile"""
         tiles = []
-        center_x = center_tile % self.mc.iNumPlotsX
-        center_y = center_tile // self.mc.iNumPlotsX
+        center_x = center_tile % self.map_config.num_plots_x
+        center_y = center_tile // self.map_config.num_plots_x
 
         for dy in xrange(-radius, radius + 1):
             for dx in xrange(-radius, radius + 1):
                 if dx * dx + dy * dy <= radius * radius:
-                    x = (center_x + dx) % self.mc.iNumPlotsX
+                    x = (center_x + dx) % self.map_config.num_plots_x
                     y = center_y + dy
-                    if 0 <= y < self.mc.iNumPlotsY:
-                        tile_index = y * self.mc.iNumPlotsX + x
+                    if 0 <= y < self.map_config.num_plots_y:
+                        tile_index = y * self.map_config.num_plots_x + x
                         tiles.append(tile_index)
 
         return tiles
@@ -9366,12 +9607,12 @@ class TerrainMap:
         3. Assuming automatic placement on XML-compatible terrains, manual on others
         """
 
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             # Check if terrain will get automatic floodplains from game engine
             if self._tile_meets_rule_conditions(tile_index, {}, "FEATURE_FLOOD_PLAINS"):
                 # Game engine will automatically place floodplains here
                 # We just mark it in our tracking but don't place manually
-                self.feature_map[tile_index] = self.gc.getInfoTypeForString(
+                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
                     "FEATURE_FLOOD_PLAINS"
                 )
                 self.feature_subtype_map[tile_index] = 0
@@ -9379,7 +9620,7 @@ class TerrainMap:
         # Use our custom rules for non-XML terrains
         for rule in feature_def["placement_rules"]:
             eligible = []
-            for tile_index in xrange(self.mc.iNumPlots):
+            for tile_index in xrange(self.map_config.num_plots):
                 if self._tile_meets_rule_conditions(
                     tile_index, rule, "FEATURE_FLOOD_PLAINS", True
                 ):
@@ -9410,7 +9651,7 @@ class TerrainMap:
                 )
 
     @profile
-    def PlaceResources(self, river_side_map=None):
+    def place_resources(self, river_side_map=None):
         """Place resources after rivers exist; None uses PlanetSim river adjacency."""
         self.river_side_map = river_side_map
         self._place_resources()
@@ -9466,24 +9707,28 @@ class TerrainMap:
 
     def _decay_nearby_scores(self, tile_index, scores):
         """Scale nearby candidate scores by max(0, 1 - k / d^2) after a placement."""
-        if self.mc.resource_decay_strength <= 0.0:
+        if self.map_config.resource_decay_strength <= 0.0:
             return
         for tile in self._get_tiles_in_radius(
-            tile_index, self.mc.resource_decay_radius
+            tile_index, self.map_config.resource_decay_radius
         ):
             if tile == tile_index or tile not in scores:
                 continue
-            tile_x, tile_y = self.mc.get_coords_from_index(tile)
-            center_x, center_y = self.mc.get_coords_from_index(tile_index)
-            dx, dy = self.mc.get_wrapped_distance(center_x, center_y, tile_x, tile_y)
+            tile_x, tile_y = self.map_config.get_coords_from_index(tile)
+            center_x, center_y = self.map_config.get_coords_from_index(tile_index)
+            dx, dy = self.map_config.get_wrapped_distance(
+                center_x, center_y, tile_x, tile_y
+            )
             dist_sq = dx * dx + dy * dy
-            scores[tile] *= max(0.0, 1.0 - self.mc.resource_decay_strength / dist_sq)
+            scores[tile] *= max(
+                0.0, 1.0 - self.map_config.resource_decay_strength / dist_sq
+            )
 
     def _record_bonus(self, tile_index, bonus_id, xml_constraints, counts):
         """Store a placed bonus and update counts and exclusion zones."""
         self.resource_map[tile_index] = bonus_id
         counts["placed"] += 1
-        if self.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN:
+        if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
             counts["land"] += 1
         self.placed_by_class.setdefault(xml_constraints.get("bonus_class"), []).append(
             tile_index
@@ -9528,7 +9773,7 @@ class TerrainMap:
                         continue
                     if (
                         area_id is not None
-                        and self.bonusAreaID[cluster_tile] != area_id
+                        and self.bonus_area_id[cluster_tile] != area_id
                     ):
                         continue
                     if self.resource_map[cluster_tile] != -1:
@@ -9559,7 +9804,7 @@ class TerrainMap:
             return  # Skip missing resources
 
         candidate_tiles = []
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             if self.resource_map[tile_index] != -1:
                 continue  # Already has a resource
             if not self._can_have_bonus(tile_index, resource_def):
@@ -9590,7 +9835,7 @@ class TerrainMap:
             return
 
         candidate_tiles = []
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             if self.resource_map[tile_index] != -1:
                 continue
             if not self._can_have_bonus(tile_index, resource_def):
@@ -9605,7 +9850,7 @@ class TerrainMap:
 
         bonus_count_by_area = {}
         for tile_index, placed_bonus_id in enumerate(self.resource_map):
-            area_id = self.bonusAreaID[tile_index]
+            area_id = self.bonus_area_id[tile_index]
             if area_id >= 0 and placed_bonus_id != -1:
                 bonus_count_by_area[area_id] = bonus_count_by_area.get(area_id, 0) + 1
 
@@ -9613,7 +9858,7 @@ class TerrainMap:
         candidates_by_area = {}
         sum_score_by_area = {}
         for tile_index in candidate_tiles:
-            area_id = self.bonusAreaID[tile_index]
+            area_id = self.bonus_area_id[tile_index]
             if area_id < 0:
                 continue
 
@@ -9635,10 +9880,10 @@ class TerrainMap:
             key=lambda area_id: (
                 sum_score_by_area[area_id]
                 * (
-                    float(self.bonusAreaSizes[area_id])
+                    float(self.bonus_area_sizes[area_id])
                     / (bonus_count_by_area.get(area_id, 0) + target_quantity + 1)
                 )
-                ** self.mc.unique_density_exponent
+                ** self.map_config.unique_density_exponent
             ),
             reverse=True,
         )
@@ -9668,7 +9913,7 @@ class TerrainMap:
         xml_constraints = resource_def["xml_constraints"]
         placement_defs = resource_def.get("placement_defs", [])
 
-        plot_type = self.em.plotTypes[tile_index]
+        plot_type = self.elevation_map.plot_types[tile_index]
         terrain_id = self.terrain_map[tile_index]
         feature_id = self.feature_map[tile_index]
         terrain_booleans = xml_constraints.get("TerrainBooleans", [])
@@ -9702,19 +9947,19 @@ class TerrainMap:
         if not self._plot_matches_terrain_water(plot_type, terrain_id):
             return False
 
-        area_size = self.bonusAreaSizes.get(self.bonusAreaID[tile_index], 0)
+        area_size = self.bonus_area_sizes.get(self.bonus_area_id[tile_index], 0)
 
         if area_size < xml_constraints.get("iMinAreaSize", 0):
             return False
 
-        x, y = self.mc.get_coords_from_index(tile_index)
-        latitude = abs(self.mc.get_latitude_for_y(y))
+        x, y = self.map_config.get_coords_from_index(tile_index)
+        latitude = abs(self.map_config.get_latitude_for_y(y))
         min_lat = xml_constraints.get("iMinLatitude", 0)
         max_lat = xml_constraints.get("iMaxLatitude", 90)
         if latitude < min_lat or latitude > max_lat:
             return False
 
-        if not self.isPotentialCityWork[tile_index]:
+        if not self.is_potential_city_work[tile_index]:
             return False
 
         return True
@@ -9723,7 +9968,7 @@ class TerrainMap:
         """Game river state when supplied, otherwise PlanetSim river adjacency."""
         if self.river_side_map is not None:
             return self.river_side_map[tile_index]
-        return self.mc.is_adjacent_to_river(tile_index)
+        return self.map_config.is_adjacent_to_river(tile_index)
 
     def _get_water_terrain_ids(self):
         """Cached terrain IDs for water terrains (ocean and coast)"""
@@ -9761,9 +10006,9 @@ class TerrainMap:
         if tiles_per > 0:
             land_tiles = num_candidate_tiles // tiles_per
 
-        players = self.mc.iNumPlayers * xml_constraints.get("iPlayer", 0) // 100
+        players = self.map_config.num_players * xml_constraints.get("iPlayer", 0) // 100
         bonus_count = (base_count * (land_tiles + players)) // 100
-        abundance = getattr(self.mc, "resource_quantity_multiplier", 1.0)
+        abundance = getattr(self.map_config, "resource_quantity_multiplier", 1.0)
         return max(1, int(round(bonus_count * abundance)))
 
     def _should_place_resource(
@@ -9782,7 +10027,7 @@ class TerrainMap:
         min_land_percent = xml_constraints.get("iMinLandPercent", 0)
         if (
             min_land_percent > 0
-            and self.em.plotTypes[tile_index] == PlotTypes.PLOT_OCEAN
+            and self.elevation_map.plot_types[tile_index] == PlotTypes.PLOT_OCEAN
         ):
             if land_count is None or total_count is None:
                 bonus_id = self._get_bonus_id(resource_def["base_resource"])
@@ -9790,7 +10035,7 @@ class TerrainMap:
                     1
                     for index, placed_bonus in enumerate(self.resource_map)
                     if placed_bonus == bonus_id
-                    and self.em.plotTypes[index] != PlotTypes.PLOT_OCEAN
+                    and self.elevation_map.plot_types[index] != PlotTypes.PLOT_OCEAN
                 )
                 total_count = self.resource_map.count(bonus_id)
             if land_count * 100 // (total_count + 1) < min_land_percent:
@@ -9814,9 +10059,9 @@ class TerrainMap:
 
     def _plot_distance_between(self, tile_a, tile_b):
         """Civ plot distance between two tiles, honoring map wrapping."""
-        ax, ay = self.mc.get_coords_from_index(tile_a)
-        bx, by = self.mc.get_coords_from_index(tile_b)
-        dx, dy = self.mc.get_wrapped_distance(ax, ay, bx, by)
+        ax, ay = self.map_config.get_coords_from_index(tile_a)
+        bx, by = self.map_config.get_coords_from_index(tile_b)
+        dx, dy = self.map_config.get_wrapped_distance(ax, ay, bx, by)
         dx = abs(dx)
         dy = abs(dy)
         return max(dx, dy) + min(dx, dy) // 2
@@ -9827,11 +10072,11 @@ class TerrainMap:
         if bonus_id == -1:
             return False
 
-        area_id = self.bonusAreaID[tile_index]
+        area_id = self.bonus_area_id[tile_index]
         for placed_tile in self.placed_resources.get(resource_type, []):
             if self.resource_map[placed_tile] != bonus_id:
                 continue
-            if self.bonusAreaID[placed_tile] != area_id:
+            if self.bonus_area_id[placed_tile] != area_id:
                 continue
             if self._plot_distance_between(tile_index, placed_tile) <= radius:
                 return True
@@ -9840,9 +10085,9 @@ class TerrainMap:
 
     def _has_bonus_class_in_radius(self, tile_index, bonus_class, radius):
         """Check placed bonuses of any type in the same class and area."""
-        area_id = self.bonusAreaID[tile_index]
+        area_id = self.bonus_area_id[tile_index]
         for placed_tile in self.placed_by_class.get(bonus_class, []):
-            if self.bonusAreaID[placed_tile] != area_id:
+            if self.bonus_area_id[placed_tile] != area_id:
                 continue
             if self._plot_distance_between(tile_index, placed_tile) <= radius:
                 return True
@@ -9855,7 +10100,7 @@ class TerrainMap:
         if base_resource is None:
             bonus_id = self.resource_map[tile_index]
             if bonus_id != -1 and bonus_id != BonusTypes.NO_BONUS:
-                base_resource = self.mc.get_bonus_string_from_id(bonus_id)
+                base_resource = self.map_config.get_bonus_string_from_id(bonus_id)
 
         if base_resource is None:
             return
@@ -9878,7 +10123,7 @@ class TerrainMap:
         """Convert terrain string to game ID, with error handling"""
         if terrain_string is None:
             return -1
-        terrain_id = self.gc.getInfoTypeForString(terrain_string)
+        terrain_id = self.game_context.getInfoTypeForString(terrain_string)
         if terrain_id == -1:
             self._log_warning(
                 "Terrain type '" + str(terrain_string) + "' not found in game XML"
@@ -9889,7 +10134,7 @@ class TerrainMap:
         """Convert bonus string to game ID, with error handling"""
         if bonus_string is None:
             return -1
-        bonus_id = self.gc.getInfoTypeForString(bonus_string)
+        bonus_id = self.game_context.getInfoTypeForString(bonus_string)
         if bonus_id == -1:
             self._log_warning(
                 "Bonus type '" + str(bonus_string) + "' not found in game XML"
@@ -9916,10 +10161,10 @@ class TerrainMap:
             return 0.0
 
         xml_constraints = self.bonus_constraints.get(bonus_id, {})
-        _, y = self.mc.get_coords_from_index(tile_index)
+        _, y = self.map_config.get_coords_from_index(tile_index)
 
         # Latitude preference
-        latitude = abs(self.mc.get_latitude_for_y(y))
+        latitude = abs(self.map_config.get_latitude_for_y(y))
         min_lat = xml_constraints.get("iMinLatitude", 0)
         max_lat = xml_constraints.get("iMaxLatitude", 90)
 
@@ -9983,7 +10228,9 @@ class TerrainMap:
             elif condition_key == "temp_range":
                 temp_range = range_values
                 if temp_range:
-                    temp_percentile = self.cm.temperature_percentiles[tile_index]
+                    temp_percentile = self.climate_map.temperature_percentiles[
+                        tile_index
+                    ]
                     if (
                         temp_percentile < temp_range[0]
                         or temp_percentile > temp_range[1]
@@ -9992,7 +10239,9 @@ class TerrainMap:
             elif condition_key == "precip_range":
                 precip_range = range_values
                 if precip_range:
-                    precip_percentile = self.cm.rainfall_percentiles[tile_index]
+                    precip_percentile = self.climate_map.rainfall_percentiles[
+                        tile_index
+                    ]
                     if (
                         precip_percentile < precip_range[0]
                         or precip_percentile > precip_range[1]
@@ -10001,13 +10250,15 @@ class TerrainMap:
             elif condition_key == "wind_range":
                 wind_range = range_values
                 if wind_range:
-                    wind_speed = self.cm.WindSpeeds[tile_index]
+                    wind_speed = self.climate_map.wind_speeds[tile_index]
                     if wind_speed < wind_range[0] or wind_speed > wind_range[1]:
                         return 0.0
             elif condition_key == "pressure_range":
                 pressure_range = range_values
                 if pressure_range:
-                    atmospheric_pressure = self.cm.atmospheric_pressure[tile_index]
+                    atmospheric_pressure = self.climate_map.atmospheric_pressure[
+                        tile_index
+                    ]
                     if (
                         atmospheric_pressure < pressure_range[0]
                         or atmospheric_pressure > pressure_range[1]
@@ -10016,7 +10267,7 @@ class TerrainMap:
             elif condition_key == "elevation_range":
                 elevation_range = range_values
                 if elevation_range:
-                    elevation = self.em.aboveSeaLevelMap[tile_index]
+                    elevation = self.elevation_map.above_sea_level_map[tile_index]
                     if elevation < elevation_range[0] or elevation > elevation_range[1]:
                         return 0.0
         return weight
@@ -10024,15 +10275,24 @@ class TerrainMap:
     # Helper methods for data processing
     def _get_plot_flat_map(self):
         """Generate map of flat plot preferences"""
-        return [(0.0, 1.0)[plot == PlotTypes.PLOT_LAND] for plot in self.em.plotTypes]
+        return [
+            (0.0, 1.0)[plot == PlotTypes.PLOT_LAND]
+            for plot in self.elevation_map.plot_types
+        ]
 
     def _get_plot_hills_map(self):
         """Generate map of hills plot preferences"""
-        return [(0.0, 1.0)[plot == PlotTypes.PLOT_HILLS] for plot in self.em.plotTypes]
+        return [
+            (0.0, 1.0)[plot == PlotTypes.PLOT_HILLS]
+            for plot in self.elevation_map.plot_types
+        ]
 
     def _get_plot_peaks_map(self):
         """Generate map of peaks plot preferences"""
-        return [(0.0, 1.0)[plot == PlotTypes.PLOT_PEAK] for plot in self.em.plotTypes]
+        return [
+            (0.0, 1.0)[plot == PlotTypes.PLOT_PEAK]
+            for plot in self.elevation_map.plot_types
+        ]
 
 
 # Map script interface functions
@@ -10041,21 +10301,23 @@ class TerrainMap:
 class StartingPlotFinder:
     """Choose civilization-aware starting plots from generated map data."""
 
-    def __init__(self, gc, map_config, elevation_map, terrain_map, map_context):
-        self.gc = gc
-        self.mc = map_config
-        self.em = elevation_map
-        self.tm = terrain_map
+    def __init__(
+        self, game_context, map_config, elevation_map, terrain_map, map_context
+    ):
+        self.game_context = game_context
+        self.map_config = map_config
+        self.elevation_map = elevation_map
+        self.terrain_map = terrain_map
         self.map = map_context
         self.bonus_names = {}
-        for bonus_name in self.mc.starting_strategic_bonus_weights:
-            bonus_id = gc.getInfoTypeForString(bonus_name)
+        for bonus_name in self.map_config.starting_strategic_bonus_weights:
+            bonus_id = game_context.getInfoTypeForString(bonus_name)
             if bonus_id >= 0:
                 self.bonus_names[bonus_id] = bonus_name
         self.civilization_ids = dict(
-            (gc.getInfoTypeForString(name), name)
-            for name in self.mc.starting_civilization_biases
-            if gc.getInfoTypeForString(name) >= 0
+            (game_context.getInfoTypeForString(name), name)
+            for name in self.map_config.starting_civilization_biases
+            if game_context.getInfoTypeForString(name) >= 0
         )
 
     def _plot_bonus(self, plot, tile_index):
@@ -10064,7 +10326,7 @@ class StartingPlotFinder:
         except TypeError:
             bonus_id = plot.getBonusType()
         if bonus_id is None or bonus_id < 0:
-            resource_map = getattr(self.tm, "resource_map", [])
+            resource_map = getattr(self.terrain_map, "resource_map", [])
             if tile_index < len(resource_map):
                 bonus_id = resource_map[tile_index]
         return bonus_id
@@ -10080,8 +10342,11 @@ class StartingPlotFinder:
 
     def _is_coastal(self, tile_index):
         for direction in xrange(1, 9):
-            neighbour = self.mc.neighbours[tile_index][direction]
-            if neighbour < 0 or self.em.plotTypes[neighbour] != PlotTypes.PLOT_OCEAN:
+            neighbour = self.map_config.neighbours[tile_index][direction]
+            if (
+                neighbour < 0
+                or self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
+            ):
                 continue
             plot = self.map.plotByIndex(neighbour)
             if not getattr(plot, "isLake", lambda: False)():
@@ -10091,9 +10356,9 @@ class StartingPlotFinder:
     def _revealed_bonus_ids(self, player):
         bonus_ids = set()
         try:
-            team = self.gc.getTeam(player.getTeam())
-            for bonus_id in xrange(self.gc.getNumBonusInfos()):
-                tech_id = self.gc.getBonusInfo(bonus_id).getTechReveal()
+            team = self.game_context.getTeam(player.getTeam())
+            for bonus_id in xrange(self.game_context.getNumBonusInfos()):
+                tech_id = self.game_context.getBonusInfo(bonus_id).getTechReveal()
                 if tech_id >= 0 and team.isHasTech(tech_id):
                     bonus_ids.add(bonus_id)
         except AttributeError:
@@ -10103,7 +10368,7 @@ class StartingPlotFinder:
     def _score_yields(self, plot):
         score = 0.0
         for yield_type, weight in zip(
-            STARTING_YIELD_TYPES, self.mc.starting_yield_weights
+            STARTING_YIELD_TYPES, self.map_config.starting_yield_weights
         ):
             score += weight * plot.calculateBestNatureYield(
                 yield_type, TeamTypes.NO_TEAM
@@ -10111,7 +10376,7 @@ class StartingPlotFinder:
         return score
 
     def _score_base_plot(self, tile_index):
-        x, y = self.mc.get_coords_from_index(tile_index)
+        x, y = self.map_config.get_coords_from_index(tile_index)
         center = self.map.plotByIndex(tile_index)
         if center.isWater() or center.isPeak():
             return None
@@ -10120,32 +10385,32 @@ class StartingPlotFinder:
         bonuses = {}
         flags = {"DESERT": False, "TUNDRA": False, "JUNGLE": False}
         peaks = False
-        for dx, dy in self.mc.starting_city_radius_offsets:
-            neighbour_index = self.mc.get_index_from_coords(x + dx, y + dy)
+        for dx, dy in self.map_config.starting_city_radius_offsets:
+            neighbour_index = self.map_config.get_index_from_coords(x + dx, y + dy)
             if neighbour_index < 0:
                 continue
             plot = self.map.plotByIndex(neighbour_index)
             distance = max(abs(dx), abs(dy))
             if distance <= 1:
-                weight = self.mc.starting_inner_radius_multiplier
+                weight = self.map_config.starting_inner_radius_multiplier
             else:
-                weight = self.mc.starting_outer_radius_multiplier
+                weight = self.map_config.starting_outer_radius_multiplier
             if plot.isPeak():
                 peaks = True
             else:
                 score += weight * self._score_yields(plot)
             if plot.isRiverSide():
-                score += self.mc.starting_riverside_weight * weight
+                score += self.map_config.starting_riverside_weight * weight
             if plot.isFreshWater() and not plot.isHills():
-                score += self.mc.starting_freshwater_tile_weight * weight
+                score += self.map_config.starting_freshwater_tile_weight * weight
 
-            terrain_id = self.tm.terrain_map[neighbour_index]
-            terrain_name = self.mc.get_terrain_string_from_id(terrain_id) or ""
+            terrain_id = self.terrain_map.terrain_map[neighbour_index]
+            terrain_name = self.map_config.get_terrain_string_from_id(terrain_id) or ""
             for terrain_name_part in flags:
                 if terrain_name_part in terrain_name:
                     flags[terrain_name_part] = True
-            feature_id = self.tm.feature_map[neighbour_index]
-            feature_name = self.mc.get_feature_string_from_id(feature_id) or ""
+            feature_id = self.terrain_map.feature_map[neighbour_index]
+            feature_name = self.map_config.get_feature_string_from_id(feature_id) or ""
             if "JUNGLE" in feature_name:
                 flags["JUNGLE"] = True
 
@@ -10154,38 +10419,51 @@ class StartingPlotFinder:
                 bonuses[bonus_id] = bonuses.get(bonus_id, 0) + 1
                 bonus_name = self.bonus_names.get(bonus_id)
                 if bonus_name is None:
-                    bonus_name = self.gc.getBonusInfo(bonus_id).getType()
-                score += self.mc.starting_bonus_weight * weight
+                    bonus_name = self.game_context.getBonusInfo(bonus_id).getType()
+                score += self.map_config.starting_bonus_weight * weight
                 score += (
-                    self.mc.starting_strategic_bonus_weights.get(bonus_name, 0.0)
+                    self.map_config.starting_strategic_bonus_weights.get(
+                        bonus_name, 0.0
+                    )
                     * weight
                 )
 
         if center.isRiver():
-            score += self.mc.starting_river_weight
+            score += self.map_config.starting_river_weight
         elif center.isFreshWater():
-            score += self.mc.starting_freshwater_weight
+            score += self.map_config.starting_freshwater_weight
         if center.isHills():
-            score += self.mc.starting_hill_weight
+            score += self.map_config.starting_hill_weight
         if self._is_coastal(tile_index):
-            score += self.mc.starting_coast_weight
+            score += self.map_config.starting_coast_weight
         if peaks:
-            score += self.mc.starting_peak_weight
+            score += self.map_config.starting_peak_weight
         return score, bonuses, flags, peaks
 
     def _score_civilization(
         self, player, tile_index, base, bonuses, flags, peaks, revealed_bonuses
     ):
         civilization_name = self.civilization_ids.get(player.getCivilizationType())
-        profile = self.mc.starting_civilization_biases.get(civilization_name, {})
-        multiplier = self.mc.starting_civilization_weight_multiplier
+        profile = self.map_config.starting_civilization_biases.get(
+            civilization_name, {}
+        )
+        multiplier = self.map_config.starting_civilization_weight_multiplier
         score = base
         if "latitude" in profile:
-            _, y = self.mc.get_coords_from_index(tile_index)
-            latitude = abs(self.mc.get_latitude_for_y(y))
+            _, y = self.map_config.get_coords_from_index(tile_index)
+            latitude = abs(self.map_config.get_latitude_for_y(y))
             latitude_delta = abs(latitude - profile["latitude"])
-            latitude_score = self.mc.starting_civilization_latitude_weight * math.exp(
-                -((latitude_delta / self.mc.starting_civilization_latitude_scale) ** 2)
+            latitude_score = (
+                self.map_config.starting_civilization_latitude_weight
+                * math.exp(
+                    -(
+                        (
+                            latitude_delta
+                            / self.map_config.starting_civilization_latitude_scale
+                        )
+                        ** 2
+                    )
+                )
             )
             score += latitude_score * multiplier
 
@@ -10193,7 +10471,7 @@ class StartingPlotFinder:
             if flags.get(terrain_name, False):
                 score += weight * multiplier
         for bonus_name, weight in profile.get("bonuses", {}).items():
-            bonus_id = self.gc.getInfoTypeForString(bonus_name)
+            bonus_id = self.game_context.getInfoTypeForString(bonus_name)
             if bonus_id >= 0:
                 score += weight * multiplier * bonuses.get(bonus_id, 0)
         if profile.get("coast") and self._is_coastal(tile_index):
@@ -10203,19 +10481,24 @@ class StartingPlotFinder:
         if profile.get("island"):
             area_size = self._area_size(self.map.plotByIndex(tile_index))
             island_area_limit = max(
-                self.mc.starting_island_min_area_size,
-                self.mc.iNumPlots // self.mc.starting_island_area_divisor,
+                self.map_config.starting_island_min_area_size,
+                self.map_config.num_plots
+                // self.map_config.starting_island_area_divisor,
             )
             if area_size and area_size <= island_area_limit:
                 score += profile["island"] * multiplier
         for bonus_id in revealed_bonuses:
-            score += self.mc.starting_revealed_bonus_weight * bonuses.get(bonus_id, 0)
+            score += self.map_config.starting_revealed_bonus_weight * bonuses.get(
+                bonus_id, 0
+            )
         return score
 
     def _distance(self, first_index, second_index):
-        first_x, first_y = self.mc.get_coords_from_index(first_index)
-        second_x, second_y = self.mc.get_coords_from_index(second_index)
-        dx, dy = self.mc.get_wrapped_distance(first_x, first_y, second_x, second_y)
+        first_x, first_y = self.map_config.get_coords_from_index(first_index)
+        second_x, second_y = self.map_config.get_coords_from_index(second_index)
+        dx, dy = self.map_config.get_wrapped_distance(
+            first_x, first_y, second_x, second_y
+        )
         return math.sqrt(dx * dx + dy * dy)
 
     def _best_scored_tile(self, ranked):
@@ -10230,8 +10513,8 @@ class StartingPlotFinder:
 
     def assign_starting_plots(self):
         players = []
-        for player_id in xrange(self.gc.getMAX_CIV_PLAYERS()):
-            player = self.gc.getPlayer(player_id)
+        for player_id in xrange(self.game_context.getMAX_CIV_PLAYERS()):
+            player = self.game_context.getPlayer(player_id)
             if player.isAlive():
                 players.append((player_id, player))
         players.sort(key=lambda item: (not item[1].isHuman(), item[0]))
@@ -10239,7 +10522,7 @@ class StartingPlotFinder:
             return True
 
         candidate_scores = {}
-        for tile_index in xrange(self.mc.iNumPlots):
+        for tile_index in xrange(self.map_config.num_plots):
             base_data = self._score_base_plot(tile_index)
             if base_data is not None:
                 candidate_scores[tile_index] = base_data
@@ -10266,7 +10549,9 @@ class StartingPlotFinder:
                 ranked.append((tile_index, score))
 
             chosen = None
-            for min_distance in xrange(int(self.mc.starting_min_distance), 0, -1):
+            for min_distance in xrange(
+                int(self.map_config.starting_min_distance), 0, -1
+            ):
                 separated = []
                 for item in ranked:
                     is_separated = True
@@ -10318,25 +10603,25 @@ def getNumCustomMapOptions():
     return len(CUSTOM_MAP_OPTIONS)
 
 
-def getCustomMapOptionName(argsList):
+def getCustomMapOptionName(args_list):
     """Return the display name for a custom map option."""
-    option_id = argsList[0]
+    option_id = args_list[0]
     if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
         return CUSTOM_MAP_OPTIONS[option_id][0]
     return ""
 
 
-def getNumCustomMapOptionValues(argsList):
+def getNumCustomMapOptionValues(args_list):
     """Return the number of choices available for a custom map option."""
-    option_id = argsList[0]
+    option_id = args_list[0]
     if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
         return len(CUSTOM_MAP_OPTIONS[option_id][1])
     return 0
 
 
-def getCustomMapOptionDescAt(argsList):
+def getCustomMapOptionDescAt(args_list):
     """Return the label for a custom map option choice."""
-    option_id, selection_id = argsList
+    option_id, selection_id = args_list
     if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
         values = CUSTOM_MAP_OPTIONS[option_id][1]
         if 0 <= selection_id < len(values):
@@ -10344,15 +10629,15 @@ def getCustomMapOptionDescAt(argsList):
     return ""
 
 
-def getCustomMapOptionDefault(argsList):
+def getCustomMapOptionDefault(args_list):
     """Return the default choice for a custom map option."""
-    option_id = argsList[0]
+    option_id = args_list[0]
     if 0 <= option_id < len(CUSTOM_MAP_OPTIONS):
         return CUSTOM_MAP_OPTIONS[option_id][2]
     return 0
 
 
-def isRandomCustomMapOption(argsList):
+def isRandomCustomMapOption(args_list):
     """PlanetSim custom map options are explicit player choices."""
     return False
 
@@ -10364,73 +10649,78 @@ def beforeInit():
 
 def beforeGeneration():
     """Called before map generation starts"""
-    global gc, mapCtx, mc
-    gc = CyGlobalContext()
-    mapCtx = gc.getMap()
-    mc = MapConfig(gc, mapCtx)
+    global game_context, map_ctx, map_config
+    game_context = CyGlobalContext()
+    map_ctx = game_context.getMap()
+    map_config = MapConfig(game_context, map_ctx)
 
 
 def generatePlotTypes():
     """Generate the basic plot types using plate tectonic simulation"""
-    global mc, em, engine_plot_types
+    global map_config, elevation_map, engine_plot_types
 
     # Initialize and generate elevation map with shared constants
-    em = ElevationMap(mc)
-    em.GenerateElevationMap()
+    elevation_map = ElevationMap(map_config)
+    elevation_map.generate_elevation_map()
 
     # The engine applies this list immediately, so later edits need syncing
-    engine_plot_types = list(em.plotTypes)
-    return em.plotTypes
+    engine_plot_types = list(elevation_map.plot_types)
+    return elevation_map.plot_types
 
 
 def generateTerrainTypes():
     """Generate terrain types based on climate modeling"""
-    global gc, mc, em, cm, tm
+    global game_context, map_config, elevation_map, climate_map, terrain_map
 
     # Initialize climate map with shared constants and elevation data
-    cm = ClimateMap(mc, em)
-    cm.GenerateClimateMap()
+    climate_map = ClimateMap(map_config, elevation_map)
+    climate_map.generate_climate_map()
 
-    tm = TerrainMap(gc, mc, em, cm)
-    tm.GenerateTerrain()
+    terrain_map = TerrainMap(game_context, map_config, elevation_map, climate_map)
+    terrain_map.generate_terrain()
 
-    return tm.terrain_map
+    return terrain_map.terrain_map
 
 
 def addRivers():
     """Add rivers to the map using realistic flow patterns"""
-    global mc, em, cm, engine_plot_types, mapCtx
+    global map_config, elevation_map, climate_map, engine_plot_types, map_ctx
 
-    if engine_plot_types is None or em is None or mc is None or mapCtx is None:
+    if (
+        engine_plot_types is None
+        or elevation_map is None
+        or map_config is None
+        or map_ctx is None
+    ):
         print("PlanetSim: river data unavailable; skipping river placement.")
         return
 
-    for i in xrange(mc.iNumPlots):
-        if em.plotTypes[i] != engine_plot_types[i]:
-            mapCtx.plotByIndex(i).setPlotType(em.plotTypes[i], True, True)
+    for i in xrange(map_config.num_plots):
+        if elevation_map.plot_types[i] != engine_plot_types[i]:
+            map_ctx.plotByIndex(i).setPlotType(elevation_map.plot_types[i], True, True)
 
-    for from_node, to_node, river_id, _ in cm.river_map:
-        from_x, from_y = mc.get_coords_from_index(from_node)
-        to_x, to_y = mc.get_coords_from_index(to_node)
+    for from_node, to_node, river_id, _ in climate_map.river_map:
+        from_x, from_y = map_config.get_coords_from_index(from_node)
+        to_x, to_y = map_config.get_coords_from_index(to_node)
 
         # Calculate flow direction
         dx = to_x - from_x
         dy = to_y - from_y
 
         # Handle wrapping
-        if mc.wrapX and abs(dx) > mc.iNumPlotsX // 2:
-            dx = dx - int(copysign(mc.iNumPlotsX, dx))
-        if mc.wrapY and abs(dy) > mc.iNumPlotsY // 2:
-            dy = dy - int(copysign(mc.iNumPlotsY, dy))
+        if map_config.wrap_x and abs(dx) > map_config.num_plots_x // 2:
+            dx = dx - int(copysign(map_config.num_plots_x, dx))
+        if map_config.wrap_y and abs(dy) > map_config.num_plots_y // 2:
+            dy = dy - int(copysign(map_config.num_plots_y, dy))
 
         # Place river on appropriate tile edge with proper validation
         if abs(dx) > abs(dy):  # Primarily horizontal flow
             if dx > 0:  # Eastward flow: place north_of_rivers on to_tile
                 tile_x = to_x
                 tile_y = to_y
-                tile_i = tile_y * mc.iNumPlotsX + tile_x
-                if 0 <= tile_i < mc.iNumPlots:
-                    plot = mapCtx.plotByIndex(tile_i)
+                tile_i = tile_y * map_config.num_plots_x + tile_x
+                if 0 <= tile_i < map_config.num_plots:
+                    plot = map_ctx.plotByIndex(tile_i)
                     plot.setNOfRiver(
                         True, CardinalDirectionTypes.CARDINALDIRECTION_EAST
                     )
@@ -10438,9 +10728,9 @@ def addRivers():
             else:  # Westward flow: place north_of_rivers on from_tile
                 tile_x = from_x
                 tile_y = from_y
-                tile_i = tile_y * mc.iNumPlotsX + tile_x
-                if 0 <= tile_i < mc.iNumPlots:
-                    plot = mapCtx.plotByIndex(tile_i)
+                tile_i = tile_y * map_config.num_plots_x + tile_x
+                if 0 <= tile_i < map_config.num_plots:
+                    plot = map_ctx.plotByIndex(tile_i)
                     plot.setNOfRiver(
                         True, CardinalDirectionTypes.CARDINALDIRECTION_WEST
                     )
@@ -10449,9 +10739,9 @@ def addRivers():
             if dy > 0:  # Northward flow: place west_of_rivers on from_tile
                 tile_x = from_x
                 tile_y = from_y
-                tile_i = tile_y * mc.iNumPlotsX + tile_x
-                if 0 <= tile_i < mc.iNumPlots:
-                    plot = mapCtx.plotByIndex(tile_i)
+                tile_i = tile_y * map_config.num_plots_x + tile_x
+                if 0 <= tile_i < map_config.num_plots:
+                    plot = map_ctx.plotByIndex(tile_i)
                     plot.setWOfRiver(
                         True, CardinalDirectionTypes.CARDINALDIRECTION_NORTH
                     )
@@ -10459,9 +10749,9 @@ def addRivers():
             else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
                 tile_x = from_x  # Fixed: was to_y in original code
                 tile_y = to_y
-                tile_i = tile_y * mc.iNumPlotsX + tile_x
-                if 0 <= tile_i < mc.iNumPlots:
-                    plot = mapCtx.plotByIndex(tile_i)
+                tile_i = tile_y * map_config.num_plots_x + tile_x
+                if 0 <= tile_i < map_config.num_plots:
+                    plot = map_ctx.plotByIndex(tile_i)
                     plot.setWOfRiver(
                         True, CardinalDirectionTypes.CARDINALDIRECTION_SOUTH
                     )
@@ -10470,34 +10760,38 @@ def addRivers():
 
 def addFeatures():
     """Add features (forests, jungles, etc.) based on climate"""
-    global mapCtx, mc, tm
+    global map_ctx, map_config, terrain_map
 
-    if mapCtx is None or mc is None or tm is None:
+    if map_ctx is None or map_config is None or terrain_map is None:
         print("PlanetSim: feature data unavailable; skipping feature placement.")
         return
 
-    for i in xrange(mc.iNumPlots):
-        plot = mapCtx.plotByIndex(i)
-        plot.setFeatureType(tm.feature_map[i], tm.feature_subtype_map[i])
+    for i in xrange(map_config.num_plots):
+        plot = map_ctx.plotByIndex(i)
+        plot.setFeatureType(
+            terrain_map.feature_map[i], terrain_map.feature_subtype_map[i]
+        )
 
 
 def addBonuses():
     """Add bonus resources appropriate to terrain and climate"""
-    global mapCtx, mc, tm
+    global map_ctx, map_config, terrain_map
 
-    if mapCtx is None or mc is None or tm is None:
+    if map_ctx is None or map_config is None or terrain_map is None:
         return
 
     # The engine has applied rivers by now, so the game is the source of truth
-    river_side_map = [mapCtx.plotByIndex(i).isRiverSide() for i in xrange(mc.iNumPlots)]
-    tm.PlaceResources(river_side_map)
+    river_side_map = [
+        map_ctx.plotByIndex(i).isRiverSide() for i in xrange(map_config.num_plots)
+    ]
+    terrain_map.place_resources(river_side_map)
 
-    resource_map = getattr(tm, "resource_map", [])
+    resource_map = getattr(terrain_map, "resource_map", [])
     if not resource_map:
         return
 
-    for i in xrange(mc.iNumPlots):
-        plot = mapCtx.plotByIndex(i)
+    for i in xrange(map_config.num_plots):
+        plot = map_ctx.plotByIndex(i)
         if plot is not None:
             plot.setBonusType(resource_map[i])
 
@@ -10509,13 +10803,21 @@ def afterGeneration():
 
 def assignStartingPlots():
     """Assign starts using local yields, resources, geography, and civ biases."""
-    if gc is None or mc is None or em is None or tm is None or mapCtx is None:
+    if (
+        game_context is None
+        or map_config is None
+        or elevation_map is None
+        or terrain_map is None
+        or map_ctx is None
+    ):
         print(
             "PlanetSim: start plot data unavailable; using DLL default implementation."
         )
         CyPythonMgr().allowDefaultImpl()
         return
-    finder = StartingPlotFinder(gc, mc, em, tm, mapCtx)
+    finder = StartingPlotFinder(
+        game_context, map_config, elevation_map, terrain_map, map_ctx
+    )
     if not finder.assign_starting_plots():
         print(
             "PlanetSim: start plot finder incomplete; using DLL default implementation."

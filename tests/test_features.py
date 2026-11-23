@@ -7,13 +7,15 @@ from PlanetSim import PlotTypes, TerrainMap
 class FeaturePlacementTests(unittest.TestCase):
     def make_terrain_map(self):
         terrain_map = object.__new__(TerrainMap)
-        terrain_map.gc = SimpleNamespace(getInfoTypeForString=lambda feature_type: 5)
+        terrain_map.game_context = SimpleNamespace(
+            getInfoTypeForString=lambda feature_type: 5
+        )
         terrain_map.feature_constraints = {}
-        terrain_map.em = SimpleNamespace(
-            plotTypes=[PlotTypes.PLOT_LAND, PlotTypes.PLOT_HILLS, PlotTypes.PLOT_LAND]
+        terrain_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_LAND, PlotTypes.PLOT_HILLS, PlotTypes.PLOT_LAND]
         )
         terrain_map.terrain_map = [3, 3, 3]
-        terrain_map.mc = SimpleNamespace(
+        terrain_map.map_config = SimpleNamespace(
             is_adjacent_to_coast=lambda tile_index: False,
             is_adjacent_to_river=lambda tile_index: tile_index == 2,
             is_adjacent_to_feature=lambda tile_index, feature_type: False,
@@ -55,7 +57,7 @@ class FeaturePlacementTests(unittest.TestCase):
 
     def test_procedural_rules_can_exclude_peaks_without_randomness(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.em.plotTypes[0] = PlotTypes.PLOT_PEAK
+        terrain_map.elevation_map.plot_types[0] = PlotTypes.PLOT_PEAK
         terrain_map._check_xml_feature_constraints = (
             lambda tile_index, feature_type: True
         )

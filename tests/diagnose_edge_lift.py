@@ -23,9 +23,9 @@ CARDINAL_DIRS = (MapConfig.N, MapConfig.S, MapConfig.E, MapConfig.W)
 COAST_BINS = [0, 1, 2, 3, 4, 5]
 
 
-def multi_source_bfs(mc, sources):
+def multi_source_bfs(map_config, sources):
     """4-connected BFS distance from a set of source tile indices, wrap-aware."""
-    dist = [-1] * mc.iNumPlots
+    dist = [-1] * map_config.num_plots
     queue = deque()
     for i in sources:
         dist[i] = 0
@@ -33,25 +33,25 @@ def multi_source_bfs(mc, sources):
     while queue:
         current = queue.popleft()
         for direction in CARDINAL_DIRS:
-            neighbour = mc.neighbours[current][direction]
+            neighbour = map_config.neighbours[current][direction]
             if neighbour >= 0 and dist[neighbour] == -1:
                 dist[neighbour] = dist[current] + 1
                 queue.append(neighbour)
     return dist
 
 
-def find_plate_boundary_tiles(mc, em):
+def find_plate_boundary_tiles(map_config, elevation_map):
     boundary = set()
-    for i in xrange(mc.iNumPlots):
-        plate_i = em.plateID[i]
-        if plate_i >= mc.plateCount:
+    for i in xrange(map_config.num_plots):
+        plate_i = elevation_map.plate_id[i]
+        if plate_i >= map_config.plate_count:
             continue
         for direction in xrange(1, 9):
-            neighbour = mc.neighbours[i][direction]
+            neighbour = map_config.neighbours[i][direction]
             if neighbour < 0:
                 continue
-            plate_n = em.plateID[neighbour]
-            if plate_n < mc.plateCount and plate_n != plate_i:
+            plate_n = elevation_map.plate_id[neighbour]
+            if plate_n < map_config.plate_count and plate_n != plate_i:
                 boundary.add(i)
                 break
     return boundary
@@ -64,7 +64,7 @@ def bin_index(distance, bins):
     return len(bins)  # overflow bin: "bins[-1]+"
 
 
-def summarize_by_distance(label, distances, land_mask, em, bins):
+def summarize_by_distance(label, distances, land_mask, elevation_map, bins):
     bin_labels = [str(b) for b in bins] + ["%d+" % (bins[-1] + 1)]
     sums = [[0.0, 0.0, 0.0, 0, 0, 0] for _ in xrange(len(bin_labels))]
     # columns: prominence_sum, boundaryElev_sum, prelElev_sum, count, peak_count, hill_count
@@ -74,13 +74,13 @@ def summarize_by_distance(label, distances, land_mask, em, bins):
             continue
         b = bin_index(distances[i], bins)
         row = sums[b]
-        row[0] += em.prominenceMap[i]
-        row[1] += em.elevationBoundaryMap[i]
-        row[2] += em.elevationPrelMap[i]
+        row[0] += elevation_map.prominence_map[i]
+        row[1] += elevation_map.elevation_boundary_map[i]
+        row[2] += elevation_map.elevation_prel_map[i]
         row[3] += 1
-        if em.plotTypes[i] == PlotTypes.PLOT_PEAK:
+        if elevation_map.plot_types[i] == PlotTypes.PLOT_PEAK:
             row[4] += 1
-        if em.plotTypes[i] == PlotTypes.PLOT_HILLS:
+        if elevation_map.plot_types[i] == PlotTypes.PLOT_HILLS:
             row[5] += 1
 
     print("\n%s (land tiles only)" % label)
@@ -139,24 +139,27 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
 
-    gc = CyGlobalContext()
-    mapCtx = gc.getMap()
-    mc = MapConfig(gc, mapCtx)
-    em = ElevationMap(mc)
-    em.GenerateElevationMap()
+    game_context = CyGlobalContext()
+    map_ctx = game_context.getMap()
+    map_config = MapConfig(game_context, map_ctx)
+    elevation_map = ElevationMap(map_config)
+    elevation_map.generate_elevation_map()
 
     ocean_tiles = [
-        i for i in xrange(mc.iNumPlots) if em.plotTypes[i] == PlotTypes.PLOT_OCEAN
+        i
+        for i in xrange(map_config.num_plots)
+        if elevation_map.plot_types[i] == PlotTypes.PLOT_OCEAN
     ]
-    land_mask = [p != PlotTypes.PLOT_OCEAN for p in em.plotTypes]
+    land_mask = [p != PlotTypes.PLOT_OCEAN for p in elevation_map.plot_types]
 
-    boundary_tiles = find_plate_boundary_tiles(mc, em)
+    boundary_tiles = find_plate_boundary_tiles(map_config, elevation_map)
 
-    coast_dist = multi_source_bfs(mc, ocean_tiles)
-    boundary_dist = multi_source_bfs(mc, boundary_tiles)
+    coast_dist = multi_source_bfs(map_config, ocean_tiles)
+    boundary_dist = multi_source_bfs(map_config, boundary_tiles)
 
     print(
-        "Map size: %d x %d, plates: %d" % (mc.iNumPlotsX, mc.iNumPlotsY, mc.plateCount)
+        "Map size: %d x %d, plates: %d"
+        % (map_config.num_plots_x, map_config.num_plots_y, map_config.plate_count)
     )
     print(
         "Ocean tiles: %d, plate-boundary tiles: %d"
@@ -164,23 +167,29 @@ def main():
     )
 
     summarize_by_distance(
-        "Stats vs. distance-to-coast", coast_dist, land_mask, em, COAST_BINS
+        "Stats vs. distance-to-coast", coast_dist, land_mask, elevation_map, COAST_BINS
     )
     summarize_by_distance(
-        "Stats vs. distance-to-plate-boundary", boundary_dist, land_mask, em, COAST_BINS
+        "Stats vs. distance-to-plate-boundary",
+        boundary_dist,
+        land_mask,
+        elevation_map,
+        COAST_BINS,
     )
 
     # Structural co-location: do plate boundaries sit where coastlines end up,
     # independent of the boundary mountain-building term itself?
     valid = [
-        i for i in xrange(mc.iNumPlots) if coast_dist[i] >= 0 and boundary_dist[i] >= 0
+        i
+        for i in xrange(map_config.num_plots)
+        if coast_dist[i] >= 0 and boundary_dist[i] >= 0
     ]
     corr_dist = pearson_corr(
         [float(coast_dist[i]) for i in valid], [float(boundary_dist[i]) for i in valid]
     )
     corr_prel = pearson_corr(
         [float(boundary_dist[i]) for i in valid],
-        [em.elevationPrelMap[i] for i in valid],
+        [elevation_map.elevation_prel_map[i] for i in valid],
     )
     print(
         "\nCorrelation(coast_dist, boundary_dist) = %.4f  (near +1 => boundaries and coastlines co-locate)"
@@ -194,16 +203,18 @@ def main():
 
     # Enrichment: are PEAK tiles disproportionately at the coast vs random land tiles?
     land_at_coast = sum(
-        1 for i in xrange(mc.iNumPlots) if land_mask[i] and coast_dist[i] <= 1
+        1 for i in xrange(map_config.num_plots) if land_mask[i] and coast_dist[i] <= 1
     )
-    land_total = sum(1 for i in xrange(mc.iNumPlots) if land_mask[i])
+    land_total = sum(1 for i in xrange(map_config.num_plots) if land_mask[i])
     peak_at_coast = sum(
         1
-        for i in xrange(mc.iNumPlots)
-        if em.plotTypes[i] == PlotTypes.PLOT_PEAK and coast_dist[i] <= 1
+        for i in xrange(map_config.num_plots)
+        if elevation_map.plot_types[i] == PlotTypes.PLOT_PEAK and coast_dist[i] <= 1
     )
     peak_total = sum(
-        1 for i in xrange(mc.iNumPlots) if em.plotTypes[i] == PlotTypes.PLOT_PEAK
+        1
+        for i in xrange(map_config.num_plots)
+        if elevation_map.plot_types[i] == PlotTypes.PLOT_PEAK
     )
     if land_total and peak_total:
         base_rate = land_at_coast / float(land_total)
@@ -217,7 +228,7 @@ def main():
     # Boundary intensity distribution: does the existing 0.01 cutoff (see
     # _collect_boundary_interactions) ever actually distinguish "passive" from
     # "active" boundaries, or does nearly everything clear it?
-    boundaries = em._collect_boundary_interactions()
+    boundaries = elevation_map._collect_boundary_interactions()
     intensities = [b["intensity"] for b in boundaries]
     types = {}
     for b in boundaries:

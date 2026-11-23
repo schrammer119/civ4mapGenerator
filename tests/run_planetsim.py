@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import argparse
 import math
 import os
@@ -45,7 +46,7 @@ parser.add_argument(
 ARGS = parser.parse_args()
 
 
-def run_starting_plot_smoke_check(gc, mc, em, tm):
+def run_starting_plot_smoke_check(game_context, map_config, elevation_map, terrain_map):
     class SmokeArea(object):
         def __init__(self, size):
             self.size = size
@@ -56,17 +57,21 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
     class SmokePlot(object):
         def __init__(self, tile_index, area):
             self.tile_index = tile_index
-            self.plot_type = em.plotTypes[tile_index]
-            self.terrain_id = tm.terrain_map[tile_index]
-            self.feature_id = tm.feature_map[tile_index]
-            self.bonus_id = tm.resource_map[tile_index]
+            self.plot_type = elevation_map.plot_types[tile_index]
+            self.terrain_id = terrain_map.terrain_map[tile_index]
+            self.feature_id = terrain_map.feature_map[tile_index]
+            self.bonus_id = terrain_map.resource_map[tile_index]
             self._area = area
             self.yields = []
-            terrain_info = gc.getTerrainInfo(self.terrain_id)
+            terrain_info = game_context.getTerrainInfo(self.terrain_id)
             feature_info = (
-                gc.getFeatureInfo(self.feature_id) if self.feature_id >= 0 else None
+                game_context.getFeatureInfo(self.feature_id)
+                if self.feature_id >= 0
+                else None
             )
-            bonus_info = gc.getBonusInfo(self.bonus_id) if self.bonus_id >= 0 else None
+            bonus_info = (
+                game_context.getBonusInfo(self.bonus_id) if self.bonus_id >= 0 else None
+            )
             for yield_type in range(3):
                 value = terrain_info.getYield(yield_type)
                 if feature_info is not None:
@@ -85,7 +90,7 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
             return self.plot_type == PlotTypes.PLOT_HILLS
 
         def isRiver(self):
-            return mc.is_adjacent_to_river(self.tile_index)
+            return map_config.is_adjacent_to_river(self.tile_index)
 
         def isFreshWater(self):
             return self.isRiver()
@@ -155,34 +160,38 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
             return SmokeTeam()
 
     land_area = SmokeArea(
-        sum(1 for plot_type in em.plotTypes if plot_type != PlotTypes.PLOT_OCEAN)
+        sum(
+            1
+            for plot_type in elevation_map.plot_types
+            if plot_type != PlotTypes.PLOT_OCEAN
+        )
     )
-    plots = [SmokePlot(i, land_area) for i in range(mc.iNumPlots)]
+    plots = [SmokePlot(i, land_area) for i in range(map_config.num_plots)]
     smoke_map = SmokeMap(plots)
     players = [SmokePlayer(i) for i in range(4)]
     assignment_order = []
-    context = SmokeContext(gc, players)
+    context = SmokeContext(game_context, players)
     previous_globals = (
-        PlanetSim.gc,
-        PlanetSim.mapCtx,
-        PlanetSim.mc,
-        PlanetSim.em,
-        PlanetSim.tm,
+        PlanetSim.game_context,
+        PlanetSim.map_ctx,
+        PlanetSim.map_config,
+        PlanetSim.elevation_map,
+        PlanetSim.terrain_map,
     )
     try:
-        PlanetSim.gc = context
-        PlanetSim.mapCtx = smoke_map
-        PlanetSim.mc = mc
-        PlanetSim.em = em
-        PlanetSim.tm = tm
+        PlanetSim.game_context = context
+        PlanetSim.map_ctx = smoke_map
+        PlanetSim.map_config = map_config
+        PlanetSim.elevation_map = elevation_map
+        PlanetSim.terrain_map = terrain_map
         PlanetSim.assignStartingPlots()
     finally:
         (
-            PlanetSim.gc,
-            PlanetSim.mapCtx,
-            PlanetSim.mc,
-            PlanetSim.em,
-            PlanetSim.tm,
+            PlanetSim.game_context,
+            PlanetSim.map_ctx,
+            PlanetSim.map_config,
+            PlanetSim.elevation_map,
+            PlanetSim.terrain_map,
         ) = previous_globals
 
     starts = [player.starting_plot for player in players]
@@ -194,9 +203,11 @@ def run_starting_plot_smoke_check(gc, mc, em, tm):
     distances = []
     for index, first in enumerate(start_indices):
         for second in start_indices[index + 1 :]:
-            first_x, first_y = mc.get_coords_from_index(first)
-            second_x, second_y = mc.get_coords_from_index(second)
-            dx, dy = mc.get_wrapped_distance(first_x, first_y, second_x, second_y)
+            first_x, first_y = map_config.get_coords_from_index(first)
+            second_x, second_y = map_config.get_coords_from_index(second)
+            dx, dy = map_config.get_wrapped_distance(
+                first_x, first_y, second_x, second_y
+            )
             distances.append(math.sqrt(dx * dx + dy * dy))
     if distances and min(distances) < 10.0:
         return False, "starting plots meet the minimum separation"
@@ -220,61 +231,76 @@ mpl.rcParams["axes.edgecolor"] = "white"
 mpl.rcParams["figure.facecolor"] = "#2E2E2E"
 mpl.rcParams["axes.facecolor"] = "#2E2E2E"
 
-gc = CyGlobalContext()
-mapCtx = gc.getMap()
+game_context = CyGlobalContext()
+map_ctx = game_context.getMap()
 
 # Initialize shared MapConfig instance
-mc = MapConfig(gc, mapCtx)
+map_config = MapConfig(game_context, map_ctx)
 
 # Initialize the elevation map with shared constants
-em = ElevationMap(mc)
-em.GenerateElevationMap()
+elevation_map = ElevationMap(map_config)
+elevation_map.generate_elevation_map()
 
 # Initialize climate map with shared constants and elevation data
-cm = ClimateMap(mc, em)
-cm.GenerateClimateMap()
+climate_map = ClimateMap(map_config, elevation_map)
+climate_map.generate_climate_map()
 
-tm = TerrainMap(gc, mc, em, cm)
-tm.GenerateTerrain()
-tm.PlaceResources()
+terrain_map = TerrainMap(game_context, map_config, elevation_map, climate_map)
+terrain_map.generate_terrain()
+terrain_map.place_resources()
 
 print("Map generation completed successfully!")
-print("Map size: %d x %d" % (mc.iNumPlotsX, mc.iNumPlotsY))
-print("Total plots: %d" % mc.iNumPlots)
-print("Number of plates: %d" % em.mc.plateCount)
-print("Sea level threshold: %.3f" % em.seaLevelThreshold)
-print("Hill height threshold: %.3f" % em.hillHeight)
-print("Peak height threshold: %.3f" % em.peakHeight)
+print("Map size: %d x %d" % (map_config.num_plots_x, map_config.num_plots_y))
+print("Total plots: %d" % map_config.num_plots)
+print("Number of plates: %d" % elevation_map.map_config.plate_count)
+print("Sea level threshold: %.3f" % elevation_map.sea_level_threshold)
+print("Hill height threshold: %.3f" % elevation_map.hill_height)
+print("Peak height threshold: %.3f" % elevation_map.peak_height)
 
 # Count plot types
-ocean_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_OCEAN)
-land_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_LAND)
-hills_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_HILLS)
-peaks_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_PEAK)
+ocean_count = sum(1 for p in elevation_map.plot_types if p == PlotTypes.PLOT_OCEAN)
+land_count = sum(1 for p in elevation_map.plot_types if p == PlotTypes.PLOT_LAND)
+hills_count = sum(1 for p in elevation_map.plot_types if p == PlotTypes.PLOT_HILLS)
+peaks_count = sum(1 for p in elevation_map.plot_types if p == PlotTypes.PLOT_PEAK)
 
 generation_checks = [
-    ("map dimensions are positive", mc.iNumPlotsX > 0 and mc.iNumPlotsY > 0),
+    (
+        "map dimensions are positive",
+        map_config.num_plots_x > 0 and map_config.num_plots_y > 0,
+    ),
     (
         "dimensions match total plots",
-        mc.iNumPlotsX * mc.iNumPlotsY == mc.iNumPlots,
+        map_config.num_plots_x * map_config.num_plots_y == map_config.num_plots,
     ),
-    ("plot types cover every map tile", len(em.plotTypes) == mc.iNumPlots),
+    (
+        "plot types cover every map tile",
+        len(elevation_map.plot_types) == map_config.num_plots,
+    ),
     (
         "recognized plot types cover the map",
-        ocean_count + land_count + hills_count + peaks_count == mc.iNumPlots,
+        ocean_count + land_count + hills_count + peaks_count == map_config.num_plots,
     ),
     (
         "land and ocean are both present",
         ocean_count > 0 and land_count + hills_count + peaks_count > 0,
     ),
-    ("terrain covers every map tile", len(tm.terrain_map) == mc.iNumPlots),
-    ("features cover every map tile", len(tm.feature_map) == mc.iNumPlots),
-    ("resources cover every map tile", len(tm.resource_map) == mc.iNumPlots),
+    (
+        "terrain covers every map tile",
+        len(terrain_map.terrain_map) == map_config.num_plots,
+    ),
+    (
+        "features cover every map tile",
+        len(terrain_map.feature_map) == map_config.num_plots,
+    ),
+    (
+        "resources cover every map tile",
+        len(terrain_map.resource_map) == map_config.num_plots,
+    ),
 ]
 
 failed_checks = []
 starting_plot_passed, starting_plot_message = run_starting_plot_smoke_check(
-    gc, mc, em, tm
+    game_context, map_config, elevation_map, terrain_map
 )
 generation_checks.append((starting_plot_message, starting_plot_passed))
 print("\nGeneration checks:")
@@ -287,24 +313,35 @@ if failed_checks:
     raise SystemExit("Generation checks failed: %s" % ", ".join(failed_checks))
 
 print("\nPlot type distribution:")
-print("Ocean: %d (%.1f%%)" % (ocean_count, ocean_count / float(mc.iNumPlots) * 100))
-print("Land: %d (%.1f%%)" % (land_count, land_count / float(mc.iNumPlots) * 100))
-print("Hills: %d (%.1f%%)" % (hills_count, hills_count / float(mc.iNumPlots) * 100))
-print("Peaks: %d (%.1f%%)" % (peaks_count, peaks_count / float(mc.iNumPlots) * 100))
+print(
+    "Ocean: %d (%.1f%%)"
+    % (ocean_count, ocean_count / float(map_config.num_plots) * 100)
+)
+print(
+    "Land: %d (%.1f%%)" % (land_count, land_count / float(map_config.num_plots) * 100)
+)
+print(
+    "Hills: %d (%.1f%%)"
+    % (hills_count, hills_count / float(map_config.num_plots) * 100)
+)
+print(
+    "Peaks: %d (%.1f%%)"
+    % (peaks_count, peaks_count / float(map_config.num_plots) * 100)
+)
 
 
 # === RESOURCE PLACEMENT STATISTICS ===
 print("\n=== RESOURCE PLACEMENT STATISTICS ===")
 
 # Count resources by type if resource_map exists
-if hasattr(tm, "resource_map") and tm.resource_map is not None:
+if hasattr(terrain_map, "resource_map") and terrain_map.resource_map is not None:
     resource_counts = {}
-    for resource_id in tm.resource_map:
+    for resource_id in terrain_map.resource_map:
         if resource_id and resource_id > 0:  # Skip NO_BONUS (0)
             resource_counts[resource_id] = resource_counts.get(resource_id, 0) + 1
 
     if resource_counts:
-        bonus_name_by_id = dict(gc.bonus_types.items())
+        bonus_name_by_id = dict(game_context.bonus_types.items())
 
         total_resources = sum(resource_counts.values())
         total_violations = 0
@@ -320,16 +357,16 @@ if hasattr(tm, "resource_map") and tm.resource_map is not None:
             count = resource_counts[res_id]
             pct = (100.0 * count) / total_resources
             bonus_name = bonus_name_by_id.get(res_id, "UNKNOWN_%d" % res_id)
-            target = getattr(tm, "resource_targets", {}).get(bonus_name, 0)
-            bonus_def = dict(tm.resource_definitions.get(bonus_name, {}))
+            target = getattr(terrain_map, "resource_targets", {}).get(bonus_name, 0)
+            bonus_def = dict(terrain_map.resource_definitions.get(bonus_name, {}))
             bonus_def.setdefault("base_resource", bonus_name)
             bonus_def.setdefault(
-                "xml_constraints", tm.bonus_constraints.get(res_id, {})
+                "xml_constraints", terrain_map.bonus_constraints.get(res_id, {})
             )
             failures = 0
-            for tile_index, placed_id in enumerate(tm.resource_map):
+            for tile_index, placed_id in enumerate(terrain_map.resource_map):
                 if placed_id == res_id:
-                    if not tm._can_have_bonus(tile_index, bonus_def):
+                    if not terrain_map._can_have_bonus(tile_index, bonus_def):
                         failures += 1
             total_violations += failures
             print(
@@ -347,7 +384,11 @@ else:
 print("\n=== BIOME TARGET ANALYSIS ===")
 print(
     "Using TerrainMap's %dx%d biome grid (%.1f%% resolution)"
-    % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE, 100.0 / (tm.BIOME_GRID_SIZE - 1))
+    % (
+        terrain_map.biome_grid_size,
+        terrain_map.biome_grid_size,
+        100.0 / (terrain_map.biome_grid_size - 1),
+    )
 )
 print("Biome Name               Actual    Target    Status")
 print("-" * 55)
@@ -372,19 +413,21 @@ biome_targets = {
 
 # Get land tiles only (not ocean)
 land_indices = [
-    i for i in range(mc.iNumPlots) if em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+    i
+    for i in range(map_config.num_plots)
+    if elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
 ]
 
 # Get temperature and rainfall percentiles for land tiles (already calculated in ClimateMap)
 land_temp_percentiles = [
-    cm.temperature_percentiles[i] * 100 for i in land_indices
+    climate_map.temperature_percentiles[i] * 100 for i in land_indices
 ]  # Convert to 0-100
 land_rain_percentiles = [
-    cm.rainfall_percentiles[i] * 100 for i in land_indices
+    climate_map.rainfall_percentiles[i] * 100 for i in land_indices
 ]  # Convert to 0-100
 
 # Get biome assignments for land tiles
-land_biomes = [tm.biome_assignments[i] for i in land_indices]
+land_biomes = [terrain_map.biome_assignments[i] for i in land_indices]
 
 # Calculate actual percentages and create enhanced legend
 biome_counts = {}
@@ -410,39 +453,51 @@ for biome_name in sorted(biome_targets.keys()):
 
 # Add terrain features overlay
 # Get feature locations (check if feature_map exists)
-iIce = []
-iJungle = []
-iOasis = []
-iFloodPlains = []
-iForest = []
+ice = []
+jungle = []
+oasis = []
+flood_plains = []
+forest = []
 
-if hasattr(tm, "feature_map") and tm.feature_map is not None:
-    iIce = [i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_ICE]
-    iJungle = [
-        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_JUNGLE
-    ]
-    iOasis = [
-        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_OASIS
-    ]
-    iFloodPlains = [
+if hasattr(terrain_map, "feature_map") and terrain_map.feature_map is not None:
+    ice = [
         i
-        for i, x in enumerate(tm.feature_map)
+        for i, x in enumerate(terrain_map.feature_map)
+        if x == FeatureTypes.FEATURE_ICE
+    ]
+    jungle = [
+        i
+        for i, x in enumerate(terrain_map.feature_map)
+        if x == FeatureTypes.FEATURE_JUNGLE
+    ]
+    oasis = [
+        i
+        for i, x in enumerate(terrain_map.feature_map)
+        if x == FeatureTypes.FEATURE_OASIS
+    ]
+    flood_plains = [
+        i
+        for i, x in enumerate(terrain_map.feature_map)
         if x == FeatureTypes.FEATURE_FLOOD_PLAINS
     ]
-    iForest = [
-        i for i, x in enumerate(tm.feature_map) if x == FeatureTypes.FEATURE_FOREST
+    forest = [
+        i
+        for i, x in enumerate(terrain_map.feature_map)
+        if x == FeatureTypes.FEATURE_FOREST
     ]
 
-if hasattr(tm, "feature_map") and tm.feature_map is not None:
+if hasattr(terrain_map, "feature_map") and terrain_map.feature_map is not None:
     feature_counts = {
-        "Ice": len(iIce),
-        "Jungle": len(iJungle),
-        "Oasis": len(iOasis),
-        "Flood Plains": len(iFloodPlains),
-        "Forest": len(iForest),
+        "Ice": len(ice),
+        "Jungle": len(jungle),
+        "Oasis": len(oasis),
+        "Flood Plains": len(flood_plains),
+        "Forest": len(forest),
     }
     print("\nFeature distribution:")
-    total_land_tiles = sum(1 for p in em.plotTypes if p != PlotTypes.PLOT_OCEAN)
+    total_land_tiles = sum(
+        1 for p in elevation_map.plot_types if p != PlotTypes.PLOT_OCEAN
+    )
     for feature_name, count in feature_counts.items():
         if count > 0:
             percentage = (
@@ -458,19 +513,29 @@ if ARGS.show:
     ## Plots
 
     # Create visualizations
-    Z = np.array(em.plateID).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    U = np.array(em.continentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    V = np.array(em.continentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    z = np.array(elevation_map.plate_id).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    U = np.array(elevation_map.continent_u).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    V = np.array(elevation_map.continent_v).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
 
     fig, ax = plt.subplots()
-    p = ax.imshow(Z, origin="lower", cmap=mpl.cm.tab20)
+    p = ax.imshow(z, origin="lower", cmap=mpl.climate_map.tab20)
     ax.quiver(U, V)
     ax.plot(
-        [x["x_centroid"] for x in em.seedList],
-        [x["y_centroid"] for x in em.seedList],
+        [x["x_centroid"] for x in elevation_map.seed_list],
+        [x["y_centroid"] for x in elevation_map.seed_list],
         "bo",
     )
-    ax.plot([x["x"] for x in em.plumeList], [x["y"] for x in em.plumeList], "rx")
+    ax.plot(
+        [x["x"] for x in elevation_map.plume_list],
+        [x["y"] for x in elevation_map.plume_list],
+        "rx",
+    )
     ax.set_title("Continent ID with Plate Velocities")
     fig.colorbar(p)
 
@@ -478,26 +543,34 @@ if ARGS.show:
     fig, axs = plt.subplots(2, 2, figsize=(12, 10))
 
     # Base Elevation (Plate Density)
-    Z1 = np.array(em.elevationBaseMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p1 = axs[0, 0].imshow(Z1, origin="lower", cmap=mpl.cm.terrain)
+    Z1 = np.array(elevation_map.elevation_base_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p1 = axs[0, 0].imshow(Z1, origin="lower", cmap=mpl.climate_map.terrain)
     axs[0, 0].set_title("Base Elevation (Plate Density)")
     fig.colorbar(p1, ax=axs[0, 0])
 
     # Velocity Elevation
-    Z2 = np.array(em.elevationVelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p2 = axs[0, 1].imshow(Z2, origin="lower", cmap=mpl.cm.terrain)
+    Z2 = np.array(elevation_map.elevation_vel_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p2 = axs[0, 1].imshow(Z2, origin="lower", cmap=mpl.climate_map.terrain)
     axs[0, 1].set_title("Velocity Elevation")
     fig.colorbar(p2, ax=axs[0, 1])
 
     # Buoyancy Elevation
-    Z3 = np.array(em.elevationBuoyMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p3 = axs[1, 0].imshow(Z3, origin="lower", cmap=mpl.cm.terrain)
+    Z3 = np.array(elevation_map.elevation_buoy_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p3 = axs[1, 0].imshow(Z3, origin="lower", cmap=mpl.climate_map.terrain)
     axs[1, 0].set_title("Buoyancy Elevation")
     fig.colorbar(p3, ax=axs[1, 0])
 
     # Preliminary Elevation
-    Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p4 = axs[1, 1].imshow(Z4, origin="lower", cmap=mpl.cm.terrain)
+    z4 = np.array(elevation_map.elevation_prel_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p4 = axs[1, 1].imshow(z4, origin="lower", cmap=mpl.climate_map.terrain)
     axs[1, 1].set_title("Preliminary Elevation")
     fig.colorbar(p4, ax=axs[1, 1])
 
@@ -507,38 +580,46 @@ if ARGS.show:
     fig2, axs2 = plt.subplots(2, 2, figsize=(12, 10))
 
     # Preliminary Elevation
-    Z4 = np.array(em.elevationPrelMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p4 = axs2[0, 0].imshow(Z4, origin="lower", cmap=mpl.cm.terrain)
+    z4 = np.array(elevation_map.elevation_prel_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p4 = axs2[0, 0].imshow(z4, origin="lower", cmap=mpl.climate_map.terrain)
     axs2[0, 0].set_title("Preliminary Elevation")
     fig2.colorbar(p4, ax=axs2[0, 0])
 
     # Boundary Elevation
-    Z5 = np.array(em.elevationBoundaryMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p5 = axs2[0, 1].imshow(Z5, origin="lower", cmap=mpl.cm.terrain)
+    Z5 = np.array(elevation_map.elevation_boundary_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p5 = axs2[0, 1].imshow(Z5, origin="lower", cmap=mpl.climate_map.terrain)
     axs2[0, 1].set_title("Boundary Elevation")
     fig2.colorbar(p5, ax=axs2[0, 1])
 
     # Prominence Map
-    Z6 = np.array(em.prominenceMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p6 = axs2[1, 0].imshow(Z6, origin="lower", cmap=mpl.cm.terrain)
+    Z6 = np.array(elevation_map.prominence_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p6 = axs2[1, 0].imshow(Z6, origin="lower", cmap=mpl.climate_map.terrain)
     axs2[1, 0].set_title("Prominence Map")
     fig2.colorbar(p6, ax=axs2[1, 0])
 
     # Final Elevation
-    Z7 = np.array(em.elevationMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    p7 = axs2[1, 1].imshow(Z7, origin="lower", cmap=mpl.cm.terrain)
+    Z7 = np.array(elevation_map.elevation_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    p7 = axs2[1, 1].imshow(Z7, origin="lower", cmap=mpl.climate_map.terrain)
     axs2[1, 1].set_title("Final Elevation")
     fig2.colorbar(p7, ax=axs2[1, 1])
 
     plt.tight_layout()
 
     # Create elevation background data
-    elevation_background = np.array(em.elevationMap).reshape(
-        mc.iNumPlotsY, mc.iNumPlotsX
+    elevation_background = np.array(elevation_map.elevation_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
     )
 
     # Create land/ocean mask (True for land, False for ocean)
-    land_mask = elevation_background > em.seaLevelThreshold
+    land_mask = elevation_background > elevation_map.sea_level_threshold
 
     # Create landform colors
     landform_colors = np.where(
@@ -546,19 +627,35 @@ if ARGS.show:
     )  # Light gray for land, dark gray for ocean
 
     # Prepare data arrays
-    U_ocean = np.array(cm.OceanCurrentU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    V_ocean = np.array(cm.OceanCurrentV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    Z_temp = np.array(cm.TemperatureMap).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    U_wind = np.array(cm.WindU).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    V_wind = np.array(cm.WindV).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
-    Z_rain = np.array(cm.rainfall_percentiles).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    u_ocean = np.array(climate_map.ocean_current_u).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    v_ocean = np.array(climate_map.ocean_current_v).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    z_temp = np.array(climate_map.temperature_map).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    u_wind = np.array(climate_map.wind_u).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    v_wind = np.array(climate_map.wind_v).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
+    z_rain = np.array(climate_map.rainfall_percentiles).reshape(
+        map_config.num_plots_y, map_config.num_plots_x
+    )
 
     # Add plot type overlays for peaks and hills
-    iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
-    iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
+    iPeaks = [
+        i for i, x in enumerate(elevation_map.plot_types) if x == PlotTypes.PLOT_PEAK
+    ]
+    iHills = [
+        i for i, x in enumerate(elevation_map.plot_types) if x == PlotTypes.PLOT_HILLS
+    ]
 
     # Create meshgrid for vector plots
-    X, Y = np.meshgrid(range(mc.iNumPlotsX), range(mc.iNumPlotsY))
+    X, Y = np.meshgrid(range(map_config.num_plots_x), range(map_config.num_plots_y))
 
     # Create 2x2 subplot grid
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -568,16 +665,16 @@ if ARGS.show:
     ax1.imshow(landform_colors, origin="lower", cmap="gray", alpha=0.6, vmin=0, vmax=1)
 
     # Mask ocean currents to only show over ocean areas
-    U_masked = np.where(~land_mask, U_ocean, 0)
-    V_masked = np.where(~land_mask, V_ocean, 0)
+    u_masked = np.where(~land_mask, u_ocean, 0)
+    v_masked = np.where(~land_mask, v_ocean, 0)
 
     # Plot ocean currents with color based on magnitude
-    current_magnitude = np.sqrt(U_masked**2 + V_masked**2)
+    current_magnitude = np.sqrt(u_masked**2 + v_masked**2)
     q1 = ax1.quiver(
         X,
         Y,
-        U_masked,
-        V_masked,
+        u_masked,
+        v_masked,
         current_magnitude,
         alpha=0.8,
         cmap="Blues",
@@ -585,20 +682,20 @@ if ARGS.show:
     )
 
     ax1.set_title("Ocean Currents with Landforms")
-    ax1.set_xlim(0, mc.iNumPlotsX)
-    ax1.set_ylim(0, mc.iNumPlotsY)
+    ax1.set_xlim(0, map_config.num_plots_x)
+    ax1.set_ylim(0, map_config.num_plots_y)
     fig.colorbar(q1, ax=ax1, label="Current Magnitude")
 
     # Plot 2: Temperature Map with Landforms (top-right)
     ax2.imshow(landform_colors, origin="lower", cmap="gray", alpha=0.4, vmin=0, vmax=1)
 
     # Overlay temperature data with transparency
-    p2 = ax2.imshow(Z_temp, origin="lower", cmap=mpl.cm.coolwarm, alpha=0.8)
+    p2 = ax2.imshow(z_temp, origin="lower", cmap=mpl.climate_map.coolwarm, alpha=0.8)
 
     # Add contour lines to show land boundaries
     ax2.contour(
         elevation_background,
-        levels=[em.seaLevelThreshold],
+        levels=[elevation_map.sea_level_threshold],
         colors="black",
         linewidths=1,
         alpha=0.6,
@@ -611,14 +708,14 @@ if ARGS.show:
     # Add contour lines to show major elevation features
     ax3.contour(
         elevation_background,
-        levels=[em.seaLevelThreshold],
+        levels=[elevation_map.sea_level_threshold],
         colors=["cyan"],
         linewidths=[1],
         alpha=0.7,
     )  # Changed to cyan
     ax3.plot(
-        [i % mc.iNumPlotsX for i in iPeaks],
-        [i // mc.iNumPlotsX for i in iPeaks],
+        [i % map_config.num_plots_x for i in iPeaks],
+        [i // map_config.num_plots_x for i in iPeaks],
         "^",
         mec="0.7",
         mfc="none",
@@ -626,15 +723,15 @@ if ARGS.show:
     )
 
     # Plot wind patterns with color based on magnitude
-    wind_magnitude = np.sqrt(U_wind**2 + V_wind**2)
+    wind_magnitude = np.sqrt(u_wind**2 + v_wind**2)
     # q3 = ax3.quiver(X, Y, U_wind, V_wind, wind_magnitude,
     #                 alpha=0.8, cmap='plasma')
 
     q3 = ax3.streamplot(
         X,
         Y,
-        U_wind,
-        V_wind,
+        u_wind,
+        v_wind,
         color=wind_magnitude,  # Color by speed
         cmap="Spectral",  # Colormap
         density=4,  # Density of streamlines
@@ -643,27 +740,27 @@ if ARGS.show:
     )  # Arrow style
 
     ax3.set_title("Wind Patterns with Topography")
-    ax3.set_xlim(0, mc.iNumPlotsX)
-    ax3.set_ylim(0, mc.iNumPlotsY)
+    ax3.set_xlim(0, map_config.num_plots_x)
+    ax3.set_ylim(0, map_config.num_plots_y)
     fig.colorbar(q3.lines, ax=ax3, label="Wind Magnitude")
 
     # Plot 4: Rainfall Map with Landforms (bottom-right)
     # Overlay rainfall data with transparency
     p4 = ax4.imshow(
-        Z_rain, origin="lower", cmap=mpl.cm.Blues, alpha=0.8, clim=(0.0, 1.0)
+        z_rain, origin="lower", cmap=mpl.climate_map.Blues, alpha=0.8, clim=(0.0, 1.0)
     )
 
     # Add contour lines to show land boundaries
     ax4.contour(
         elevation_background,
-        levels=[em.seaLevelThreshold],
+        levels=[elevation_map.sea_level_threshold],
         colors="black",
         linewidths=1,
         alpha=0.6,
     )
     ax4.plot(
-        [i % mc.iNumPlotsX for i in iPeaks],
-        [i // mc.iNumPlotsX for i in iPeaks],
+        [i % map_config.num_plots_x for i in iPeaks],
+        [i // map_config.num_plots_x for i in iPeaks],
         "^",
         mec="0.7",
         mfc="none",
@@ -676,53 +773,55 @@ if ARGS.show:
     plt.tight_layout()
 
     tile_ids = []
-    for id in cm.tile_watershed_ids:
-        if id == -1 or cm.watershed_database[id]["selected"]:
+    for id in climate_map.tile_watershed_ids:
+        if id == -1 or climate_map.watershed_database[id]["selected"]:
             tile_ids.append(id)
         else:
-            tile_ids.append(mc.iNumPlots + 2000)
+            tile_ids.append(map_config.num_plots + 2000)
 
     # watershed_ids with flow direction vectors
-    Z = np.array(tile_ids).reshape(mc.iNumPlotsY, mc.iNumPlotsX)
+    z = np.array(tile_ids).reshape(map_config.num_plots_y, map_config.num_plots_x)
 
     # Calculate flow direction vectors at node coordinates
-    flow_u = np.zeros((mc.iNumPlotsY, mc.iNumPlotsX))
-    flow_v = np.zeros((mc.iNumPlotsY, mc.iNumPlotsX))
+    flow_u = np.zeros((map_config.num_plots_y, map_config.num_plots_x))
+    flow_v = np.zeros((map_config.num_plots_y, map_config.num_plots_x))
 
-    for node_i in range(mc.iNumPlots):
-        downstream_node = cm.flow_directions[node_i]
-        if downstream_node >= 0 and downstream_node < mc.iNumPlots:
+    for node_i in range(map_config.num_plots):
+        downstream_node = climate_map.flow_directions[node_i]
+        if downstream_node >= 0 and downstream_node < map_config.num_plots:
             # Get node coordinates
-            x_i, y_i = mc.get_coords_from_index(node_i)
-            x_j, y_j = mc.get_coords_from_index(downstream_node)
+            x_i, y_i = map_config.get_coords_from_index(node_i)
+            x_j, y_j = map_config.get_coords_from_index(downstream_node)
 
             # Calculate direction vector from node_i to downstream_node with wrapping
-            dx, dy = mc.get_wrapped_distance(x_j, y_j, x_i, y_i)
+            dx, dy = map_config.get_wrapped_distance(x_j, y_j, x_i, y_i)
 
             flow_u[y_i, x_i] = dx
             flow_v[y_i, x_i] = dy
 
     # Create node coordinate meshgrid
     X_nodes, Y_nodes = np.meshgrid(
-        np.arange(mc.iNumPlotsX) + 0.5, np.arange(mc.iNumPlotsY) - 0.5
+        np.arange(map_config.num_plots_x) + 0.5, np.arange(map_config.num_plots_y) - 0.5
     )
 
     fig, ax = plt.subplots()
-    p = ax.imshow(Z, origin="lower", cmap=mpl.cm.gist_ncar)
+    p = ax.imshow(z, origin="lower", cmap=mpl.climate_map.gist_ncar)
 
     # Create color array for arrows based on watershed IDs
-    arrow_colors = np.full((mc.iNumPlotsY, mc.iNumPlotsX), mc.iNumPlots + 1)
-    for node_i in range(mc.iNumPlots):
-        if cm.flow_directions[node_i] >= 0:  # Only for nodes with valid flow
-            x_i, y_i = mc.get_coords_from_index(node_i)
-            watershed_id = cm.watershed_ids[node_i]
+    arrow_colors = np.full(
+        (map_config.num_plots_y, map_config.num_plots_x), map_config.num_plots + 1
+    )
+    for node_i in range(map_config.num_plots):
+        if climate_map.flow_directions[node_i] >= 0:  # Only for nodes with valid flow
+            x_i, y_i = map_config.get_coords_from_index(node_i)
+            watershed_id = climate_map.watershed_ids[node_i]
             if watershed_id == -1 or (
-                watershed_id in cm.watershed_database
-                and cm.watershed_database[watershed_id]["selected"]
+                watershed_id in climate_map.watershed_database
+                and climate_map.watershed_database[watershed_id]["selected"]
             ):
                 arrow_colors[y_i, x_i] = watershed_id
             else:
-                arrow_colors[y_i, x_i] = mc.iNumPlots + 2000
+                arrow_colors[y_i, x_i] = map_config.num_plots + 2000
 
     # Add flow direction quiver plot
     # Scale=1 with scale_units='xy' makes arrow length equal to 1 tile width
@@ -733,7 +832,7 @@ if ARGS.show:
         flow_u,
         flow_v,
         arrow_colors,
-        cmap=mpl.cm.gist_ncar,
+        cmap=mpl.climate_map.gist_ncar,
         scale_units="xy",
         scale=1,
         width=0.002,
@@ -751,10 +850,10 @@ if ARGS.show:
     # Add outlet nodes for selected basins as black dots
     outlet_x = []
     outlet_y = []
-    for watershed_id, data in cm.watershed_database.items():
+    for watershed_id, data in climate_map.watershed_database.items():
         if data["selected"]:
             outlet_node = data["outlet_node"]
-            x_outlet, y_outlet = mc.get_coords_from_index(outlet_node)
+            x_outlet, y_outlet = map_config.get_coords_from_index(outlet_node)
             outlet_x.append(x_outlet + 0.5)  # Apply same offset as flow vectors
             outlet_y.append(y_outlet - 0.5)
 
@@ -830,8 +929,8 @@ if ARGS.show:
     biome_names = ["no_biome"] + sorted(
         [
             name
-            for name in tm.biome_definitions.keys()
-            if tm.biome_definitions[name]["terrain"]
+            for name in terrain_map.biome_definitions.keys()
+            if terrain_map.biome_definitions[name]["terrain"]
             not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]
         ]
     )
@@ -845,17 +944,19 @@ if ARGS.show:
 
             # Use TerrainMap's exact percentile-to-grid conversion
             temp_idx = min(
-                int(temp_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1
+                int(temp_pct * (terrain_map.biome_grid_size - 1)),
+                terrain_map.biome_grid_size - 1,
             )
             precip_idx = min(
-                int(rain_pct * (tm.BIOME_GRID_SIZE - 1)), tm.BIOME_GRID_SIZE - 1
+                int(rain_pct * (terrain_map.biome_grid_size - 1)),
+                terrain_map.biome_grid_size - 1,
             )
-            grid_candidates = tm.biome_grid.get((temp_idx, precip_idx), [])
+            grid_candidates = terrain_map.biome_grid.get((temp_idx, precip_idx), [])
 
             # Filter to land biomes only
             land_candidates = []
             for biome_name, climate_weight in grid_candidates:
-                terrain = tm.biome_definitions[biome_name]["terrain"]
+                terrain = terrain_map.biome_definitions[biome_name]["terrain"]
                 if terrain not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]:
                     land_candidates.append((biome_name, climate_weight))
 
@@ -912,7 +1013,7 @@ if ARGS.show:
     ax.set_ylabel("Temperature Percentile (%)", fontsize=12)
     ax.set_title(
         "Biome Assignment Analysis with Target Comparison\n(Background: TerrainMap's %dx%d Grid, Points: Actual Assignments)"
-        % (tm.BIOME_GRID_SIZE, tm.BIOME_GRID_SIZE),
+        % (terrain_map.biome_grid_size, terrain_map.biome_grid_size),
         fontsize=14,
     )
     ax.set_xlim(0, 100)
@@ -939,8 +1040,8 @@ if ARGS.show:
     for biome_name in sorted(
         [
             name
-            for name in tm.biome_definitions.keys()
-            if tm.biome_definitions[name]["terrain"]
+            for name in terrain_map.biome_definitions.keys()
+            if terrain_map.biome_definitions[name]["terrain"]
             not in ["TERRAIN_OCEAN", "TERRAIN_COAST"]
         ]
     ):
@@ -1010,7 +1111,7 @@ if ARGS.show:
 
     # Plot rectangles for each land biome
     land_biomes_plotted = []
-    for biome_name, biome_def in tm.biome_definitions.items():
+    for biome_name, biome_def in terrain_map.biome_definitions.items():
         # Skip water biomes
         terrain = biome_def["terrain"]
         if terrain in ["TERRAIN_OCEAN", "TERRAIN_COAST"]:
@@ -1129,7 +1230,7 @@ if ARGS.show:
     # Create terrain array with data validation
     # Handle any None/invalid values by converting to ocean (6)
     clean_terrain = []
-    for i, terrain in enumerate(tm.terrain_map):
+    for i, terrain in enumerate(terrain_map.terrain_map):
         if terrain is None or terrain < 0 or terrain > 7:
             # Default to ocean for invalid values
             clean_terrain.append(6)
@@ -1138,7 +1239,7 @@ if ARGS.show:
 
     # Convert to numpy array and reshape to grid
     terrain_data = np.array(clean_terrain, dtype=np.int32).reshape(
-        mc.iNumPlotsY, mc.iNumPlotsX
+        map_config.num_plots_y, map_config.num_plots_x
     )
 
     # Create the plot
@@ -1146,13 +1247,17 @@ if ARGS.show:
     p = ax.imshow(terrain_data, origin="lower", cmap=terrain_cmap, vmin=0, vmax=7)
 
     # Add plot type overlays for peaks and hills
-    iPeaks = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_PEAK]
-    iHills = [i for i, x in enumerate(em.plotTypes) if x == PlotTypes.PLOT_HILLS]
+    iPeaks = [
+        i for i, x in enumerate(elevation_map.plot_types) if x == PlotTypes.PLOT_PEAK
+    ]
+    iHills = [
+        i for i, x in enumerate(elevation_map.plot_types) if x == PlotTypes.PLOT_HILLS
+    ]
 
     # Plot peaks as triangles
     ax.plot(
-        [i % mc.iNumPlotsX for i in iPeaks],
-        [i // mc.iNumPlotsX for i in iPeaks],
+        [i % map_config.num_plots_x for i in iPeaks],
+        [i // map_config.num_plots_x for i in iPeaks],
         "^",
         mec="#808080",
         mfc="none",
@@ -1163,8 +1268,8 @@ if ARGS.show:
 
     # Plot hills as frown symbols
     ax.plot(
-        [i % mc.iNumPlotsX for i in iHills],
-        [i // mc.iNumPlotsX for i in iHills],
+        [i % map_config.num_plots_x for i in iHills],
+        [i // map_config.num_plots_x for i in iHills],
         linestyle="",
         marker="$\\frown$",
         mec="#8B4513",
@@ -1189,8 +1294,8 @@ if ARGS.show:
         all_y = []
 
         for tile_i in tile_indices:
-            tile_x = tile_i % mc.iNumPlotsX
-            tile_y = tile_i // mc.iNumPlotsX
+            tile_x = tile_i % map_config.num_plots_x
+            tile_y = tile_i // map_config.num_plots_x
 
             for dx, dy in offsets:
                 all_x.append(tile_x + dx)
@@ -1209,10 +1314,10 @@ if ARGS.show:
         )
 
     # Plot non-vegetation features with single symbols (these don't block other features)
-    if iIce:
+    if ice:
         ax.plot(
-            [i % mc.iNumPlotsX for i in iIce],
-            [i // mc.iNumPlotsX for i in iIce],
+            [i % map_config.num_plots_x for i in ice],
+            [i // map_config.num_plots_x for i in ice],
             "s",
             mec="#FFFFFF",
             mfc="#FFFFFF",
@@ -1221,10 +1326,10 @@ if ARGS.show:
             label="Ice",
         )
 
-    if iOasis:
+    if oasis:
         ax.plot(
-            [i % mc.iNumPlotsX for i in iOasis],
-            [i // mc.iNumPlotsX for i in iOasis],
+            [i % map_config.num_plots_x for i in oasis],
+            [i // map_config.num_plots_x for i in oasis],
             "o",
             mec="#0000FF",
             mfc="#0000FF",
@@ -1233,10 +1338,10 @@ if ARGS.show:
             label="Oasis",
         )
 
-    if iFloodPlains:
+    if flood_plains:
         ax.plot(
-            [i % mc.iNumPlotsX for i in iFloodPlains],
-            [i // mc.iNumPlotsX for i in iFloodPlains],
+            [i % map_config.num_plots_x for i in flood_plains],
+            [i // map_config.num_plots_x for i in flood_plains],
             linestyle="",
             marker="$\\sim$",
             mec="#265809",
@@ -1247,23 +1352,26 @@ if ARGS.show:
         )
 
     # Plot vegetation features with distributed symbols and subtype support
-    if iJungle:
+    if jungle:
         # Jungle: bright green club
         plot_distributed_vegetation(
-            iJungle, "$\\Psi$", "#00E400", "#00E400", 3, "Jungle"
+            jungle, "$\\Psi$", "#00E400", "#00E400", 3, "Jungle"
         )
 
-    if iForest:
+    if forest:
         # Forest subtypes - placeholder for future subtype map
         # For now, check if subtype map exists, otherwise default to broadleaf
-        if hasattr(tm, "feature_subtype_map") and tm.feature_subtype_map is not None:
+        if (
+            hasattr(terrain_map, "feature_subtype_map")
+            and terrain_map.feature_subtype_map is not None
+        ):
             # Group forests by subtype
             broadleaf_forests = []
             evergreen_forests = []
             snowy_forests = []
 
-            for tile_i in iForest:
-                subtype = tm.feature_subtype_map[tile_i]
+            for tile_i in forest:
+                subtype = terrain_map.feature_subtype_map[tile_i]
                 if subtype == 0:  # Broadleaf forest
                     broadleaf_forests.append(tile_i)
                 elif subtype == 1:  # Evergreen forest
@@ -1294,7 +1402,7 @@ if ARGS.show:
         else:
             # Default to broadleaf forest for all forest tiles
             plot_distributed_vegetation(
-                iForest, "$\\Psi$", "#005A00", "#005A00", 3, "Broadleaf Forest"
+                forest, "$\\Psi$", "#005A00", "#005A00", 3, "Broadleaf Forest"
             )
 
     # Add river visualization from river_map
@@ -1303,17 +1411,17 @@ if ARGS.show:
     horizontal_rivers = set()  # north_of_rivers
     vertical_rivers = set()  # west_of_rivers
 
-    for from_node, to_node, _, _ in cm.river_map:
-        from_x, from_y = mc.get_coords_from_index(from_node)
-        to_x, to_y = mc.get_coords_from_index(to_node)
+    for from_node, to_node, _, _ in climate_map.river_map:
+        from_x, from_y = map_config.get_coords_from_index(from_node)
+        to_x, to_y = map_config.get_coords_from_index(to_node)
 
         dx = to_x - from_x
         dy = to_y - from_y
 
-        if mc.wrapX and abs(dx) > mc.iNumPlotsX // 2:
-            dx = dx - int(copysign(mc.iNumPlotsX, dx))
-        if mc.wrapY and abs(dy) > mc.iNumPlotsY // 2:
-            dy = dy - int(copysign(mc.iNumPlotsY, dy))
+        if map_config.wrap_x and abs(dx) > map_config.num_plots_x // 2:
+            dx = dx - int(copysign(map_config.num_plots_x, dx))
+        if map_config.wrap_y and abs(dy) > map_config.num_plots_y // 2:
+            dy = dy - int(copysign(map_config.num_plots_y, dy))
 
         # Determine which tile gets the river edge (same logic as _is_river_tile)
         if abs(dx) > abs(dy):  # Horizontal river
@@ -1323,7 +1431,7 @@ if ARGS.show:
             else:
                 edge_tile_x = from_x
                 edge_tile_y = from_y
-            edge_tile_i = edge_tile_y * mc.iNumPlotsX + edge_tile_x
+            edge_tile_i = edge_tile_y * map_config.num_plots_x + edge_tile_x
             horizontal_rivers.add(edge_tile_i)
         else:  # Vertical river
             if dy > 0:
@@ -1332,20 +1440,20 @@ if ARGS.show:
             else:
                 edge_tile_x = from_x
                 edge_tile_y = to_y
-            edge_tile_i = edge_tile_y * mc.iNumPlotsX + edge_tile_x
+            edge_tile_i = edge_tile_y * map_config.num_plots_x + edge_tile_x
             vertical_rivers.add(edge_tile_i)
 
     # Draw E/W rivers (horizontal lines on south edges of tiles)
     for tile_i in horizontal_rivers:
-        x = tile_i % mc.iNumPlotsX
-        y = tile_i // mc.iNumPlotsX
+        x = tile_i % map_config.num_plots_x
+        y = tile_i // map_config.num_plots_x
         # Horizontal line on south edge of tile
         ax.plot([x - 0.5, x + 0.5], [y - 0.5, y - 0.5], "cyan", linewidth=2, alpha=0.9)
 
     # Draw N/S rivers (vertical lines on east edges of tiles)
     for tile_i in vertical_rivers:
-        x = tile_i % mc.iNumPlotsX
-        y = tile_i // mc.iNumPlotsX
+        x = tile_i % map_config.num_plots_x
+        y = tile_i // map_config.num_plots_x
         # Vertical line on east edge of tile
         ax.plot([x + 0.5, x + 0.5], [y - 0.5, y + 0.5], "cyan", linewidth=2, alpha=0.9)
 
@@ -1399,7 +1507,7 @@ if ARGS.show:
         )
 
     # Add feature entries if they exist
-    if iIce:
+    if ice:
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -1412,7 +1520,7 @@ if ARGS.show:
                 label="Ice",
             )
         )
-    if iJungle:
+    if jungle:
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -1425,7 +1533,7 @@ if ARGS.show:
                 label="Jungle",
             )
         )
-    if iOasis:
+    if oasis:
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -1438,7 +1546,7 @@ if ARGS.show:
                 label="Oasis",
             )
         )
-    if iFloodPlains:
+    if flood_plains:
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -1453,8 +1561,11 @@ if ARGS.show:
         )
 
     # Handle forest subtypes in legend
-    if iForest:
-        if hasattr(tm, "forest_subtype_map") and tm.forest_subtype_map is not None:
+    if forest:
+        if (
+            hasattr(terrain_map, "forest_subtype_map")
+            and terrain_map.forest_subtype_map is not None
+        ):
             # Add legend entries for present subtypes
             # Broadleaf or default
             legend_handles.append(
@@ -1527,9 +1638,9 @@ if ARGS.show:
 
     # === RESOURCE VISUALIZATION ===
     # Overlay resource codes on the final map and show their name key at the left.
-    if hasattr(tm, "resource_map") and tm.resource_map is not None:
+    if hasattr(terrain_map, "resource_map") and terrain_map.resource_map is not None:
         # Derive letter codes from the live BonusTypes enum rather than a drift-prone hard-coded table.
-        bonus_name_by_id = dict(gc.bonus_types.items())
+        bonus_name_by_id = dict(game_context.bonus_types.items())
         resource_letter_codes = {}
         for bonus_id, bonus_name in sorted(bonus_name_by_id.items()):
             if bonus_id > 0:
@@ -1544,10 +1655,10 @@ if ARGS.show:
                 resource_letter_codes[bonus_id] = code
 
         # Plot resource letter codes on map
-        for tile_i, resource_id in enumerate(tm.resource_map):
+        for tile_i, resource_id in enumerate(terrain_map.resource_map):
             if resource_id and resource_id > 0:  # Skip empty tiles
-                tile_x = tile_i % mc.iNumPlotsX
-                tile_y = tile_i // mc.iNumPlotsX
+                tile_x = tile_i % map_config.num_plots_x
+                tile_y = tile_i // map_config.num_plots_x
                 letter_code = resource_letter_codes.get(resource_id, "??")
                 ax.text(
                     tile_x,

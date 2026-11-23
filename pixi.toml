@@ -29,6 +29,7 @@ black = ">=26.1,<27"
 vermin = ">=1.9,<2"
 ruff = ">=0.17,<1"
 vulture = ">=2.16,<3"
+pylint = ">=4.1.4,<5"
 
 [tasks]
 unit = { cmd = "pytest -q tests", env = { MPLBACKEND = "Agg" } }
@@ -40,11 +41,13 @@ compat = { depends-on = ["compat-vermin", "compat-syntax"] }
 compat-vermin = "vermin -t=2.4 --violations PlanetSim.py"
 compat-syntax = "pytest -q tests/test_compat.py"
 lint = "ruff check PlanetSim.py tests"
+naming = "pylint --rcfile=.pylintrc --disable=all --enable=invalid-name PlanetSim.py tests"
 dead-code = "vulture PlanetSim.py tests --min-confidence 60"
 preflight = { depends-on = [
 	"format-check",
 	"compat",
 	"lint",
+	"naming",
 	"dead-code",
 	"unit",
 	"generate",

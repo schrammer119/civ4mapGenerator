@@ -27,25 +27,25 @@ BIOME_TARGET_TOLERANCE_PP = 15.0
 
 def generate_planetsim_map(seed):
     random.seed(seed)
-    gc = PlanetSim.CyGlobalContext()
-    map_config = MapConfig(gc, gc.getMap())
+    game_context = PlanetSim.CyGlobalContext()
+    map_config = MapConfig(game_context, game_context.getMap())
     elevation_map = ElevationMap(map_config)
-    elevation_map.GenerateElevationMap()
+    elevation_map.generate_elevation_map()
     climate_map = ClimateMap(map_config, elevation_map)
-    climate_map.GenerateClimateMap()
-    terrain_map = TerrainMap(gc, map_config, elevation_map, climate_map)
-    terrain_map.GenerateTerrain()
-    terrain_map.PlaceResources()
+    climate_map.generate_climate_map()
+    terrain_map = TerrainMap(game_context, map_config, elevation_map, climate_map)
+    terrain_map.generate_terrain()
+    terrain_map.place_resources()
     return elevation_map, climate_map, terrain_map
 
 
 def generate_map_snapshot(seed):
     elevation_map, climate_map, terrain_map = generate_planetsim_map(seed)
     return (
-        tuple(elevation_map.elevationMap),
-        tuple(elevation_map.plotTypes),
-        tuple(climate_map.TemperatureMap),
-        tuple(climate_map.RainfallMap),
+        tuple(elevation_map.elevation_map),
+        tuple(elevation_map.plot_types),
+        tuple(climate_map.temperature_map),
+        tuple(climate_map.rainfall_map),
         tuple(climate_map.river_map),
         tuple(terrain_map.biome_assignments),
         tuple(terrain_map.terrain_map),
@@ -60,7 +60,7 @@ def generate_biome_shares(seed):
 
     land_biomes = [
         terrain_map.biome_assignments[index]
-        for index, plot_type in enumerate(elevation_map.plotTypes)
+        for index, plot_type in enumerate(elevation_map.plot_types)
         if plot_type != PlotTypes.PLOT_OCEAN
     ]
     land_count = len(land_biomes)
@@ -99,10 +99,10 @@ class TerrainBehaviorTests(unittest.TestCase):
 
     def test_biome_selection_filters_candidates_by_land_or_water(self):
         terrain_map = object.__new__(TerrainMap)
-        terrain_map.BIOME_GRID_SIZE = 20
-        terrain_map.mc = make_map_config(width=1, height=1)
-        terrain_map.em = SimpleNamespace(plotTypes=[PlotTypes.PLOT_LAND])
-        terrain_map.cm = SimpleNamespace(
+        terrain_map.biome_grid_size = 20
+        terrain_map.map_config = make_map_config(width=1, height=1)
+        terrain_map.elevation_map = SimpleNamespace(plot_types=[PlotTypes.PLOT_LAND])
+        terrain_map.climate_map = SimpleNamespace(
             temperature_percentiles=[0.5],
             rainfall_percentiles=[0.5],
             temperature_percentiles_water=[0.5],
@@ -116,15 +116,15 @@ class TerrainBehaviorTests(unittest.TestCase):
 
         self.assertEqual("land_biome", terrain_map._select_biome_for_tile(0))
 
-        terrain_map.em.plotTypes[0] = PlotTypes.PLOT_OCEAN
+        terrain_map.elevation_map.plot_types[0] = PlotTypes.PLOT_OCEAN
         terrain_map._is_coastal_water = lambda tile_index: False
         self.assertEqual("ocean_biome", terrain_map._select_biome_for_tile(0))
 
     def test_biome_selection_uses_coast_candidates_for_coastal_water(self):
         terrain_map = object.__new__(TerrainMap)
-        terrain_map.BIOME_GRID_SIZE = 20
-        terrain_map.em = SimpleNamespace(plotTypes=[PlotTypes.PLOT_OCEAN])
-        terrain_map.cm = SimpleNamespace(
+        terrain_map.biome_grid_size = 20
+        terrain_map.elevation_map = SimpleNamespace(plot_types=[PlotTypes.PLOT_OCEAN])
+        terrain_map.climate_map = SimpleNamespace(
             temperature_percentiles=[0.5],
             rainfall_percentiles=[0.5],
             temperature_percentiles_water=[0.5],
@@ -141,15 +141,15 @@ class TerrainBehaviorTests(unittest.TestCase):
 
     def test_world_ids_include_coast_and_land_but_exclude_open_ocean(self):
         terrain_map = object.__new__(TerrainMap)
-        terrain_map.gc = PlanetSim.CyGlobalContext()
-        terrain_map.mc = make_map_config(width=3, height=1)
-        terrain_map.em = SimpleNamespace(
-            plotTypes=[PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_LAND]
+        terrain_map.game_context = PlanetSim.CyGlobalContext()
+        terrain_map.map_config = make_map_config(width=3, height=1)
+        terrain_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_LAND]
         )
         terrain_map.terrain_map = [
-            terrain_map.gc.getInfoTypeForString("TERRAIN_OCEAN"),
-            terrain_map.gc.getInfoTypeForString("TERRAIN_COAST"),
-            terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS"),
+            terrain_map.game_context.getInfoTypeForString("TERRAIN_OCEAN"),
+            terrain_map.game_context.getInfoTypeForString("TERRAIN_COAST"),
+            terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS"),
         ]
         terrain_map.world_ids = [-1] * 3
         terrain_map.world_sizes = {}

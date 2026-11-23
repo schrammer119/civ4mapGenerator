@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import unittest
 
 from CvPythonExtensions import TeamTypes, YieldTypes
@@ -157,46 +158,55 @@ class FakeGlobalContext(object):
 
 class StartingPlotFinderTests(unittest.TestCase):
     def make_finder(self, width=28, height=16, players=None, techs=None):
-        self.gc = FakeGlobalContext(players, techs)
-        self.mc = make_map_config(width=width, height=height)
-        self.mc._initialize_starting_parameters()
-        self.mc.get_terrain_string_from_id = lambda terrain_id: {
+        self.game_context = FakeGlobalContext(players, techs)
+        self.map_config = make_map_config(width=width, height=height)
+        self.map_config._initialize_starting_parameters()
+        self.map_config.get_terrain_string_from_id = lambda terrain_id: {
             0: "TERRAIN_GRASS",
             1: "TERRAIN_DESERT",
         }.get(terrain_id)
-        self.mc.get_feature_string_from_id = lambda feature_id: {
+        self.map_config.get_feature_string_from_id = lambda feature_id: {
             0: "FEATURE_JUNGLE"
         }.get(feature_id)
-        self.em = type(
+        self.elevation_map = type(
             "Elevation",
             (object,),
-            {"plotTypes": [PlotTypes.PLOT_LAND] * self.mc.iNumPlots},
+            {"plot_types": [PlotTypes.PLOT_LAND] * self.map_config.num_plots},
         )()
-        self.tm = type(
+        self.terrain_map = type(
             "Terrain",
             (object,),
             {
-                "terrain_map": [0] * self.mc.iNumPlots,
-                "feature_map": [-1] * self.mc.iNumPlots,
-                "resource_map": [-1] * self.mc.iNumPlots,
+                "terrain_map": [0] * self.map_config.num_plots,
+                "feature_map": [-1] * self.map_config.num_plots,
+                "resource_map": [-1] * self.map_config.num_plots,
             },
         )()
-        plots = [FakePlot(self.mc.iNumPlots) for _ in range(self.mc.iNumPlots)]
+        plots = [
+            FakePlot(self.map_config.num_plots)
+            for _ in range(self.map_config.num_plots)
+        ]
         self.map = FakeMap(plots, width)
-        self.finder = StartingPlotFinder(self.gc, self.mc, self.em, self.tm, self.map)
+        self.finder = StartingPlotFinder(
+            self.game_context,
+            self.map_config,
+            self.elevation_map,
+            self.terrain_map,
+            self.map,
+        )
         return plots
 
     def test_starting_parameters_use_integer_civilization_weights_and_multiplier(self):
         self.make_finder()
 
-        self.assertEqual(10.0, self.mc.starting_civilization_weight_multiplier)
+        self.assertEqual(10.0, self.map_config.starting_civilization_weight_multiplier)
         self.assertEqual(
             3,
-            self.mc.starting_civilization_biases["CIVILIZATION_EGYPT"]["terrain"][
-                "DESERT"
-            ],
+            self.map_config.starting_civilization_biases["CIVILIZATION_EGYPT"][
+                "terrain"
+            ]["DESERT"],
         )
-        for profile in self.mc.starting_civilization_biases.values():
+        for profile in self.map_config.starting_civilization_biases.values():
             for weight_type in ("terrain", "bonuses"):
                 for weight in profile.get(weight_type, {}).values():
                     self.assertIsInstance(weight, int)
@@ -206,11 +216,11 @@ class StartingPlotFinderTests(unittest.TestCase):
 
     def test_city_radius_scores_yields_and_excludes_outer_corners(self):
         plots = self.make_finder()
-        center = self.mc.get_index_from_coords(10, 8)
+        center = self.map_config.get_index_from_coords(10, 8)
         base, _, _, _ = self.finder._score_base_plot(center)
 
-        included = self.mc.get_index_from_coords(12, 9)
-        excluded = self.mc.get_index_from_coords(12, 10)
+        included = self.map_config.get_index_from_coords(12, 9)
+        excluded = self.map_config.get_index_from_coords(12, 10)
         plots[included].yields[0] = 10
         plots[excluded].yields[0] = 1000
 
@@ -236,8 +246,8 @@ class StartingPlotFinderTests(unittest.TestCase):
     def test_starting_tech_adds_weight_for_its_revealed_bonus(self):
         player = FakePlayer(0, 101)
         plots = self.make_finder(players=[player], techs=[7])
-        center = self.mc.get_index_from_coords(10, 8)
-        plots[center].bonus = self.gc.getInfoTypeForString("BONUS_IRON")
+        center = self.map_config.get_index_from_coords(10, 8)
+        plots[center].bonus = self.game_context.getInfoTypeForString("BONUS_IRON")
         base, bonuses, flags, peaks = self.finder._score_base_plot(center)
         revealed = self.finder._revealed_bonus_ids(player)
 
@@ -253,10 +263,10 @@ class StartingPlotFinderTests(unittest.TestCase):
 
     def test_early_strategic_bonus_scores_above_later_strategic_bonus(self):
         plots = self.make_finder()
-        center = self.mc.get_index_from_coords(10, 8)
-        plots[center].bonus = self.gc.getInfoTypeForString("BONUS_IRON")
+        center = self.map_config.get_index_from_coords(10, 8)
+        plots[center].bonus = self.game_context.getInfoTypeForString("BONUS_IRON")
         iron_score = self.finder._score_base_plot(center)[0]
-        plots[center].bonus = self.gc.getInfoTypeForString("BONUS_COAL")
+        plots[center].bonus = self.game_context.getInfoTypeForString("BONUS_COAL")
         coal_score = self.finder._score_base_plot(center)[0]
 
         self.assertEqual(3.0, iron_score - coal_score)
@@ -264,8 +274,8 @@ class StartingPlotFinderTests(unittest.TestCase):
     def test_civilization_bias_rewards_its_historical_terrain(self):
         egypt = FakePlayer(0, 100)
         self.make_finder(players=[egypt])
-        center = self.mc.get_index_from_coords(10, 8)
-        self.tm.terrain_map[center] = 1
+        center = self.map_config.get_index_from_coords(10, 8)
+        self.terrain_map.terrain_map[center] = 1
         base, bonuses, flags, peaks = self.finder._score_base_plot(center)
 
         score = self.finder._score_civilization(

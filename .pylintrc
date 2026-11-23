@@ -1,0 +1,15 @@
+[BASIC]
+# Naming checker configuration. See docs/naming_convention.md.
+#
+# Module-level snake_case globals are not constants in this codebase, so
+# constants accept snake_case as well as UPPER_CASE.
+const-rgx=^(?:[a-z_][a-z0-9_]*|[A-Z][A-Z0-9_]*)$
+
+# PlanetSim.py is the shipped module name, fixed by the Civ IV loader.
+module-rgx=^(?:PlanetSim|[a-z_][a-z0-9_]*)$
+
+# xrange is the Python 2.4 compatibility shim, not a class.
+class-rgx=^(?:xrange|[A-Z][A-Za-z0-9]*)$
+
+# Civ IV engine callbacks are invoked by name and keep their camelCase API names.
+function-rgx=^(?:[a-z_][a-z0-9_]*|getDescription|isAdvancedMap|isClimateMap|isSeaLevelMap|getNumCustomMapOptions|getCustomMapOptionName|getNumCustomMapOptionValues|getCustomMapOptionDescAt|getCustomMapOptionDefault|isRandomCustomMapOption|beforeInit|beforeGeneration|generatePlotTypes|generateTerrainTypes|addRivers|addFeatures|addBonuses|afterGeneration|assignStartingPlots)$

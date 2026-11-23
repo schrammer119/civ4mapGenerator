@@ -10,8 +10,10 @@ class HydrologyBehaviorTests(unittest.TestCase):
         map_config = make_map_config(width=3, height=1)
         map_config.get_node_intersecting_tiles_from_index = lambda node_index: []
         climate_map = object.__new__(ClimateMap)
-        climate_map.mc = map_config
-        climate_map.em = SimpleNamespace(plotTypes=[PlotTypes.PLOT_LAND] * 3)
+        climate_map.map_config = map_config
+        climate_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_LAND] * 3
+        )
         climate_map.flow_directions = [1, 0, -1]
         climate_map.watershed_ids = [-1, -1, -1]
         climate_map.node_elevations = [20.0, 10.0, 0.0]
@@ -27,9 +29,9 @@ class HydrologyBehaviorTests(unittest.TestCase):
     def test_southward_river_segment_validates_destination_row_at_source_column(self):
         map_config = make_map_config(width=5, height=5)
         climate_map = object.__new__(ClimateMap)
-        climate_map.mc = map_config
-        climate_map.em = SimpleNamespace(
-            plotTypes=[PlotTypes.PLOT_LAND] * map_config.iNumPlots
+        climate_map.map_config = map_config
+        climate_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_LAND] * map_config.num_plots
         )
         climate_map.river_map = []
         checked = []
@@ -46,9 +48,9 @@ class HydrologyBehaviorTests(unittest.TestCase):
     def test_wrapped_segment_uses_short_path_across_horizontal_edge(self):
         map_config = make_map_config(width=5, height=5, wrap_x=True)
         climate_map = object.__new__(ClimateMap)
-        climate_map.mc = map_config
-        climate_map.em = SimpleNamespace(
-            plotTypes=[PlotTypes.PLOT_LAND] * map_config.iNumPlots
+        climate_map.map_config = map_config
+        climate_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_LAND] * map_config.num_plots
         )
         climate_map.river_map = []
         checked = []
@@ -63,16 +65,16 @@ class HydrologyBehaviorTests(unittest.TestCase):
 
     def test_lake_growth_is_connected_and_stops_when_target_is_reached(self):
         map_config = make_map_config(width=3, height=3)
-        map_config.LakeElevationWeight = 0.6
-        map_config.LakeOceanProximityWeight = 0.4
-        map_config.LakeOceanConnectionRange = 4
+        map_config.lake_elevation_weight = 0.6
+        map_config.lake_ocean_proximity_weight = 0.4
+        map_config.lake_ocean_connection_range = 4
         climate_map = object.__new__(ClimateMap)
-        climate_map.mc = map_config
-        climate_map.em = SimpleNamespace(
-            plotTypes=[PlotTypes.PLOT_LAND] * map_config.iNumPlots,
-            aboveSeaLevelMap=[float(index) for index in range(map_config.iNumPlots)],
+        climate_map.map_config = map_config
+        climate_map.elevation_map = SimpleNamespace(
+            plot_types=[PlotTypes.PLOT_LAND] * map_config.num_plots,
+            above_sea_level_map=[float(index) for index in range(map_config.num_plots)],
         )
-        climate_map.oceanDistanceMap = [0] * map_config.iNumPlots
+        climate_map.ocean_distance_map = [0] * map_config.num_plots
 
         lake_tiles = climate_map.grow_lake_from_center_basin(4, 5)
 
@@ -80,7 +82,7 @@ class HydrologyBehaviorTests(unittest.TestCase):
         self.assertEqual(5, len(set(lake_tiles)))
         self.assertTrue(
             all(
-                climate_map.em.plotTypes[tile] == PlotTypes.PLOT_OCEAN
+                climate_map.elevation_map.plot_types[tile] == PlotTypes.PLOT_OCEAN
                 for tile in lake_tiles
             )
         )

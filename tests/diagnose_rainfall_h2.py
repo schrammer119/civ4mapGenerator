@@ -66,7 +66,7 @@ def describe(label, values):
     return ps
 
 
-def diffuse_with_snapshots(cm, checkpoints):
+def diffuse_with_snapshots(climate_map, checkpoints):
     """Re-run _diffuse_moisture_iteratively's exact logic, but snapshot the
     concentration (max/median ratio and top-tile share) of RainfallMap at the
     given iteration checkpoints, to see how quickly/slowly it accumulates.
@@ -76,31 +76,31 @@ def diffuse_with_snapshots(cm, checkpoints):
     hundreds of iterations (long transport horizon draining the whole map into
     a few sink cells)?
     """
-    mc_ = cm.mc
-    max_iterations = mc_.rainfallMaxTransportDistance
-    min_moisture_threshold = mc_.rainfallMinimumPrecipitation * 0.01
+    mc_ = climate_map.map_config
+    max_iterations = mc_.rainfall_max_transport_distance
+    min_moisture_threshold = mc_.rainfall_minimum_precipitation * 0.01
 
-    base_temp = cm.rainfallConvectiveBaseTemp
-    max_temp = cm.rainfallConvectiveMaxTemp
+    base_temp = climate_map.rainfall_convective_base_temp
+    max_temp = climate_map.rainfall_convective_max_temp
     temp_range = (max_temp - base_temp) if max_temp > base_temp else 1.0
-    decline_rate = mc_.rainfallConvectiveDeclineRate
-    min_factor = mc_.rainfallConvectiveMinFactor
-    min_precip = mc_.rainfallMinimumPrecipitation
+    decline_rate = mc_.rainfall_convective_decline_rate
+    min_factor = mc_.rainfall_convective_min_factor
+    min_precip = mc_.rainfall_minimum_precipitation
 
     snapshots = {}
     last_iteration = 0
     for iteration in xrange(max_iterations):
-        new_moisture_grid = [0.0] * mc_.iNumPlots
+        new_moisture_grid = [0.0] * mc_.num_plots
         total_transported = 0.0
 
-        for i in xrange(mc_.iNumPlots):
-            current_moisture = cm._moisture_grid[i]
+        for i in xrange(mc_.num_plots):
+            current_moisture = climate_map._moisture_grid[i]
             if current_moisture <= min_moisture_threshold:
-                cm.RainfallMap[i] += current_moisture
+                climate_map.rainfall_map[i] += current_moisture
                 continue
 
-            temp_celsius = cm.TemperatureMap[i]
-            conv_rate = cm._convective_rates[i]
+            temp_celsius = climate_map.temperature_map[i]
+            conv_rate = climate_map._convective_rates[i]
             if temp_celsius <= base_temp:
                 base_precip = 0.0
             elif temp_celsius <= max_temp:
@@ -114,13 +114,13 @@ def diffuse_with_snapshots(cm, checkpoints):
 
             local_precipitation = max(base_precip, min_precip)
             if local_precipitation >= current_moisture:
-                cm.RainfallMap[i] += current_moisture
+                climate_map.rainfall_map[i] += current_moisture
                 continue
 
-            cm.RainfallMap[i] += local_precipitation
+            climate_map.rainfall_map[i] += local_precipitation
             remaining_moisture = current_moisture - local_precipitation
 
-            transport_data = cm._transport_weights[i]
+            transport_data = climate_map._transport_weights[i]
             if not transport_data:
                 continue
 
@@ -128,28 +128,28 @@ def diffuse_with_snapshots(cm, checkpoints):
                 transported_amount = remaining_moisture * transport_weight
                 transport_precipitation = transported_amount * precip_factor
                 if transport_precipitation < transported_amount:
-                    cm.RainfallMap[i] += transport_precipitation
+                    climate_map.rainfall_map[i] += transport_precipitation
                     final_transported = transported_amount - transport_precipitation
                     new_moisture_grid[neighbour_id] += final_transported
                     total_transported += final_transported
                 else:
-                    cm.RainfallMap[i] += transported_amount
+                    climate_map.rainfall_map[i] += transported_amount
 
-        cm._moisture_grid = new_moisture_grid
+        climate_map._moisture_grid = new_moisture_grid
         last_iteration = iteration + 1
 
         if (last_iteration in checkpoints) or (
-            total_transported < min_moisture_threshold * mc_.iNumPlots
+            total_transported < min_moisture_threshold * mc_.num_plots
         ):
-            rain_sorted = sorted(cm.RainfallMap, reverse=True)
-            total_rain = sum(cm.RainfallMap)
+            rain_sorted = sorted(climate_map.rainfall_map, reverse=True)
+            total_rain = sum(climate_map.rainfall_map)
             top1_share = (rain_sorted[0] / total_rain) if total_rain > 0 else 0.0
             top10_share = (
                 (sum(rain_sorted[:10]) / total_rain) if total_rain > 0 else 0.0
             )
             snapshots[last_iteration] = (total_transported, top1_share, top10_share)
 
-        if total_transported < min_moisture_threshold * mc_.iNumPlots:
+        if total_transported < min_moisture_threshold * mc_.num_plots:
             break
 
     print("\nDiffusion ran %d iterations (cap: %d)" % (last_iteration, max_iterations))
@@ -165,7 +165,7 @@ def diffuse_with_snapshots(cm, checkpoints):
         )
 
 
-def top_n_locations(mc, em, cm, values, n=10):
+def top_n_locations(map_config, elevation_map, climate_map, values, n=10):
     indexed = sorted(xrange(len(values)), key=lambda i: values[i], reverse=True)[:n]
     print(
         "%6s %6s %6s %10s %10s %10s %10s %8s"
@@ -176,11 +176,11 @@ def top_n_locations(mc, em, cm, values, n=10):
         for name in ("PLOT_OCEAN", "PLOT_LAND", "PLOT_HILLS", "PLOT_PEAK")
     }
     for rank, i in enumerate(indexed):
-        x = i % mc.iNumPlotsX
-        y = i // mc.iNumPlotsX
+        x = i % map_config.num_plots_x
+        y = i // map_config.num_plots_x
         thickness = (
-            cm._thickness_field_debug[i]
-            if hasattr(cm, "_thickness_field_debug")
+            climate_map._thickness_field_debug[i]
+            if hasattr(climate_map, "_thickness_field_debug")
             else float("nan")
         )
         print(
@@ -190,10 +190,10 @@ def top_n_locations(mc, em, cm, values, n=10):
                 x,
                 y,
                 values[i],
-                em.aboveSeaLevelMap[i],
-                cm.TemperatureMap[i],
+                elevation_map.above_sea_level_map[i],
+                climate_map.temperature_map[i],
                 thickness,
-                plot_names.get(em.plotTypes[i], "?"),
+                plot_names.get(elevation_map.plot_types[i], "?"),
             )
         )
 
@@ -220,36 +220,38 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
 
-    gc = CyGlobalContext()
-    mapCtx = gc.getMap()
-    mc = MapConfig(gc, mapCtx)
-    em = ElevationMap(mc)
-    em.GenerateElevationMap()
+    game_context = CyGlobalContext()
+    map_ctx = game_context.getMap()
+    map_config = MapConfig(game_context, map_ctx)
+    elevation_map = ElevationMap(map_config)
+    elevation_map.generate_elevation_map()
 
-    cm = ClimateMap(mc, em)
-    cm.GenerateTemperatureMap()
+    climate_map = ClimateMap(map_config, elevation_map)
+    climate_map.generate_temperature_map()
 
     # Replicate _generate_wind_patterns but keep the intermediate thickness
     # field and topographic forcing term instead of discarding them.
-    thickness_field = cm._calculate_thickness_field()
-    cm._thickness_field_debug = thickness_field
-    meridional_forcing = cm._calculate_meridional_forcing()
-    cm._precalculate_pressure_gradient_winds()
-    streamfunction = cm._solve_qg_streamfunction(thickness_field, meridional_forcing)
-    cm.streamfunction = streamfunction
-    cm._finalize_wind_extraction(streamfunction)
+    thickness_field = climate_map._calculate_thickness_field()
+    climate_map._thickness_field_debug = thickness_field
+    meridional_forcing = climate_map._calculate_meridional_forcing()
+    climate_map._precalculate_pressure_gradient_winds()
+    streamfunction = climate_map._solve_qg_streamfunction(
+        thickness_field, meridional_forcing
+    )
+    climate_map.streamfunction = streamfunction
+    climate_map._finalize_wind_extraction(streamfunction)
 
-    print("Map size: %d x %d" % (mc.iNumPlotsX, mc.iNumPlotsY))
-    peak_count = sum(1 for p in em.plotTypes if p == PlotTypes.PLOT_PEAK)
-    print("Peak tiles: %d / %d" % (peak_count, mc.iNumPlots))
+    print("Map size: %d x %d" % (map_config.num_plots_x, map_config.num_plots_y))
+    peak_count = sum(1 for p in elevation_map.plot_types if p == PlotTypes.PLOT_PEAK)
+    print("Peak tiles: %d / %d" % (peak_count, map_config.num_plots))
 
     describe("thickness_field (m)", thickness_field)
     floor_count = sum(1 for h in thickness_field if h <= 1.0)
     print("Tiles at/near the 0.1 floor (<=1.0 m): %d" % floor_count)
 
     topo_forcing = []
-    coriolis_f0 = mc.qgCoriolisF0
-    mean_layer_depth = mc.qgMeanLayerDepth
+    coriolis_f0 = map_config.qg_coriolis_f0
+    mean_layer_depth = map_config.qg_mean_layer_depth
     for h in thickness_field:
         h_anomaly = mean_layer_depth - h
         topo_forcing.append(abs(coriolis_f0 * h_anomaly / h) if h > 0 else 0.0)
@@ -260,24 +262,24 @@ def main():
     print(
         "\nGenerating rest of rainfall pipeline (wind speeds, moisture, precipitation)..."
     )
-    cm._precalculate_transport_data()
-    describe("WindSpeeds (m/s)", cm.WindSpeeds)
+    climate_map._precalculate_transport_data()
+    describe("WindSpeeds (m/s)", climate_map.wind_speeds)
 
-    cm._set_dynamic_temperature_thresholds()
-    cm._initialize_moisture_grid()
-    moisture_snapshot = list(cm._moisture_grid)
+    climate_map._set_dynamic_temperature_thresholds()
+    climate_map._initialize_moisture_grid()
+    moisture_snapshot = list(climate_map._moisture_grid)
     describe("moisture grid, normalized by max (0-1)", moisture_snapshot)
 
     diffuse_with_snapshots(
-        cm, checkpoints=set([1, 2, 5, 10, 20, 50, 100, 200, 500, 1000])
+        climate_map, checkpoints=set([1, 2, 5, 10, 20, 50, 100, 200, 500, 1000])
     )
-    cm._finalize_rainfall_map()
-    describe("final RainfallMap, normalized by max (0-1)", cm.RainfallMap)
+    climate_map._finalize_rainfall_map()
+    describe("final RainfallMap, normalized by max (0-1)", climate_map.rainfall_map)
 
     land_rainfall = [
-        cm.RainfallMap[i]
-        for i in xrange(mc.iNumPlots)
-        if em.plotTypes[i] != PlotTypes.PLOT_OCEAN
+        climate_map.rainfall_map[i]
+        for i in xrange(map_config.num_plots)
+        if elevation_map.plot_types[i] != PlotTypes.PLOT_OCEAN
     ]
     negligible = sum(1 for v in land_rainfall if v < 0.01)
     print(
@@ -286,17 +288,19 @@ def main():
     )
 
     print("\nTop 10 tiles by WindSpeed:")
-    top_n_locations(mc, em, cm, cm.WindSpeeds)
+    top_n_locations(map_config, elevation_map, climate_map, climate_map.wind_speeds)
 
     print("\nTop 10 tiles by final RainfallMap:")
-    top_n_locations(mc, em, cm, cm.RainfallMap)
+    top_n_locations(map_config, elevation_map, climate_map, climate_map.rainfall_map)
 
-    valid = xrange(mc.iNumPlots)
+    valid = xrange(map_config.num_plots)
     corr_thickness_wind = pearson_corr(
         [1.0 / max(thickness_field[i], 0.1) for i in valid],
-        [cm.WindSpeeds[i] for i in valid],
+        [climate_map.wind_speeds[i] for i in valid],
     )
-    corr_wind_rain = pearson_corr(list(cm.WindSpeeds), list(cm.RainfallMap))
+    corr_wind_rain = pearson_corr(
+        list(climate_map.wind_speeds), list(climate_map.rainfall_map)
+    )
     print(
         "\nCorrelation(1/thickness, WindSpeed) = %.4f  (positive => thin-column tiles drive wind spikes)"
         % corr_thickness_wind
@@ -310,17 +314,19 @@ def main():
         import matplotlib.pyplot as plt
         import numpy as np
 
-        shape = (mc.iNumPlotsY, mc.iNumPlotsX)
+        shape = (map_config.num_plots_y, map_config.num_plots_x)
 
         # Panel A reproduces run_planetsim.py's rainfall plot exactly
         # (fixed clim=(0.0, 1.0)) to check whether that visualization choice,
         # rather than the underlying field, is what produces the "1-2 wet
         # tiles" appearance.
-        rain_arr = np.array(cm.RainfallMap).reshape(shape)
-        p99 = sorted(cm.RainfallMap)[int(0.99 * (len(cm.RainfallMap) - 1))]
+        rain_arr = np.array(climate_map.rainfall_map).reshape(shape)
+        p99 = sorted(climate_map.rainfall_map)[
+            int(0.99 * (len(climate_map.rainfall_map) - 1))
+        ]
 
-        cm._calculate_percentiles()
-        rain_pct_arr = np.array(cm.rainfall_percentiles).reshape(shape)
+        climate_map._calculate_percentiles()
+        rain_pct_arr = np.array(climate_map.rainfall_percentiles).reshape(shape)
 
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         im0 = axes[0].imshow(rain_arr, origin="lower", cmap="Blues", vmin=0.0, vmax=1.0)

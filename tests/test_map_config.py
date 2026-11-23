@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import math
 import random
 import unittest
@@ -8,13 +9,13 @@ from PlanetSim import MapConfig
 
 def make_map_config(width=4, height=3, wrap_x=False, wrap_y=False):
     map_config = object.__new__(MapConfig)
-    map_config.iNumPlotsX = width
-    map_config.iNumPlotsY = height
-    map_config.iNumPlots = width * height
-    map_config.wrapX = wrap_x
-    map_config.wrapY = wrap_y
-    map_config.topLatitude = 70.0
-    map_config.bottomLatitude = -70.0
+    map_config.num_plots_x = width
+    map_config.num_plots_y = height
+    map_config.num_plots = width * height
+    map_config.wrap_x = wrap_x
+    map_config.wrap_y = wrap_y
+    map_config.top_latitude = 70.0
+    map_config.bottom_latitude = -70.0
     map_config._precalculate_neighbours()
     return map_config
 
@@ -34,7 +35,7 @@ class MapConfigUtilityTests(unittest.TestCase):
         map_config._initialize_starting_parameters()
 
         self.assertEqual([0, 2, 0], map_config.custom_map_options)
-        self.assertFalse(map_config.enablePangaeaBreaker)
+        self.assertFalse(map_config.enable_pangaea_breaker)
         self.assertEqual(1.25, map_config.resource_quantity_multiplier)
         self.assertEqual(0.0, map_config.starting_civilization_weight_multiplier)
 
@@ -42,7 +43,7 @@ class MapConfigUtilityTests(unittest.TestCase):
         map_config._initialize_custom_options()
 
         self.assertEqual([1, 1, 1], map_config.custom_map_options)
-        self.assertTrue(map_config.enablePangaeaBreaker)
+        self.assertTrue(map_config.enable_pangaea_breaker)
         self.assertEqual(1.0, map_config.resource_quantity_multiplier)
 
     def test_custom_map_options_default_when_map_api_is_unavailable(self):
@@ -54,18 +55,20 @@ class MapConfigUtilityTests(unittest.TestCase):
         map_config._initialize_custom_options()
 
         self.assertEqual([1, 1, 1], map_config.custom_map_options)
-        self.assertTrue(map_config.enablePangaeaBreaker)
+        self.assertTrue(map_config.enable_pangaea_breaker)
         self.assertEqual(1.0, map_config.resource_quantity_multiplier)
 
     def test_coordinate_index_round_trip(self):
         map_config = make_map_config()
 
-        for tile_index in range(map_config.iNumPlots):
+        for tile_index in range(map_config.num_plots):
             x, y = map_config.get_coords_from_index(tile_index)
             self.assertEqual(tile_index, map_config.get_index_from_coords(x, y))
 
         self.assertEqual(-1, map_config.get_index_from_coords(-1, 0))
-        self.assertEqual(-1, map_config.get_index_from_coords(0, map_config.iNumPlotsY))
+        self.assertEqual(
+            -1, map_config.get_index_from_coords(0, map_config.num_plots_y)
+        )
 
     def test_neighbours_respect_unwrapped_edges(self):
         map_config = make_map_config()
@@ -137,18 +140,18 @@ class MapConfigUtilityTests(unittest.TestCase):
 
     def test_gaussian_blur_preserves_constant_fields_and_filtered_cells(self):
         map_config = make_map_config(width=5, height=5)
-        constant = [7.0] * map_config.iNumPlots
+        constant = [7.0] * map_config.num_plots
 
         self.assertEqual(constant, map_config.gaussian_blur(constant, radius=2))
 
-        values = list(range(map_config.iNumPlots))
+        values = list(range(map_config.num_plots))
         center = 12
         blurred = map_config.gaussian_blur(
             values, radius=1, filter_func=lambda tile_index: tile_index != center
         )
 
         self.assertEqual(values[center], blurred[center])
-        self.assertEqual(map_config.iNumPlots, len(blurred))
+        self.assertEqual(map_config.num_plots, len(blurred))
 
     def test_perlin_noise_is_repeatable_for_a_fixed_seed(self):
         random_state = random.getstate()
@@ -165,14 +168,14 @@ class MapConfigUtilityTests(unittest.TestCase):
             random.setstate(random_state)
 
     def test_xml_reverse_lookups_match_loaded_constraints(self):
-        gc = PlanetSim.CyGlobalContext()
-        map_config = MapConfig(gc, gc.getMap())
+        game_context = PlanetSim.CyGlobalContext()
+        map_config = MapConfig(game_context, game_context.getMap())
 
         self.assertTrue(map_config.terrain_constraints)
         self.assertTrue(map_config.feature_constraints)
         self.assertTrue(map_config.bonus_constraints)
-        aluminum_id = gc.getInfoTypeForString("BONUS_ALUMINUM")
-        aluminum_info = gc.getBonusInfo(aluminum_id)
+        aluminum_id = game_context.getInfoTypeForString("BONUS_ALUMINUM")
+        aluminum_info = game_context.getBonusInfo(aluminum_id)
         self.assertEqual(
             [10, 10, 0, 0],
             [
@@ -191,7 +194,7 @@ class MapConfigUtilityTests(unittest.TestCase):
                 data["type_string"], map_config.get_feature_string_from_id(info_id)
             )
         for info_id, data in map_config.bonus_constraints.items():
-            bonus_info = gc.getBonusInfo(info_id)
+            bonus_info = game_context.getBonusInfo(info_id)
             self.assertEqual(data["iRandApp1"], bonus_info.getRandAppearance1())
             self.assertEqual(data["iRandApp2"], bonus_info.getRandAppearance2())
             self.assertEqual(data["iRandApp3"], bonus_info.getRandAppearance3())

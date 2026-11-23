@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import os
 import sys
 import unittest
@@ -34,7 +35,7 @@ class FakeTerrain(object):
     resource_map = [-1, 4, -1]
     river_side_map = None
 
-    def PlaceResources(self, river_side_map=None):
+    def place_resources(self, river_side_map=None):
         self.river_side_map = river_side_map
 
 
@@ -47,13 +48,13 @@ class FakePythonMgr(object):
 
 class ResourceTests(unittest.TestCase):
     def make_terrain_map(self, width=5, height=5):
-        gc = PlanetSim.CyGlobalContext()
-        map_config = MapConfig(gc, gc.getMap())
-        map_config.iNumPlotsX = width
-        map_config.iNumPlotsY = height
-        map_config.iNumPlots = width * height
+        game_context = PlanetSim.CyGlobalContext()
+        map_config = MapConfig(game_context, game_context.getMap())
+        map_config.num_plots_x = width
+        map_config.num_plots_y = height
+        map_config.num_plots = width * height
         map_config.neighbours = []
-        for tile_index in range(map_config.iNumPlots):
+        for tile_index in range(map_config.num_plots):
             x = tile_index % width
             y = tile_index // width
             row = [-1] * 9
@@ -74,62 +75,62 @@ class ResourceTests(unittest.TestCase):
             map_config.neighbours.append(row)
 
         terrain_map = object.__new__(TerrainMap)
-        terrain_map.gc = gc
-        terrain_map.mc = map_config
-        terrain_map.em = type(
+        terrain_map.game_context = game_context
+        terrain_map.map_config = map_config
+        terrain_map.elevation_map = type(
             "Elevation",
             (),
             {
-                "plotTypes": [PlotTypes.PLOT_LAND] * map_config.iNumPlots,
-                "aboveSeaLevelMap": [0.0] * map_config.iNumPlots,
+                "plot_types": [PlotTypes.PLOT_LAND] * map_config.num_plots,
+                "above_sea_level_map": [0.0] * map_config.num_plots,
             },
         )()
-        terrain_map.cm = type("Climate", (), {})()
+        terrain_map.climate_map = type("Climate", (), {})()
         terrain_map.terrain_map = [
-            gc.getInfoTypeForString("TERRAIN_GRASS")
-        ] * map_config.iNumPlots
-        terrain_map.feature_map = [-1] * map_config.iNumPlots
-        terrain_map.resource_map = [BonusTypes.NO_BONUS] * map_config.iNumPlots
+            game_context.getInfoTypeForString("TERRAIN_GRASS")
+        ] * map_config.num_plots
+        terrain_map.feature_map = [-1] * map_config.num_plots
+        terrain_map.resource_map = [BonusTypes.NO_BONUS] * map_config.num_plots
         terrain_map.resource_targets = {}
-        terrain_map.isPotentialCityWork = [True] * map_config.iNumPlots
-        terrain_map.bonusAreaID = [-1] * map_config.iNumPlots
-        terrain_map.bonusAreaSizes = {}
+        terrain_map.is_potential_city_work = [True] * map_config.num_plots
+        terrain_map.bonus_area_id = [-1] * map_config.num_plots
+        terrain_map.bonus_area_sizes = {}
         map_config.feature_map = terrain_map.feature_map
         map_config.resource_map = terrain_map.resource_map
-        map_config.river_adjacency_map = [False] * map_config.iNumPlots
-        map_config.coast_adjacency_map = [False] * map_config.iNumPlots
+        map_config.river_adjacency_map = [False] * map_config.num_plots
+        map_config.coast_adjacency_map = [False] * map_config.num_plots
         terrain_map.placed_resources = {}
         terrain_map.placed_by_class = {}
         terrain_map.resource_exclusion_zones = {}
         terrain_map.resource_definitions = {}
         terrain_map.bonus_constraints = {}
-        terrain_map.scoring_factors = {"elevation": [0.0] * map_config.iNumPlots}
+        terrain_map.scoring_factors = {"elevation": [0.0] * map_config.num_plots}
         return terrain_map
 
     def test_bonus_area_ids_separate_land_and_water_components(self):
         terrain_map = self.make_terrain_map(width=3, height=3)
-        terrain_map.em.plotTypes[4] = PlotTypes.PLOT_OCEAN
-        terrain_map.em.plotTypes[0] = PlotTypes.PLOT_PEAK
+        terrain_map.elevation_map.plot_types[4] = PlotTypes.PLOT_OCEAN
+        terrain_map.elevation_map.plot_types[0] = PlotTypes.PLOT_PEAK
 
         terrain_map._calculate_bonus_area_ids()
 
-        land_area_id = terrain_map.bonusAreaID[0]
-        water_area_id = terrain_map.bonusAreaID[4]
+        land_area_id = terrain_map.bonus_area_id[0]
+        water_area_id = terrain_map.bonus_area_id[4]
         self.assertNotEqual(land_area_id, water_area_id)
-        self.assertEqual(8, terrain_map.bonusAreaSizes[land_area_id])
-        self.assertEqual(1, terrain_map.bonusAreaSizes[water_area_id])
+        self.assertEqual(8, terrain_map.bonus_area_sizes[land_area_id])
+        self.assertEqual(1, terrain_map.bonus_area_sizes[water_area_id])
 
     def test_min_area_size_uses_candidate_area_for_mixed_terrain_bonus(self):
         terrain_map = self.make_terrain_map(width=3, height=3)
-        terrain_map.em.plotTypes[4] = PlotTypes.PLOT_OCEAN
+        terrain_map.elevation_map.plot_types[4] = PlotTypes.PLOT_OCEAN
         terrain_map._calculate_bonus_area_ids()
-        terrain_map.isPotentialCityWork = [True] * terrain_map.mc.iNumPlots
-        terrain_map.mc.is_adjacent_to_river = lambda tile_index: False
-        terrain_map.mc.get_latitude_for_y = lambda tile_y: 0
+        terrain_map.is_potential_city_work = [True] * terrain_map.map_config.num_plots
+        terrain_map.map_config.is_adjacent_to_river = lambda tile_index: False
+        terrain_map.map_config.get_latitude_for_y = lambda tile_y: 0
 
-        grass_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
-        ocean_id = terrain_map.gc.getInfoTypeForString("TERRAIN_OCEAN")
-        terrain_map.terrain_map = [grass_id] * terrain_map.mc.iNumPlots
+        grass_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
+        ocean_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_OCEAN")
+        terrain_map.terrain_map = [grass_id] * terrain_map.map_config.num_plots
         terrain_map.terrain_map[4] = ocean_id
         resource_def = {
             "base_resource": "BONUS_MARBLE",
@@ -149,11 +150,11 @@ class ResourceTests(unittest.TestCase):
         self.assertTrue(terrain_map._can_have_bonus(0, resource_def))
 
     def build_river_adjacency_map(self, terrain_map, river_segments):
-        terrain_map.cm.mc = terrain_map.mc
-        terrain_map.cm.river_map = river_segments
-        terrain_map.isPotentialCityWork = [False] * terrain_map.mc.iNumPlots
+        terrain_map.climate_map.map_config = terrain_map.map_config
+        terrain_map.climate_map.river_map = river_segments
+        terrain_map.is_potential_city_work = [False] * terrain_map.map_config.num_plots
         terrain_map._precalculate_adjacency_maps()
-        return terrain_map.mc.river_adjacency_map
+        return terrain_map.map_config.river_adjacency_map
 
     def test_river_adjacency_matches_cardinal_river_edges(self):
         width = 5
@@ -197,14 +198,14 @@ class ResourceTests(unittest.TestCase):
         width = 5
         index = lambda tile_x, tile_y: tile_y * width + tile_x
         cases = (
-            ("wrapX", (index(4, 2), index(0, 2)), {index(0, 2), index(0, 1)}),
-            ("wrapY", (index(2, 4), index(2, 0)), {index(2, 4), index(3, 4)}),
+            ("wrap_x", (index(4, 2), index(0, 2)), {index(0, 2), index(0, 1)}),
+            ("wrap_y", (index(2, 4), index(2, 0)), {index(2, 4), index(3, 4)}),
         )
 
         for wrap_axis, segment, expected in cases:
             with self.subTest(wrap_axis=wrap_axis):
                 terrain_map = self.make_terrain_map(width=width, height=width)
-                setattr(terrain_map.mc, wrap_axis, True)
+                setattr(terrain_map.map_config, wrap_axis, True)
                 adjacency = self.build_river_adjacency_map(
                     terrain_map, [(segment[0], segment[1], 0, 1.0)]
                 )
@@ -220,27 +221,32 @@ class ResourceTests(unittest.TestCase):
     def test_feature_adjacency_reads_terrain_map_state(self):
         terrain_map = self.make_terrain_map()
         target = 12
-        adjacent = terrain_map.mc.neighbours[target][terrain_map.mc.N]
-        terrain_map.feature_map[adjacent] = terrain_map.gc.getInfoTypeForString(
-            "FEATURE_FOREST"
+        adjacent = terrain_map.map_config.neighbours[target][terrain_map.map_config.N]
+        terrain_map.feature_map[adjacent] = (
+            terrain_map.game_context.getInfoTypeForString("FEATURE_FOREST")
         )
 
-        self.assertTrue(terrain_map.mc.is_adjacent_to_feature(target, "FEATURE_FOREST"))
+        self.assertTrue(
+            terrain_map.map_config.is_adjacent_to_feature(target, "FEATURE_FOREST")
+        )
 
         terrain_map.feature_map[adjacent] = BonusTypes.NO_BONUS
         self.assertFalse(
-            terrain_map.mc.is_adjacent_to_feature(target, "FEATURE_FOREST")
+            terrain_map.map_config.is_adjacent_to_feature(target, "FEATURE_FOREST")
         )
 
     def test_hills_and_flatlands_flags_allow_only_enabled_plot_types(self):
         terrain_map = self.make_terrain_map(width=2, height=1)
-        terrain_map.em.plotTypes = [PlotTypes.PLOT_LAND, PlotTypes.PLOT_HILLS]
-        terrain_map.landAreaID = [0, 0]
-        terrain_map.landAreaSizes = {0: 2}
-        terrain_map.isPotentialCityWork = [True, True]
-        terrain_map.mc.is_adjacent_to_river = lambda tile_index: False
-        terrain_map.mc.get_latitude_for_y = lambda y: 0
-        grass_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
+        terrain_map.elevation_map.plot_types = [
+            PlotTypes.PLOT_LAND,
+            PlotTypes.PLOT_HILLS,
+        ]
+        terrain_map.land_area_id = [0, 0]
+        terrain_map.land_area_sizes = {0: 2}
+        terrain_map.is_potential_city_work = [True, True]
+        terrain_map.map_config.is_adjacent_to_river = lambda tile_index: False
+        terrain_map.map_config.get_latitude_for_y = lambda y: 0
+        grass_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
         terrain_map.terrain_map = [grass_id, grass_id]
         resource_def = {"base_resource": "BONUS_MARBLE"}
 
@@ -275,18 +281,18 @@ class ResourceTests(unittest.TestCase):
 
     def test_bonus_policy_enforces_peak_latitude_and_city_work_rules(self):
         terrain_map = self.make_terrain_map(width=3, height=1)
-        terrain_map.em.plotTypes = [
+        terrain_map.elevation_map.plot_types = [
             PlotTypes.PLOT_PEAK,
             PlotTypes.PLOT_LAND,
             PlotTypes.PLOT_OCEAN,
         ]
-        terrain_map.bonusAreaID = [0, 0, 1]
-        terrain_map.bonusAreaSizes = {0: 2, 1: 1}
-        terrain_map.isPotentialCityWork = [True, True, False]
-        terrain_map.mc.is_adjacent_to_river = lambda tile_index: False
-        terrain_map.mc.get_latitude_for_y = lambda tile_y: 30
-        grass_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
-        ocean_id = terrain_map.gc.getInfoTypeForString("TERRAIN_OCEAN")
+        terrain_map.bonus_area_id = [0, 0, 1]
+        terrain_map.bonus_area_sizes = {0: 2, 1: 1}
+        terrain_map.is_potential_city_work = [True, True, False]
+        terrain_map.map_config.is_adjacent_to_river = lambda tile_index: False
+        terrain_map.map_config.get_latitude_for_y = lambda tile_y: 30
+        grass_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
+        ocean_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_OCEAN")
         terrain_map.terrain_map = [grass_id, grass_id, ocean_id]
         resource_def = {
             "base_resource": "BONUS_MARBLE",
@@ -307,7 +313,7 @@ class ResourceTests(unittest.TestCase):
         self.assertTrue(terrain_map._can_have_bonus(0, resource_def))
         self.assertTrue(terrain_map._can_have_bonus(1, resource_def))
         self.assertFalse(terrain_map._can_have_bonus(2, resource_def))
-        terrain_map.isPotentialCityWork[2] = True
+        terrain_map.is_potential_city_work[2] = True
         self.assertTrue(terrain_map._can_have_bonus(2, resource_def))
 
         resource_def["xml_constraints"]["iMinLatitude"] = 31
@@ -319,11 +325,13 @@ class ResourceTests(unittest.TestCase):
     def test_river_conflict_removal_uses_river_map_without_legacy_arrays(self):
         terrain_map = self.make_terrain_map()
         climate_map = object.__new__(ClimateMap)
-        climate_map.mc = terrain_map.mc
-        climate_map.em = type("Elevation", (), {})()
-        climate_map.em.plotTypes = [PlotTypes.PLOT_OCEAN] * terrain_map.mc.iNumPlots
+        climate_map.map_config = terrain_map.map_config
+        climate_map.elevation_map = type("Elevation", (), {})()
+        climate_map.elevation_map.plot_types = [
+            PlotTypes.PLOT_OCEAN
+        ] * terrain_map.map_config.num_plots
         climate_map.river_map = [(0, 1, 7, 1.0)]
-        terrain_map.cm = climate_map
+        terrain_map.climate_map = climate_map
 
         ClimateMap.remove_river_lake_conflicts(climate_map)
 
@@ -332,18 +340,18 @@ class ResourceTests(unittest.TestCase):
     def test_add_bonuses_applies_resource_map_without_default_impl(self):
         plots = [FakePlot(), FakePlot(), FakePlot()]
         old_mgr = getattr(PlanetSim, "CyPythonMgr", None)
-        old_globals = (PlanetSim.mapCtx, PlanetSim.mc, PlanetSim.tm)
+        old_globals = (PlanetSim.map_ctx, PlanetSim.map_config, PlanetSim.terrain_map)
         manager = FakePythonMgr()
         terrain = FakeTerrain()
         try:
-            PlanetSim.mapCtx = FakeMap(plots)
-            PlanetSim.mc = type("Config", (), {"iNumPlots": 3})()
-            PlanetSim.tm = terrain
+            PlanetSim.map_ctx = FakeMap(plots)
+            PlanetSim.map_config = type("Config", (), {"num_plots": 3})()
+            PlanetSim.terrain_map = terrain
             PlanetSim.CyPythonMgr = lambda: manager
 
             PlanetSim.addBonuses()
         finally:
-            PlanetSim.mapCtx, PlanetSim.mc, PlanetSim.tm = old_globals
+            PlanetSim.map_ctx, PlanetSim.map_config, PlanetSim.terrain_map = old_globals
             if old_mgr is None:
                 del PlanetSim.CyPythonMgr
             else:
@@ -404,8 +412,8 @@ class ResourceTests(unittest.TestCase):
                 marble_id = terrain_map._get_bonus_id("BONUS_MARBLE")
                 terrain_map.resource_map[placed_tile] = marble_id
                 terrain_map.placed_resources["BONUS_MARBLE"] = [placed_tile]
-                terrain_map.bonusAreaID = [0] * terrain_map.mc.iNumPlots
-                terrain_map.bonusAreaID[placed_tile] = placed_area
+                terrain_map.bonus_area_id = [0] * terrain_map.map_config.num_plots
+                terrain_map.bonus_area_id[placed_tile] = placed_area
 
                 self.assertEqual(
                     expected,
@@ -443,8 +451,8 @@ class ResourceTests(unittest.TestCase):
                 iron_id = terrain_map._get_bonus_id("BONUS_IRON")
                 terrain_map.resource_map[13] = iron_id
                 terrain_map.placed_by_class = {placed_class: [13]}
-                terrain_map.bonusAreaID = [0] * terrain_map.mc.iNumPlots
-                terrain_map.bonusAreaID[13] = placed_area
+                terrain_map.bonus_area_id = [0] * terrain_map.map_config.num_plots
+                terrain_map.bonus_area_id[13] = placed_area
 
                 self.assertEqual(
                     expected,
@@ -492,8 +500,8 @@ class ResourceTests(unittest.TestCase):
         marble_id = terrain_map._get_bonus_id("BONUS_MARBLE")
         iron_id = terrain_map._get_bonus_id("BONUS_IRON")
         copper_id = terrain_map._get_bonus_id("BONUS_COPPER")
-        terrain_map.bonusAreaID = [0, 0, 1, 1, 0, 0, 1, 1]
-        terrain_map.bonusAreaSizes = {0: 12, 1: 3}
+        terrain_map.bonus_area_id = [0, 0, 1, 1, 0, 0, 1, 1]
+        terrain_map.bonus_area_sizes = {0: 12, 1: 3}
         terrain_map.resource_map[0] = iron_id
         terrain_map.resource_map[1] = copper_id
         terrain_map.bonus_constraints = {
@@ -525,7 +533,7 @@ class ResourceTests(unittest.TestCase):
         ]
         self.assertEqual(3, len(placed_tiles))
         self.assertTrue(
-            all(terrain_map.bonusAreaID[tile] == 1 for tile in placed_tiles)
+            all(terrain_map.bonus_area_id[tile] == 1 for tile in placed_tiles)
         )
         self.assertEqual(3, terrain_map.resource_targets["BONUS_MARBLE"])
 
@@ -554,7 +562,9 @@ class ResourceTests(unittest.TestCase):
 
     def test_player_target_count_uses_configured_player_count(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.mc = type("Config", (), {"iNumPlayers": 3, "iNumPlots": 25})()
+        terrain_map.map_config = type(
+            "Config", (), {"num_players": 3, "num_plots": 25}
+        )()
 
         self.assertEqual(
             6,
@@ -565,13 +575,13 @@ class ResourceTests(unittest.TestCase):
 
     def test_elevation_range_accepts_inclusive_normalized_values_only(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.em.aboveSeaLevelMap[0] = 0.25
+        terrain_map.elevation_map.above_sea_level_map[0] = 0.25
         rule = {"condition": "elevation_range", "elevation_range": (0.25, 0.75)}
         self.assertEqual(1.0, terrain_map._evaluate_placement_rule(0, rule))
 
-        terrain_map.em.aboveSeaLevelMap[0] = 0.75
+        terrain_map.elevation_map.above_sea_level_map[0] = 0.75
         self.assertEqual(1.0, terrain_map._evaluate_placement_rule(0, rule))
-        terrain_map.em.aboveSeaLevelMap[0] = 0.7501
+        terrain_map.elevation_map.above_sea_level_map[0] = 0.7501
         self.assertEqual(0.0, terrain_map._evaluate_placement_rule(0, rule))
 
     def test_biome_filter_is_a_soft_placement_preference(self):
@@ -594,22 +604,22 @@ class ResourceTests(unittest.TestCase):
     def test_active_resource_path_maps_no_bonus_and_valid_bonus_ids(self):
         plots = [FakePlot(), FakePlot()]
         old_mgr = getattr(PlanetSim, "CyPythonMgr", None)
-        old_globals = (PlanetSim.mapCtx, PlanetSim.mc, PlanetSim.tm)
+        old_globals = (PlanetSim.map_ctx, PlanetSim.map_config, PlanetSim.terrain_map)
         try:
-            PlanetSim.mapCtx = FakeMap(plots)
-            PlanetSim.mc = type("Config", (), {"iNumPlots": 2})()
-            PlanetSim.tm = type(
+            PlanetSim.map_ctx = FakeMap(plots)
+            PlanetSim.map_config = type("Config", (), {"num_plots": 2})()
+            PlanetSim.terrain_map = type(
                 "Terrain",
                 (),
                 {
                     "resource_map": [-1, 19],
-                    "PlaceResources": lambda self, river_side_map=None: None,
+                    "place_resources": lambda self, river_side_map=None: None,
                 },
             )()
             PlanetSim.CyPythonMgr = lambda: FakePythonMgr()
             PlanetSim.addBonuses()
         finally:
-            PlanetSim.mapCtx, PlanetSim.mc, PlanetSim.tm = old_globals
+            PlanetSim.map_ctx, PlanetSim.map_config, PlanetSim.terrain_map = old_globals
             if old_mgr is None:
                 del PlanetSim.CyPythonMgr
             else:
@@ -620,11 +630,11 @@ class ResourceTests(unittest.TestCase):
 
     def test_feature_gated_bonus_requires_matching_feature_and_terrain(self):
         terrain_map = self.make_terrain_map(width=2, height=2)
-        terrain_map.terrain_map = [-1] * terrain_map.mc.iNumPlots
-        terrain_map.feature_map = [-1] * terrain_map.mc.iNumPlots
+        terrain_map.terrain_map = [-1] * terrain_map.map_config.num_plots
+        terrain_map.feature_map = [-1] * terrain_map.map_config.num_plots
         bonus_id = terrain_map._get_bonus_id("BONUS_WHEAT")
-        feature_id = terrain_map.gc.getInfoTypeForString("FEATURE_FOREST")
-        terrain_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
+        feature_id = terrain_map.game_context.getInfoTypeForString("FEATURE_FOREST")
+        terrain_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
         terrain_map.bonus_constraints = {
             bonus_id: {
                 "TerrainBooleans": [],
@@ -647,7 +657,7 @@ class ResourceTests(unittest.TestCase):
 
     def test_target_quantity_uses_candidate_tiles_for_tiles_per(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
-        terrain_map.mc.iNumPlots = 25
+        terrain_map.map_config.num_plots = 25
         terrain_map._can_have_bonus = lambda tile_index, resource_def: tile_index in (
             0,
             1,
@@ -667,11 +677,11 @@ class ResourceTests(unittest.TestCase):
                 "TerrainBooleans": [],
                 "FeatureBooleans": [],
             },
-            terrain_map.mc.iNumPlots,
+            terrain_map.map_config.num_plots,
         )
 
         self.assertEqual(12, target)
-        self.assertLessEqual(target, terrain_map.mc.iNumPlots)
+        self.assertLessEqual(target, terrain_map.map_config.num_plots)
 
     def test_resource_abundance_option_scales_target_quantity(self):
         terrain_map = self.make_terrain_map(width=5, height=5)
@@ -688,7 +698,7 @@ class ResourceTests(unittest.TestCase):
         targets = []
         with mock.patch.object(PlanetSim.random, "randint", return_value=0):
             for multiplier in (0.75, 1.0, 1.25):
-                terrain_map.mc.resource_quantity_multiplier = multiplier
+                terrain_map.map_config.resource_quantity_multiplier = multiplier
                 targets.append(
                     terrain_map._calculate_num_bonuses_to_add(constraints, 25)
                 )
@@ -791,9 +801,11 @@ class ResourceTests(unittest.TestCase):
 
     def test_no_river_side_rejects_tile_adjacent_to_river(self):
         terrain_map = self.make_terrain_map(width=3, height=3)
-        terrain_map.mc.river_adjacency_map = [False] * terrain_map.mc.iNumPlots
+        terrain_map.map_config.river_adjacency_map = [
+            False
+        ] * terrain_map.map_config.num_plots
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
-        grass_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
+        grass_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
         terrain_map.bonus_constraints = {
             bonus_id: {
                 "bNoRiverSide": True,
@@ -809,15 +821,15 @@ class ResourceTests(unittest.TestCase):
         }
         target_tile = 4
 
-        terrain_map.mc.river_adjacency_map[target_tile] = True
+        terrain_map.map_config.river_adjacency_map[target_tile] = True
         self.assertFalse(terrain_map._can_have_bonus(target_tile, resource_def))
 
-        terrain_map.mc.river_adjacency_map[target_tile] = False
+        terrain_map.map_config.river_adjacency_map[target_tile] = False
         self.assertTrue(terrain_map._can_have_bonus(target_tile, resource_def))
 
         # Game river state takes precedence over the local adjacency map
-        terrain_map.mc.river_adjacency_map[target_tile] = True
-        terrain_map.river_side_map = [False] * terrain_map.mc.iNumPlots
+        terrain_map.map_config.river_adjacency_map[target_tile] = True
+        terrain_map.river_side_map = [False] * terrain_map.map_config.num_plots
         self.assertTrue(terrain_map._can_have_bonus(target_tile, resource_def))
 
         terrain_map.river_side_map[target_tile] = True
@@ -825,7 +837,7 @@ class ResourceTests(unittest.TestCase):
         terrain_map = self.make_terrain_map(width=3, height=3)
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
         other_bonus_id = terrain_map._get_bonus_id("BONUS_COPPER")
-        grass_id = terrain_map.gc.getInfoTypeForString("TERRAIN_GRASS")
+        grass_id = terrain_map.game_context.getInfoTypeForString("TERRAIN_GRASS")
         terrain_map.bonus_constraints = {
             bonus_id: {
                 "TerrainBooleans": [grass_id],
@@ -839,7 +851,9 @@ class ResourceTests(unittest.TestCase):
             "xml_constraints": terrain_map.bonus_constraints[bonus_id],
         }
         target_tile = 4
-        neighbour_tile = terrain_map.mc.neighbours[target_tile][terrain_map.mc.N]
+        neighbour_tile = terrain_map.map_config.neighbours[target_tile][
+            terrain_map.map_config.N
+        ]
 
         terrain_map.resource_map[neighbour_tile] = other_bonus_id
         self.assertTrue(terrain_map._can_have_bonus(target_tile, resource_def))
@@ -853,7 +867,7 @@ class ResourceTests(unittest.TestCase):
     def test_min_land_percent_checks_live_share_for_water_placements(self):
         terrain_map = self.make_terrain_map(width=5, height=1)
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
-        terrain_map.em.plotTypes = [
+        terrain_map.elevation_map.plot_types = [
             PlotTypes.PLOT_LAND,
             PlotTypes.PLOT_LAND,
             PlotTypes.PLOT_OCEAN,
@@ -879,7 +893,7 @@ class ResourceTests(unittest.TestCase):
         land_placed = [
             tile_index
             for tile_index in placed
-            if terrain_map.em.plotTypes[tile_index] != PlotTypes.PLOT_OCEAN
+            if terrain_map.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
         ]
         self.assertEqual(3, len(placed))
         self.assertEqual(2, len(land_placed))
@@ -887,7 +901,7 @@ class ResourceTests(unittest.TestCase):
     def test_min_land_percent_zero_and_100_match_engine_edges(self):
         terrain_map = self.make_terrain_map(width=3, height=1)
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
-        terrain_map.em.plotTypes = [
+        terrain_map.elevation_map.plot_types = [
             PlotTypes.PLOT_OCEAN,
             PlotTypes.PLOT_LAND,
             PlotTypes.PLOT_LAND,
@@ -913,7 +927,7 @@ class ResourceTests(unittest.TestCase):
     def test_min_land_percent_also_guards_cluster_placements(self):
         terrain_map = self.make_terrain_map(width=3, height=1)
         bonus_id = terrain_map._get_bonus_id("BONUS_MARBLE")
-        terrain_map.em.plotTypes = [
+        terrain_map.elevation_map.plot_types = [
             PlotTypes.PLOT_LAND,
             PlotTypes.PLOT_OCEAN,
             PlotTypes.PLOT_LAND,

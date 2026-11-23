@@ -7,24 +7,24 @@ from tests.test_map_config import make_map_config
 
 def make_climate_map(width=1, height=5, plot_types=None, elevations=None):
     map_config = make_map_config(width, height)
-    map_config.minimumTemp = -32.0
-    map_config.maximumTemp = 35.0
-    map_config.minSolarFactor = 0.1
-    map_config.solarHadleyCellEffects = -0.12
-    map_config.solarFifthOrder = 0.04
-    map_config.minWaterTempC = -2.0
-    map_config.maxWaterTempC = 29.0
-    map_config.tempLapse = 0.0065
-    count = map_config.iNumPlots
+    map_config.minimum_temp = -32.0
+    map_config.maximum_temp = 35.0
+    map_config.min_solar_factor = 0.1
+    map_config.solar_hadley_cell_effects = -0.12
+    map_config.solar_fifth_order = 0.04
+    map_config.min_water_temp_c = -2.0
+    map_config.max_water_temp_c = 29.0
+    map_config.temp_lapse = 0.0065
+    count = map_config.num_plots
     elevation_map = SimpleNamespace(
-        plotTypes=plot_types or [PlotTypes.PLOT_LAND] * count,
-        aboveSeaLevelMap=elevations or [0.0] * count,
+        plot_types=plot_types or [PlotTypes.PLOT_LAND] * count,
+        above_sea_level_map=elevations or [0.0] * count,
     )
     climate_map = object.__new__(ClimateMap)
-    climate_map.mc = map_config
-    climate_map.em = elevation_map
-    climate_map.TemperatureMap = [0.0] * count
-    climate_map.RainfallMap = [0.0] * count
+    climate_map.map_config = map_config
+    climate_map.elevation_map = elevation_map
+    climate_map.temperature_map = [0.0] * count
+    climate_map.rainfall_map = [0.0] * count
     return climate_map
 
 
@@ -34,9 +34,9 @@ class ClimateBehaviorTests(unittest.TestCase):
 
         climate_map._generate_base_temperature()
 
-        equator = climate_map.TemperatureMap[2]
-        self.assertGreater(equator, climate_map.TemperatureMap[0])
-        self.assertGreater(equator, climate_map.TemperatureMap[4])
+        equator = climate_map.temperature_map[2]
+        self.assertGreater(equator, climate_map.temperature_map[0])
+        self.assertGreater(equator, climate_map.temperature_map[4])
 
     def test_base_temperature_applies_elevation_lapse_on_same_latitude(self):
         climate_map = make_climate_map(
@@ -49,7 +49,7 @@ class ClimateBehaviorTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             6.5,
-            climate_map.TemperatureMap[0] - climate_map.TemperatureMap[1],
+            climate_map.temperature_map[0] - climate_map.temperature_map[1],
         )
 
     def test_ocean_current_forcing_has_zonal_latitude_bands(self):
@@ -58,9 +58,9 @@ class ClimateBehaviorTests(unittest.TestCase):
             height=5,
             plot_types=[PlotTypes.PLOT_OCEAN] * 5,
         )
-        climate_map.mc.get_latitude_for_y = lambda y: [-60, -30, 0, 30, 60][y]
-        climate_map.mc.latitudinalForcingStrength = 1.0
-        climate_map.mc.thermalGradientFactor = 0.0
+        climate_map.map_config.get_latitude_for_y = lambda y: [-60, -30, 0, 30, 60][y]
+        climate_map.map_config.latitudinal_forcing_strength = 1.0
+        climate_map.map_config.thermal_gradient_factor = 0.0
         climate_map._calculate_temperature_gradients = lambda tile_index: (0.0, 0.0)
 
         force_u, force_v = climate_map._generate_forcing_fields()
@@ -94,12 +94,12 @@ class ClimateBehaviorTests(unittest.TestCase):
                 PlotTypes.PLOT_LAND,
             ],
         )
-        climate_map.RainfallMap = [9.0, 0.0, 2.0, 4.0]
-        climate_map.mc.rainSmoothing = 0
+        climate_map.rainfall_map = [9.0, 0.0, 2.0, 4.0]
+        climate_map.map_config.rain_smoothing = 0
 
         climate_map._finalize_rainfall_map()
 
-        self.assertEqual([0.0, 0.0, 0.5, 1.0], climate_map.RainfallMap)
+        self.assertEqual([0.0, 0.0, 0.5, 1.0], climate_map.rainfall_map)
         self.assertEqual(4.0, climate_map.original_rainfall_max)
 
 

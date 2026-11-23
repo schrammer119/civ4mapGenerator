@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -35,22 +36,22 @@ class FakeMap:
 class CallbackTests(unittest.TestCase):
     def setUp(self):
         self.original_globals = (
-            PlanetSim.gc,
-            PlanetSim.mapCtx,
-            PlanetSim.mc,
-            PlanetSim.em,
-            PlanetSim.cm,
-            PlanetSim.tm,
+            PlanetSim.game_context,
+            PlanetSim.map_ctx,
+            PlanetSim.map_config,
+            PlanetSim.elevation_map,
+            PlanetSim.climate_map,
+            PlanetSim.terrain_map,
         )
 
     def tearDown(self):
         (
-            PlanetSim.gc,
-            PlanetSim.mapCtx,
-            PlanetSim.mc,
-            PlanetSim.em,
-            PlanetSim.cm,
-            PlanetSim.tm,
+            PlanetSim.game_context,
+            PlanetSim.map_ctx,
+            PlanetSim.map_config,
+            PlanetSim.elevation_map,
+            PlanetSim.climate_map,
+            PlanetSim.terrain_map,
         ) = self.original_globals
 
     def test_custom_map_option_callbacks_expose_schema_and_defaults(self):
@@ -73,12 +74,12 @@ class CallbackTests(unittest.TestCase):
         class FakeElevationMap:
             def __init__(self, map_config):
                 events.append("elevation_init")
-                self.plotTypes = expected_plot_types
+                self.plot_types = expected_plot_types
 
-            def GenerateElevationMap(self):
+            def generate_elevation_map(self):
                 events.append("elevation_generate")
 
-        PlanetSim.mc = object()
+        PlanetSim.map_config = object()
         with mock.patch.object(PlanetSim, "ElevationMap", FakeElevationMap):
             plot_types = PlanetSim.generatePlotTypes()
 
@@ -93,20 +94,20 @@ class CallbackTests(unittest.TestCase):
             def __init__(self, map_config, elevation_map):
                 events.append("climate_init")
 
-            def GenerateClimateMap(self):
+            def generate_climate_map(self):
                 events.append("climate_generate")
 
         class FakeTerrainMap:
-            def __init__(self, gc, map_config, elevation_map, climate_map):
+            def __init__(self, game_context, map_config, elevation_map, climate_map):
                 events.append("terrain_init")
                 self.terrain_map = expected_terrain
 
-            def GenerateTerrain(self):
+            def generate_terrain(self):
                 events.append("terrain_generate")
 
-        PlanetSim.gc = object()
-        PlanetSim.mc = object()
-        PlanetSim.em = object()
+        PlanetSim.game_context = object()
+        PlanetSim.map_config = object()
+        PlanetSim.elevation_map = object()
         with mock.patch.object(
             PlanetSim, "ClimateMap", FakeClimateMap
         ), mock.patch.object(PlanetSim, "TerrainMap", FakeTerrainMap):
@@ -120,12 +121,12 @@ class CallbackTests(unittest.TestCase):
 
     def test_add_rivers_maps_cardinal_flows_to_plot_edges(self):
         map_config = make_map_config(width=5, height=5)
-        game_map = FakeMap(map_config.iNumPlots)
-        PlanetSim.mc = map_config
-        PlanetSim.mapCtx = game_map
-        PlanetSim.em = SimpleNamespace(plotTypes=[0] * map_config.iNumPlots)
-        PlanetSim.engine_plot_types = [0] * map_config.iNumPlots
-        PlanetSim.cm = SimpleNamespace(
+        game_map = FakeMap(map_config.num_plots)
+        PlanetSim.map_config = map_config
+        PlanetSim.map_ctx = game_map
+        PlanetSim.elevation_map = SimpleNamespace(plot_types=[0] * map_config.num_plots)
+        PlanetSim.engine_plot_types = [0] * map_config.num_plots
+        PlanetSim.climate_map = SimpleNamespace(
             river_map=[
                 (11, 12, 1, 10.0),
                 (13, 12, 2, 9.0),
@@ -162,12 +163,12 @@ class CallbackTests(unittest.TestCase):
 
     def test_add_rivers_uses_wrapped_short_path(self):
         map_config = make_map_config(width=5, height=5, wrap_x=True)
-        game_map = FakeMap(map_config.iNumPlots)
-        PlanetSim.mc = map_config
-        PlanetSim.mapCtx = game_map
-        PlanetSim.em = SimpleNamespace(plotTypes=[0] * map_config.iNumPlots)
-        PlanetSim.engine_plot_types = [0] * map_config.iNumPlots
-        PlanetSim.cm = SimpleNamespace(river_map=[(14, 10, 6, 3.0)])
+        game_map = FakeMap(map_config.num_plots)
+        PlanetSim.map_config = map_config
+        PlanetSim.map_ctx = game_map
+        PlanetSim.elevation_map = SimpleNamespace(plot_types=[0] * map_config.num_plots)
+        PlanetSim.engine_plot_types = [0] * map_config.num_plots
+        PlanetSim.climate_map = SimpleNamespace(river_map=[(14, 10, 6, 3.0)])
 
         PlanetSim.addRivers()
 
@@ -180,9 +181,9 @@ class CallbackTests(unittest.TestCase):
         )
 
     def test_add_rivers_skips_when_generation_state_is_missing(self):
-        with mock.patch.object(PlanetSim, "mc", None), mock.patch.object(
-            PlanetSim, "cm", None
-        ), mock.patch.object(PlanetSim, "mapCtx", None), mock.patch(
+        with mock.patch.object(PlanetSim, "map_config", None), mock.patch.object(
+            PlanetSim, "climate_map", None
+        ), mock.patch.object(PlanetSim, "map_ctx", None), mock.patch(
             "builtins.print"
         ) as print_mock:
             PlanetSim.addRivers()
@@ -193,10 +194,10 @@ class CallbackTests(unittest.TestCase):
 
     def test_add_features_applies_feature_id_and_subtype(self):
         map_config = make_map_config(width=2, height=1)
-        game_map = FakeMap(map_config.iNumPlots)
-        PlanetSim.mc = map_config
-        PlanetSim.mapCtx = game_map
-        PlanetSim.tm = SimpleNamespace(
+        game_map = FakeMap(map_config.num_plots)
+        PlanetSim.map_config = map_config
+        PlanetSim.map_ctx = game_map
+        PlanetSim.terrain_map = SimpleNamespace(
             feature_map=[4, -1],
             feature_subtype_map=[2, -1],
         )
@@ -207,9 +208,9 @@ class CallbackTests(unittest.TestCase):
         self.assertEqual([("feature", -1, -1)], game_map.plots[1].calls)
 
     def test_add_features_skips_when_generation_state_is_missing(self):
-        with mock.patch.object(PlanetSim, "mapCtx", None), mock.patch.object(
-            PlanetSim, "mc", None
-        ), mock.patch.object(PlanetSim, "tm", None), mock.patch(
+        with mock.patch.object(PlanetSim, "map_ctx", None), mock.patch.object(
+            PlanetSim, "map_config", None
+        ), mock.patch.object(PlanetSim, "terrain_map", None), mock.patch(
             "builtins.print"
         ) as print_mock:
             PlanetSim.addFeatures()
@@ -223,12 +224,14 @@ class CallbackTests(unittest.TestCase):
         finder.assign_starting_plots.return_value = False
         python_manager = mock.Mock()
         with mock.patch("builtins.print") as print_mock:
-            with mock.patch.object(PlanetSim, "gc", object()), mock.patch.object(
-                PlanetSim, "mc", object()
-            ), mock.patch.object(PlanetSim, "em", object()), mock.patch.object(
-                PlanetSim, "tm", object()
+            with mock.patch.object(
+                PlanetSim, "game_context", object()
+            ), mock.patch.object(PlanetSim, "map_config", object()), mock.patch.object(
+                PlanetSim, "elevation_map", object()
             ), mock.patch.object(
-                PlanetSim, "mapCtx", object()
+                PlanetSim, "terrain_map", object()
+            ), mock.patch.object(
+                PlanetSim, "map_ctx", object()
             ), mock.patch.object(
                 PlanetSim, "StartingPlotFinder", return_value=finder
             ) as finder_factory, mock.patch.object(
@@ -246,12 +249,12 @@ class CallbackTests(unittest.TestCase):
     def test_assign_starting_plots_logs_when_generation_state_is_missing(self):
         python_manager = mock.Mock()
         with mock.patch("builtins.print") as print_mock:
-            with mock.patch.object(PlanetSim, "gc", None), mock.patch.object(
-                PlanetSim, "mc", None
-            ), mock.patch.object(PlanetSim, "em", None), mock.patch.object(
-                PlanetSim, "tm", None
+            with mock.patch.object(PlanetSim, "game_context", None), mock.patch.object(
+                PlanetSim, "map_config", None
+            ), mock.patch.object(PlanetSim, "elevation_map", None), mock.patch.object(
+                PlanetSim, "terrain_map", None
             ), mock.patch.object(
-                PlanetSim, "mapCtx", None
+                PlanetSim, "map_ctx", None
             ), mock.patch.object(
                 PlanetSim, "CyPythonMgr", return_value=python_manager
             ):
