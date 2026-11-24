@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from PlanetSim import PlotTypes, TerrainMap
+from PlanetSim import FeatureMap, PlotTypes, TerrainMap
 
 
 class FeaturePlacementTests(unittest.TestCase):
@@ -20,11 +20,19 @@ class FeaturePlacementTests(unittest.TestCase):
             is_adjacent_to_river=lambda tile_index: tile_index == 2,
             is_adjacent_to_feature=lambda tile_index, feature_type: False,
         )
+        features = object.__new__(FeatureMap)
+        features.terrain = terrain_map
+        features.game_context = terrain_map.game_context
+        features.feature_constraints = terrain_map.feature_constraints
+        features.elevation_map = terrain_map.elevation_map
+        features.map_config = terrain_map.map_config
+        features.feature_map = [-1] * 3
+        terrain_map.features = features
         return terrain_map
 
     def test_xml_feature_rules_enforce_flatland_and_river_constraints(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.feature_constraints = {
+        terrain_map.features.feature_constraints = {
             5: {
                 "bRequiresFlatlands": True,
                 "bNoRiver": True,
@@ -32,17 +40,19 @@ class FeaturePlacementTests(unittest.TestCase):
             }
         }
 
-        self.assertTrue(terrain_map._check_xml_feature_constraints(0, "FEATURE_FOREST"))
-        self.assertFalse(
-            terrain_map._check_xml_feature_constraints(1, "FEATURE_FOREST")
+        self.assertTrue(
+            terrain_map.features._check_xml_feature_constraints(0, "FEATURE_FOREST")
         )
         self.assertFalse(
-            terrain_map._check_xml_feature_constraints(2, "FEATURE_FOREST")
+            terrain_map.features._check_xml_feature_constraints(1, "FEATURE_FOREST")
+        )
+        self.assertFalse(
+            terrain_map.features._check_xml_feature_constraints(2, "FEATURE_FOREST")
         )
 
     def test_xml_feature_rules_enforce_terrain_and_requires_river(self):
         terrain_map = self.make_terrain_map()
-        terrain_map.feature_constraints = {
+        terrain_map.features.feature_constraints = {
             5: {
                 "bRequiresRiver": True,
                 "TerrainBooleans": [4],
@@ -50,19 +60,21 @@ class FeaturePlacementTests(unittest.TestCase):
         }
 
         self.assertFalse(
-            terrain_map._check_xml_feature_constraints(2, "FEATURE_FOREST")
+            terrain_map.features._check_xml_feature_constraints(2, "FEATURE_FOREST")
         )
         terrain_map.terrain_map[2] = 4
-        self.assertTrue(terrain_map._check_xml_feature_constraints(2, "FEATURE_FOREST"))
+        self.assertTrue(
+            terrain_map.features._check_xml_feature_constraints(2, "FEATURE_FOREST")
+        )
 
     def test_procedural_rules_can_exclude_peaks_without_randomness(self):
         terrain_map = self.make_terrain_map()
         terrain_map.elevation_map.plot_types[0] = PlotTypes.PLOT_PEAK
-        terrain_map._check_xml_feature_constraints = (
+        terrain_map.features._check_xml_feature_constraints = (
             lambda tile_index, feature_type: True
         )
 
-        can_place = terrain_map._check_feature_placement_rules(
+        can_place = terrain_map.features._check_feature_placement_rules(
             0,
             {
                 "type": "FEATURE_FOREST",

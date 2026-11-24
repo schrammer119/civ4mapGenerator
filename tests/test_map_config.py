@@ -203,6 +203,32 @@ class MapConfigUtilityTests(unittest.TestCase):
                 data["type_string"], map_config.get_bonus_string_from_id(info_id)
             )
 
+    def test_missing_engine_bonus_class_gives_zero_class_unique(self):
+        class MissingClassContext(PlanetSim.CyGlobalContext):
+            def getBonusClassInfo(self, class_id):
+                return None
+
+        game_context = MissingClassContext()
+        map_config = MapConfig(game_context, game_context.getMap())
+
+        for data in map_config.bonus_constraints.values():
+            self.assertEqual(0, data["iClassUnique"])
+
+
+class RiverEdgeTests(unittest.TestCase):
+    def test_edges_for_each_flow_direction(self):
+        map_config = make_map_config(width=4, height=3)
+
+        self.assertEqual((1, True, True), map_config.get_river_edge(0, 1))
+        self.assertEqual((1, True, False), map_config.get_river_edge(1, 0))
+        self.assertEqual((2, False, True), map_config.get_river_edge(2, 6))
+        self.assertEqual((2, False, False), map_config.get_river_edge(6, 2))
+
+    def test_wrapped_segment_uses_short_way_around(self):
+        map_config = make_map_config(width=4, height=3, wrap_x=True)
+
+        self.assertEqual((0, True, False), map_config.get_river_edge(0, 3))
+
 
 if __name__ == "__main__":
     unittest.main()

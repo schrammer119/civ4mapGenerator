@@ -198,8 +198,10 @@ class CallbackTests(unittest.TestCase):
         PlanetSim.map_config = map_config
         PlanetSim.map_ctx = game_map
         PlanetSim.terrain_map = SimpleNamespace(
-            feature_map=[4, -1],
-            feature_subtype_map=[2, -1],
+            features=SimpleNamespace(
+                feature_map=[4, -1],
+                feature_subtype_map=[2, -1],
+            ),
         )
 
         PlanetSim.addFeatures()

@@ -59,8 +59,8 @@ def run_starting_plot_smoke_check(game_context, map_config, elevation_map, terra
             self.tile_index = tile_index
             self.plot_type = elevation_map.plot_types[tile_index]
             self.terrain_id = terrain_map.terrain_map[tile_index]
-            self.feature_id = terrain_map.feature_map[tile_index]
-            self.bonus_id = terrain_map.resource_map[tile_index]
+            self.feature_id = terrain_map.features.feature_map[tile_index]
+            self.bonus_id = terrain_map.resources.resource_map[tile_index]
             self._area = area
             self.yields = []
             terrain_info = game_context.getTerrainInfo(self.terrain_id)
@@ -247,7 +247,7 @@ climate_map.generate_climate_map()
 
 terrain_map = TerrainMap(game_context, map_config, elevation_map, climate_map)
 terrain_map.generate_terrain()
-terrain_map.place_resources()
+terrain_map.resources.place_resources()
 
 print("Map generation completed successfully!")
 print("Map size: %d x %d" % (map_config.num_plots_x, map_config.num_plots_y))
@@ -290,11 +290,11 @@ generation_checks = [
     ),
     (
         "features cover every map tile",
-        len(terrain_map.feature_map) == map_config.num_plots,
+        len(terrain_map.features.feature_map) == map_config.num_plots,
     ),
     (
         "resources cover every map tile",
-        len(terrain_map.resource_map) == map_config.num_plots,
+        len(terrain_map.resources.resource_map) == map_config.num_plots,
     ),
 ]
 
@@ -334,9 +334,9 @@ print(
 print("\n=== RESOURCE PLACEMENT STATISTICS ===")
 
 # Count resources by type if resource_map exists
-if hasattr(terrain_map, "resource_map") and terrain_map.resource_map is not None:
+if hasattr(terrain_map, "resources") and terrain_map.resources.resource_map is not None:
     resource_counts = {}
-    for resource_id in terrain_map.resource_map:
+    for resource_id in terrain_map.resources.resource_map:
         if resource_id and resource_id > 0:  # Skip NO_BONUS (0)
             resource_counts[resource_id] = resource_counts.get(resource_id, 0) + 1
 
@@ -357,16 +357,18 @@ if hasattr(terrain_map, "resource_map") and terrain_map.resource_map is not None
             count = resource_counts[res_id]
             pct = (100.0 * count) / total_resources
             bonus_name = bonus_name_by_id.get(res_id, "UNKNOWN_%d" % res_id)
-            target = getattr(terrain_map, "resource_targets", {}).get(bonus_name, 0)
+            target = getattr(terrain_map.resources, "resource_targets", {}).get(
+                bonus_name, 0
+            )
             bonus_def = dict(terrain_map.resource_definitions.get(bonus_name, {}))
             bonus_def.setdefault("base_resource", bonus_name)
             bonus_def.setdefault(
                 "xml_constraints", terrain_map.bonus_constraints.get(res_id, {})
             )
             failures = 0
-            for tile_index, placed_id in enumerate(terrain_map.resource_map):
+            for tile_index, placed_id in enumerate(terrain_map.resources.resource_map):
                 if placed_id == res_id:
-                    if not terrain_map._can_have_bonus(tile_index, bonus_def):
+                    if not terrain_map.resources._can_have_bonus(tile_index, bonus_def):
                         failures += 1
             total_violations += failures
             print(
@@ -459,34 +461,34 @@ oasis = []
 flood_plains = []
 forest = []
 
-if hasattr(terrain_map, "feature_map") and terrain_map.feature_map is not None:
+if hasattr(terrain_map, "features") and terrain_map.features is not None:
     ice = [
         i
-        for i, x in enumerate(terrain_map.feature_map)
+        for i, x in enumerate(terrain_map.features.feature_map)
         if x == FeatureTypes.FEATURE_ICE
     ]
     jungle = [
         i
-        for i, x in enumerate(terrain_map.feature_map)
+        for i, x in enumerate(terrain_map.features.feature_map)
         if x == FeatureTypes.FEATURE_JUNGLE
     ]
     oasis = [
         i
-        for i, x in enumerate(terrain_map.feature_map)
+        for i, x in enumerate(terrain_map.features.feature_map)
         if x == FeatureTypes.FEATURE_OASIS
     ]
     flood_plains = [
         i
-        for i, x in enumerate(terrain_map.feature_map)
+        for i, x in enumerate(terrain_map.features.feature_map)
         if x == FeatureTypes.FEATURE_FLOOD_PLAINS
     ]
     forest = [
         i
-        for i, x in enumerate(terrain_map.feature_map)
+        for i, x in enumerate(terrain_map.features.feature_map)
         if x == FeatureTypes.FEATURE_FOREST
     ]
 
-if hasattr(terrain_map, "feature_map") and terrain_map.feature_map is not None:
+if hasattr(terrain_map, "features") and terrain_map.features is not None:
     feature_counts = {
         "Ice": len(ice),
         "Jungle": len(jungle),
@@ -1363,7 +1365,7 @@ if ARGS.show:
         # For now, check if subtype map exists, otherwise default to broadleaf
         if (
             hasattr(terrain_map, "feature_subtype_map")
-            and terrain_map.feature_subtype_map is not None
+            and terrain_map.features.feature_subtype_map is not None
         ):
             # Group forests by subtype
             broadleaf_forests = []
@@ -1371,7 +1373,7 @@ if ARGS.show:
             snowy_forests = []
 
             for tile_i in forest:
-                subtype = terrain_map.feature_subtype_map[tile_i]
+                subtype = terrain_map.features.feature_subtype_map[tile_i]
                 if subtype == 0:  # Broadleaf forest
                     broadleaf_forests.append(tile_i)
                 elif subtype == 1:  # Evergreen forest
@@ -1638,7 +1640,10 @@ if ARGS.show:
 
     # === RESOURCE VISUALIZATION ===
     # Overlay resource codes on the final map and show their name key at the left.
-    if hasattr(terrain_map, "resource_map") and terrain_map.resource_map is not None:
+    if (
+        hasattr(terrain_map, "resources")
+        and terrain_map.resources.resource_map is not None
+    ):
         # Derive letter codes from the live BonusTypes enum rather than a drift-prone hard-coded table.
         bonus_name_by_id = dict(game_context.bonus_types.items())
         resource_letter_codes = {}
@@ -1655,7 +1660,7 @@ if ARGS.show:
                 resource_letter_codes[bonus_id] = code
 
         # Plot resource letter codes on map
-        for tile_i, resource_id in enumerate(terrain_map.resource_map):
+        for tile_i, resource_id in enumerate(terrain_map.resources.resource_map):
             if resource_id and resource_id > 0:  # Skip empty tiles
                 tile_x = tile_i % map_config.num_plots_x
                 tile_y = tile_i // map_config.num_plots_x

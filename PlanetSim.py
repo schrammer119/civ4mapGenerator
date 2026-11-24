@@ -779,19 +779,26 @@ class MapConfig:
 
         return constraints
 
+    def _get_bonus_class(self, bonus_info):
+        """Return (class_id, class_unique); the engine binding has no BonusClassInfo for class 0."""
+        class_id = bonus_info.getBonusClassType()
+        class_info = self.game_context.getBonusClassInfo(class_id)
+        if class_info is None:
+            return class_id, 0
+        return class_id, class_info.getUniqueRange()
+
     def _load_bonus_constraints(self):
         """Load bonus constraints from XML BonusInfos"""
         constraints = {}
 
         for i in xrange(self.game_context.getNumBonusInfos()):
             bonus_info = self.game_context.getBonusInfo(i)
+            bonus_class, class_unique = self._get_bonus_class(bonus_info)
 
             constraints[i] = {
                 "type_string": bonus_info.getType(),
-                "bonus_class": bonus_info.getBonusClassType(),
-                "iClassUnique": self.game_context.getBonusClassInfo(
-                    bonus_info.getBonusClassType()
-                ).getUniqueRange(),
+                "bonus_class": bonus_class,
+                "iClassUnique": class_unique,
                 "iPlacementOrder": bonus_info.getPlacementOrder(),
                 "iConstAppearance": bonus_info.getConstAppearance(),
                 "iMinAreaSize": bonus_info.getMinAreaSize(),
@@ -874,6 +881,32 @@ class MapConfig:
             dy = dy - copysign(self.num_plots_y, dy)
 
         return dx, dy
+
+    def get_plot_distance(self, tile_a, tile_b):
+        """Civ plot distance between two tiles, honoring map wrapping."""
+        ax, ay = self.get_coords_from_index(tile_a)
+        bx, by = self.get_coords_from_index(tile_b)
+        dx, dy = self.get_wrapped_distance(ax, ay, bx, by)
+        dx = abs(dx)
+        dy = abs(dy)
+        return max(dx, dy) + min(dx, dy) // 2
+
+    def get_tiles_in_radius(self, center_tile, radius):
+        """Get all tiles within radius of center tile"""
+        tiles = []
+        center_x = center_tile % self.num_plots_x
+        center_y = center_tile // self.num_plots_x
+
+        for dy in xrange(-radius, radius + 1):
+            for dx in xrange(-radius, radius + 1):
+                if dx * dx + dy * dy <= radius * radius:
+                    x = (center_x + dx) % self.num_plots_x
+                    y = center_y + dy
+                    if 0 <= y < self.num_plots_y:
+                        tile_index = y * self.num_plots_x + x
+                        tiles.append(tile_index)
+
+        return tiles
 
     def wrap_coordinates(self, x, y):
         """Wrap coordinates according to map settings"""
@@ -1173,6 +1206,26 @@ class MapConfig:
             return -1
         return y * self.num_plots_x + x
 
+    def get_river_edge(self, from_node, to_node):
+        """Return (tile_index, is_north_edge, is_forward) for a river segment's Civ edge."""
+        from_x, from_y = self.get_coords_from_index(from_node)
+        to_x, to_y = self.get_coords_from_index(to_node)
+        dx, dy = self.get_wrapped_distance(to_x, to_y, from_x, from_y)
+        if abs(dx) > abs(dy):
+            is_forward = dx > 0
+            tile_x = to_x
+            tile_y = to_y
+            if not is_forward:
+                tile_x = from_x
+                tile_y = from_y
+            return self.get_index_from_coords(tile_x, tile_y), True, is_forward
+        is_forward = dy > 0
+        tile_x = from_x
+        tile_y = from_y
+        if not is_forward:
+            tile_y = to_y
+        return self.get_index_from_coords(tile_x, tile_y), False, is_forward
+
     def is_node_valid_for_flow(self, node_x, node_y, flow_direction=None):
         """
         Check if a node can participate in flow, considering boundary restrictions.
@@ -1391,23 +1444,6 @@ class MapConfig:
             return False
         return self.coast_adjacency_map[tile_index]
 
-    def is_adjacent_to_feature(self, tile_index, feature_type):
-        """Check if tile is adjacent to a specific feature in the active TerrainMap."""
-        feature_id = self.get_feature_id(feature_type)
-        if feature_id == -1:
-            return False
-
-        feature_map = getattr(self, "feature_map", None)
-        if feature_map is None:
-            return False
-
-        for direction in xrange(1, 9):  # N, S, E, W, NE, NW, SE, SW
-            adj_index = self.neighbours[tile_index][direction]
-            if adj_index != -1 and feature_map[adj_index] == feature_id:
-                return True
-
-        return False
-
 
 class ElevationMap:
     @profile
@@ -1517,7 +1553,7 @@ class ElevationMap:
         self._calculate_elevation_effects()
         self._calculate_continent_ids()
         if self.map_config.enable_pangaea_breaker:
-            self._break_pangaea()
+            PangaeaBreaker(self).break_pangaea()
 
     @profile
     def _generate_continental_plates(self):
@@ -3494,262 +3530,6 @@ class ElevationMap:
                     stack.append(neighbour)
         return land_count
 
-    @profile
-    def _break_pangaea(self):
-        """Split the largest passable area along a balanced projection, then rift the seam."""
-        if not self.map_config.enable_pangaea_breaker:
-            return False
-        self._calculate_coast_continent_ids()
-        if (
-            not self.coast_continent_sizes
-            or max(self.coast_continent_sizes.values()) == 0
-            or not self._is_pangaea_sizes(self.coast_continent_sizes.values())
-        ):
-            print("Pangaea breaker: no pangaea found.")
-            return False
-        print("Pangaea breaker: breaking up the largest continent.")
-
-        largest_id = None
-        largest_size = None
-        for continent_id, continent_size in self.coast_continent_sizes.items():
-            if largest_size is None or continent_size > largest_size:
-                largest_id = continent_id
-                largest_size = continent_size
-        largest_size = self.coast_continent_sizes[largest_id]
-        largest_tiles = set(
-            tile_index
-            for tile_index, continent_id in enumerate(self.coast_continent_id)
-            if continent_id == largest_id
-        )
-        minimum_size = (
-            self.map_config.pangaea_minimum_share_percent * largest_size
-        ) // 100 + 1
-        maximum_size = largest_size - minimum_size
-        projection_side = self._select_projection_partition(largest_tiles, minimum_size)
-        if projection_side is None:
-            print("Pangaea breaker: no balanced projection partition found.")
-            return False
-        plan = None
-        for _ in xrange(self.map_config.pangaea_break_attempts):
-            side_a = self._perturb_pangaea_seam(
-                largest_tiles, projection_side, minimum_size, maximum_size
-            )
-            plan = self._plan_pangaea_rift(largest_tiles, side_a, minimum_size)
-            if plan is not None:
-                break
-        if plan is None:
-            print(
-                "Pangaea breaker: no rift separates the halves, keeping the continent."
-            )
-            return False
-        rift, shoulders = plan
-        self._apply_pangaea_rift(rift, shoulders)
-
-        self._calculate_ocean_basins()
-        self._calculate_continent_ids()
-        self._calculate_coast_continent_ids()
-        print(
-            "Pangaea breaker: rifted the largest continent along %d plots." % len(rift)
-        )
-        return True
-
-    def _get_pangaea_projection_partitions(self, component_tiles):
-        """Yield balanced half-plane splits of the component along sixteen projection angles."""
-        land_coordinates = [
-            (
-                tile_index % self.map_config.num_plots_x,
-                tile_index // self.map_config.num_plots_x,
-            )
-            for tile_index in component_tiles
-            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
-        ]
-        centroid_x, centroid_y = self._calculate_wrap_aware_centroid(land_coordinates)
-        projections = {}
-        for tile_index in component_tiles:
-            x = tile_index % self.map_config.num_plots_x
-            y = tile_index // self.map_config.num_plots_x
-            dx, dy = self.map_config.get_wrapped_distance(x, y, centroid_x, centroid_y)
-            projections[tile_index] = (dx, dy)
-
-        quantiles = (1.0 / 3.0, 0.375, 0.4, 0.45, 0.5, 0.55, 0.6, 0.625, 2.0 / 3.0)
-        total_land = self._count_land_tiles(component_tiles)
-        for direction in xrange(16):
-            angle = math.pi * direction / 16.0
-            axis_x = math.cos(angle)
-            axis_y = math.sin(angle)
-            axis_values = sorted(
-                (
-                    projection[0] * axis_x + projection[1] * axis_y,
-                    tile_index,
-                )
-                for tile_index, projection in projections.items()
-            )
-            thresholds = set()
-            for quantile in quantiles:
-                target = quantile * total_land
-                running = 0
-                for value, tile_index in axis_values:
-                    running += self._land_weight(tile_index)
-                    if running >= target:
-                        thresholds.add(value)
-                        break
-
-            for threshold in sorted(thresholds):
-                low_side = set(
-                    tile_index
-                    for value, tile_index in axis_values
-                    if value <= threshold
-                )
-                if not low_side or len(low_side) == len(component_tiles):
-                    continue
-                yield low_side
-
-    def _select_projection_partition(self, component_tiles, minimum_size):
-        """Return the shortest-seam projection split into two connected, balanced areas."""
-        land_total = self._count_land_tiles(component_tiles)
-        seen = set()
-        scored = []
-        for low_side in self._get_pangaea_projection_partitions(component_tiles):
-            side_a = frozenset(low_side)
-            if side_a in seen:
-                continue
-            seen.add(side_a)
-            side_a_size = self._count_land_tiles(side_a)
-            if min(side_a_size, land_total - side_a_size) < minimum_size:
-                continue
-            scored.append(
-                (
-                    self._get_seam_length(side_a, component_tiles),
-                    abs(2 * side_a_size - land_total),
-                    min(side_a),
-                    side_a,
-                )
-            )
-        scored.sort(key=lambda item: item[:3])
-        for _, _, _, side_a in scored:
-            if self._is_connected_8(side_a) and self._is_connected_8(
-                component_tiles - side_a
-            ):
-                return set(side_a)
-        return None
-
-    def _perturb_pangaea_seam(
-        self, component_tiles, side_a, minimum_size, maximum_size
-    ):
-        """Apply random boundary-run flips that keep both halves connected and balanced."""
-        side_of = dict(
-            (tile_index, int(tile_index not in side_a))
-            for tile_index in component_tiles
-        )
-        for _ in xrange(self.map_config.pangaea_boundary_walk_count):
-            boundary = self._get_pangaea_boundary_tiles(side_of)
-            if not boundary:
-                break
-            trial = dict(side_of)
-            self._flip_pangaea_boundary_run(boundary, trial)
-            trial_sizes = self._get_pangaea_sizes(trial, component_tiles)
-            if (
-                min(trial_sizes) < minimum_size
-                or max(trial_sizes) > maximum_size
-                or not self._is_valid_pangaea_partition(trial, component_tiles)
-            ):
-                continue
-            side_of = trial
-        return self._get_pangaea_side_a(side_of)
-
-    def _get_pangaea_side_a(self, side_of):
-        return set(tile_index for tile_index, side in side_of.items() if side == 0)
-
-    def _get_pangaea_sizes(self, side_of, component_tiles):
-        side_a = self._get_pangaea_side_a(side_of)
-        return [
-            self._count_land_tiles(side_a),
-            self._count_land_tiles(component_tiles - side_a),
-        ]
-
-    def _get_pangaea_boundary_tiles(self, side_of):
-        return sorted(
-            tile_index
-            for tile_index, side in side_of.items()
-            if _any(
-                side_of.get(neighbour, side) != side
-                for neighbour in self._get_cardinal_neighbours(tile_index)
-            )
-        )
-
-    def _flip_pangaea_boundary_run(self, boundary_tiles, side_of):
-        """Flip a random walk along same-side boundary tiles, giving a slide or kink."""
-        boundary = set(boundary_tiles)
-        current = boundary_tiles[random.randrange(len(boundary_tiles))]
-        side = side_of[current]
-        run = [current]
-        seen = set(run)
-        while len(run) < self.map_config.pangaea_boundary_run_length:
-            options = [
-                neighbour
-                for neighbour in self._get_cardinal_neighbours(current)
-                if neighbour in boundary
-                and neighbour not in seen
-                and side_of[neighbour] == side
-            ]
-            if not options:
-                break
-            current = options[random.randrange(len(options))]
-            run.append(current)
-            seen.add(current)
-        for tile_index in run:
-            side_of[tile_index] = 1 - side
-
-    def _is_valid_pangaea_partition(self, side_of, component_tiles):
-        side_a = set(tile_index for tile_index, side in side_of.items() if side == 0)
-        return self._is_connected_8(side_a) and self._is_connected_8(
-            component_tiles - side_a
-        )
-
-    def _get_seam_length(self, side_a, component_tiles):
-        pairs = (
-            (tile_index, neighbour)
-            for tile_index in side_a
-            for neighbour in self._get_cardinal_neighbours(tile_index)
-            if neighbour in component_tiles and neighbour not in side_a
-        )
-        return self._get_seam_cost_from_pairs(pairs)
-
-    def _get_seam_cost_from_pairs(self, pairs):
-        """Return seam steps minus a turn reduction per perpendicular turn over cross-edge pairs."""
-        width = self.map_config.num_plots_x
-        height = self.map_config.num_plots_y
-        orientations = {}
-        segment_count = 0
-        for tile_index, neighbour in pairs:
-            ax = tile_index % width
-            ay = tile_index // width
-            dx = (neighbour % width - ax + 1) % width - 1
-            dy = (neighbour // width - ay + 1) % height - 1
-            mid_x = (2 * ax + dx) % (2 * width)
-            mid_y = (2 * ay + dy) % (2 * height)
-            if dx:
-                orientation = 0
-                ends = (
-                    (mid_x, (mid_y - 1) % (2 * height)),
-                    (mid_x, (mid_y + 1) % (2 * height)),
-                )
-            else:
-                orientation = 1
-                ends = (
-                    ((mid_x - 1) % (2 * width), mid_y),
-                    ((mid_x + 1) % (2 * width), mid_y),
-                )
-            segment_count += 1
-            for end in ends:
-                orientations.setdefault(end, []).append(orientation)
-        turns = sum(
-            1
-            for end_orientations in orientations.values()
-            if len(end_orientations) == 2 and end_orientations[0] != end_orientations[1]
-        )
-        return segment_count - self.map_config.pangaea_seam_turn_reduction * turns
-
     def _land_weight(self, tile_index):
         if self.plot_types[tile_index] == PlotTypes.PLOT_OCEAN:
             return 0
@@ -3790,134 +3570,6 @@ class ElevationMap:
                     seen.add(neighbour)
                     stack.append(neighbour)
         return len(seen) == len(tile_set)
-
-    def _plan_pangaea_rift(self, component_tiles, side_a, minimum_size):
-        """Return the shallowest (rift, shoulders) pair that separates the halves, or None."""
-        side_b = component_tiles - side_a
-        seam_a = set(
-            tile_index
-            for tile_index in side_a
-            if _any(n in side_b for n in self._get_all_neighbours(tile_index))
-        )
-        seam_b = set(
-            tile_index
-            for tile_index in side_b
-            if _any(n in side_a for n in self._get_all_neighbours(tile_index))
-        )
-        bands_a = self._grow_pangaea_rift(seam_a, side_a)
-        bands_b = self._grow_pangaea_rift(seam_b, side_b)
-        for depth in xrange(
-            self.map_config.pangaea_rift_extra_depth,
-            self.map_config.pangaea_rift_max_depth + 1,
-        ):
-            rift_a = bands_a[depth]
-            rift_b = bands_b[depth]
-            rift = rift_a | rift_b
-            shoulders = self._get_pangaea_shoulders(
-                side_a, rift_a
-            ) | self._get_pangaea_shoulders(side_b, rift_b)
-            if self._is_rift_separating(
-                component_tiles, side_a, side_b, rift, shoulders, minimum_size
-            ):
-                return rift, shoulders
-        return None
-
-    def _is_rift_separating(
-        self, component_tiles, side_a, side_b, rift, shoulders, minimum_size
-    ):
-        """Check that no passable path after the rift links the halves, and both keep enough land."""
-        land_a = sum(
-            1
-            for tile_index in side_a - rift - shoulders
-            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
-        )
-        land_b = sum(
-            1
-            for tile_index in side_b - rift - shoulders
-            if self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
-        )
-        if min(land_a, land_b) < minimum_size:
-            return False
-        passable = set(
-            tile_index
-            for tile_index in component_tiles
-            if self._is_passable_after_rift(tile_index, rift, shoulders)
-        )
-        starts = (side_a - rift) & passable
-        if not starts:
-            return False
-        for start in starts:
-            break
-        seen = set([start])
-        stack = [start]
-        while stack:
-            current = stack.pop()
-            for neighbour in self._get_all_neighbours(current):
-                if neighbour in passable and neighbour not in seen:
-                    seen.add(neighbour)
-                    stack.append(neighbour)
-        return not (seen & ((side_b - rift) & passable))
-
-    def _is_passable_after_rift(self, tile_index, rift, shoulders):
-        """Return whether a tile would be land or coast once the rift is applied."""
-        if tile_index in shoulders:
-            elevated = True
-        elif tile_index in rift:
-            elevated = False
-        elif self.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
-            return True
-        else:
-            elevated = self.elevation_map[tile_index] > self.coast_level_threshold
-        if elevated:
-            return True
-        return _any(
-            self.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
-            and neighbour not in rift
-            and neighbour not in shoulders
-            for neighbour in self._get_all_neighbours(tile_index)
-        )
-
-    def _apply_pangaea_rift(self, rift, shoulders):
-        """Lower the rift to deep ocean and the shoulders to coast height."""
-        deep_elevation = self.coast_level_threshold - 1e-6
-        coast_elevation = (self.coast_level_threshold + self.sea_level_threshold) / 2.0
-        for tiles, elevation in (
-            (rift, deep_elevation),
-            (shoulders, coast_elevation),
-        ):
-            for tile_index in tiles:
-                self.elevation_map[tile_index] = elevation
-                self.above_sea_level_map[tile_index] = 0.0
-                self.elevation_prominence_map[tile_index] = 0.0
-                self.prominence_map[tile_index] = 0.0
-                self.plot_types[tile_index] = PlotTypes.PLOT_OCEAN
-
-    def _grow_pangaea_rift(self, seam, own_side):
-        """Return cumulative rift bands (depth 0 is the seam), jittered outward into own_side."""
-        bands = [set(seam)]
-        frontier = set(seam)
-        for _ in xrange(self.map_config.pangaea_rift_max_depth):
-            candidates = set(
-                neighbour
-                for tile_index in frontier
-                for neighbour in self._get_cardinal_neighbours(tile_index)
-                if neighbour in own_side and neighbour not in bands[-1]
-            )
-            frontier = set(
-                tile_index
-                for tile_index in sorted(candidates)
-                if random.random() < self.map_config.pangaea_rift_chance
-            )
-            bands.append(bands[-1] | frontier)
-        return bands
-
-    def _get_pangaea_shoulders(self, own_side, rift):
-        """Return the remaining tiles of a side that border its rift band."""
-        return set(
-            tile_index
-            for tile_index in own_side - rift
-            if _any(n in rift for n in self._get_all_neighbours(tile_index))
-        )
 
     @profile
     def _optimize_wrap_edges(self):
@@ -4299,6 +3951,417 @@ class ElevationMap:
             return new_x, new_y
         else:
             return x, y
+
+
+class PangaeaBreaker:
+    def __init__(self, elevation_map):
+        self.elevation_map = elevation_map
+        self.map_config = elevation_map.map_config
+
+    @profile
+    def break_pangaea(self):
+        """Split the largest passable area along a balanced projection, then rift the seam."""
+        if not self.map_config.enable_pangaea_breaker:
+            return False
+        self.elevation_map._calculate_coast_continent_ids()
+        if (
+            not self.elevation_map.coast_continent_sizes
+            or max(self.elevation_map.coast_continent_sizes.values()) == 0
+            or not self.elevation_map._is_pangaea_sizes(
+                self.elevation_map.coast_continent_sizes.values()
+            )
+        ):
+            print("Pangaea breaker: no pangaea found.")
+            return False
+        print("Pangaea breaker: breaking up the largest continent.")
+
+        largest_id = None
+        largest_size = None
+        for (
+            continent_id,
+            continent_size,
+        ) in self.elevation_map.coast_continent_sizes.items():
+            if largest_size is None or continent_size > largest_size:
+                largest_id = continent_id
+                largest_size = continent_size
+        largest_size = self.elevation_map.coast_continent_sizes[largest_id]
+        largest_tiles = set(
+            tile_index
+            for tile_index, continent_id in enumerate(
+                self.elevation_map.coast_continent_id
+            )
+            if continent_id == largest_id
+        )
+        minimum_size = (
+            self.map_config.pangaea_minimum_share_percent * largest_size
+        ) // 100 + 1
+        maximum_size = largest_size - minimum_size
+        projection_side = self._select_projection_partition(largest_tiles, minimum_size)
+        if projection_side is None:
+            print("Pangaea breaker: no balanced projection partition found.")
+            return False
+        plan = None
+        for _ in xrange(self.map_config.pangaea_break_attempts):
+            side_a = self._perturb_pangaea_seam(
+                largest_tiles, projection_side, minimum_size, maximum_size
+            )
+            plan = self._plan_pangaea_rift(largest_tiles, side_a, minimum_size)
+            if plan is not None:
+                break
+        if plan is None:
+            print(
+                "Pangaea breaker: no rift separates the halves, keeping the continent."
+            )
+            return False
+        rift, shoulders = plan
+        self._apply_pangaea_rift(rift, shoulders)
+
+        self.elevation_map._calculate_ocean_basins()
+        self.elevation_map._calculate_continent_ids()
+        self.elevation_map._calculate_coast_continent_ids()
+        print(
+            "Pangaea breaker: rifted the largest continent along %d plots." % len(rift)
+        )
+        return True
+
+    def _get_pangaea_projection_partitions(self, component_tiles):
+        """Yield balanced half-plane splits of the component along sixteen projection angles."""
+        land_coordinates = [
+            (
+                tile_index % self.map_config.num_plots_x,
+                tile_index // self.map_config.num_plots_x,
+            )
+            for tile_index in component_tiles
+            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
+        ]
+        centroid_x, centroid_y = self.elevation_map._calculate_wrap_aware_centroid(
+            land_coordinates
+        )
+        projections = {}
+        for tile_index in component_tiles:
+            x = tile_index % self.map_config.num_plots_x
+            y = tile_index // self.map_config.num_plots_x
+            dx, dy = self.map_config.get_wrapped_distance(x, y, centroid_x, centroid_y)
+            projections[tile_index] = (dx, dy)
+
+        quantiles = (1.0 / 3.0, 0.375, 0.4, 0.45, 0.5, 0.55, 0.6, 0.625, 2.0 / 3.0)
+        total_land = self.elevation_map._count_land_tiles(component_tiles)
+        for direction in xrange(16):
+            angle = math.pi * direction / 16.0
+            axis_x = math.cos(angle)
+            axis_y = math.sin(angle)
+            axis_values = sorted(
+                (
+                    projection[0] * axis_x + projection[1] * axis_y,
+                    tile_index,
+                )
+                for tile_index, projection in projections.items()
+            )
+            thresholds = set()
+            for quantile in quantiles:
+                target = quantile * total_land
+                running = 0
+                for value, tile_index in axis_values:
+                    running += self.elevation_map._land_weight(tile_index)
+                    if running >= target:
+                        thresholds.add(value)
+                        break
+
+            for threshold in sorted(thresholds):
+                low_side = set(
+                    tile_index
+                    for value, tile_index in axis_values
+                    if value <= threshold
+                )
+                if not low_side or len(low_side) == len(component_tiles):
+                    continue
+                yield low_side
+
+    def _select_projection_partition(self, component_tiles, minimum_size):
+        """Return the shortest-seam projection split into two connected, balanced areas."""
+        land_total = self.elevation_map._count_land_tiles(component_tiles)
+        seen = set()
+        scored = []
+        for low_side in self._get_pangaea_projection_partitions(component_tiles):
+            side_a = frozenset(low_side)
+            if side_a in seen:
+                continue
+            seen.add(side_a)
+            side_a_size = self.elevation_map._count_land_tiles(side_a)
+            if min(side_a_size, land_total - side_a_size) < minimum_size:
+                continue
+            scored.append(
+                (
+                    self._get_seam_length(side_a, component_tiles),
+                    abs(2 * side_a_size - land_total),
+                    min(side_a),
+                    side_a,
+                )
+            )
+        scored.sort(key=lambda item: item[:3])
+        for _, _, _, side_a in scored:
+            if self.elevation_map._is_connected_8(
+                side_a
+            ) and self.elevation_map._is_connected_8(component_tiles - side_a):
+                return set(side_a)
+        return None
+
+    def _perturb_pangaea_seam(
+        self, component_tiles, side_a, minimum_size, maximum_size
+    ):
+        """Apply random boundary-run flips that keep both halves connected and balanced."""
+        side_of = dict(
+            (tile_index, int(tile_index not in side_a))
+            for tile_index in component_tiles
+        )
+        for _ in xrange(self.map_config.pangaea_boundary_walk_count):
+            boundary = self._get_pangaea_boundary_tiles(side_of)
+            if not boundary:
+                break
+            trial = dict(side_of)
+            self._flip_pangaea_boundary_run(boundary, trial)
+            trial_sizes = self._get_pangaea_sizes(trial, component_tiles)
+            if (
+                min(trial_sizes) < minimum_size
+                or max(trial_sizes) > maximum_size
+                or not self._is_valid_pangaea_partition(trial, component_tiles)
+            ):
+                continue
+            side_of = trial
+        return self._get_pangaea_side_a(side_of)
+
+    def _get_pangaea_side_a(self, side_of):
+        return set(tile_index for tile_index, side in side_of.items() if side == 0)
+
+    def _get_pangaea_sizes(self, side_of, component_tiles):
+        side_a = self._get_pangaea_side_a(side_of)
+        return [
+            self.elevation_map._count_land_tiles(side_a),
+            self.elevation_map._count_land_tiles(component_tiles - side_a),
+        ]
+
+    def _get_pangaea_boundary_tiles(self, side_of):
+        return sorted(
+            tile_index
+            for tile_index, side in side_of.items()
+            if _any(
+                side_of.get(neighbour, side) != side
+                for neighbour in self.elevation_map._get_cardinal_neighbours(tile_index)
+            )
+        )
+
+    def _flip_pangaea_boundary_run(self, boundary_tiles, side_of):
+        """Flip a random walk along same-side boundary tiles, giving a slide or kink."""
+        boundary = set(boundary_tiles)
+        current = boundary_tiles[random.randrange(len(boundary_tiles))]
+        side = side_of[current]
+        run = [current]
+        seen = set(run)
+        while len(run) < self.map_config.pangaea_boundary_run_length:
+            options = [
+                neighbour
+                for neighbour in self.elevation_map._get_cardinal_neighbours(current)
+                if neighbour in boundary
+                and neighbour not in seen
+                and side_of[neighbour] == side
+            ]
+            if not options:
+                break
+            current = options[random.randrange(len(options))]
+            run.append(current)
+            seen.add(current)
+        for tile_index in run:
+            side_of[tile_index] = 1 - side
+
+    def _is_valid_pangaea_partition(self, side_of, component_tiles):
+        side_a = set(tile_index for tile_index, side in side_of.items() if side == 0)
+        return self.elevation_map._is_connected_8(
+            side_a
+        ) and self.elevation_map._is_connected_8(component_tiles - side_a)
+
+    def _get_seam_length(self, side_a, component_tiles):
+        pairs = (
+            (tile_index, neighbour)
+            for tile_index in side_a
+            for neighbour in self.elevation_map._get_cardinal_neighbours(tile_index)
+            if neighbour in component_tiles and neighbour not in side_a
+        )
+        return self._get_seam_cost_from_pairs(pairs)
+
+    def _get_seam_cost_from_pairs(self, pairs):
+        """Return seam steps minus a turn reduction per perpendicular turn over cross-edge pairs."""
+        width = self.map_config.num_plots_x
+        height = self.map_config.num_plots_y
+        orientations = {}
+        segment_count = 0
+        for tile_index, neighbour in pairs:
+            ax = tile_index % width
+            ay = tile_index // width
+            dx = (neighbour % width - ax + 1) % width - 1
+            dy = (neighbour // width - ay + 1) % height - 1
+            mid_x = (2 * ax + dx) % (2 * width)
+            mid_y = (2 * ay + dy) % (2 * height)
+            if dx:
+                orientation = 0
+                ends = (
+                    (mid_x, (mid_y - 1) % (2 * height)),
+                    (mid_x, (mid_y + 1) % (2 * height)),
+                )
+            else:
+                orientation = 1
+                ends = (
+                    ((mid_x - 1) % (2 * width), mid_y),
+                    ((mid_x + 1) % (2 * width), mid_y),
+                )
+            segment_count += 1
+            for end in ends:
+                orientations.setdefault(end, []).append(orientation)
+        turns = sum(
+            1
+            for end_orientations in orientations.values()
+            if len(end_orientations) == 2 and end_orientations[0] != end_orientations[1]
+        )
+        return segment_count - self.map_config.pangaea_seam_turn_reduction * turns
+
+    def _plan_pangaea_rift(self, component_tiles, side_a, minimum_size):
+        """Return the shallowest (rift, shoulders) pair that separates the halves, or None."""
+        side_b = component_tiles - side_a
+        seam_a = set(
+            tile_index
+            for tile_index in side_a
+            if _any(
+                n in side_b for n in self.elevation_map._get_all_neighbours(tile_index)
+            )
+        )
+        seam_b = set(
+            tile_index
+            for tile_index in side_b
+            if _any(
+                n in side_a for n in self.elevation_map._get_all_neighbours(tile_index)
+            )
+        )
+        bands_a = self._grow_pangaea_rift(seam_a, side_a)
+        bands_b = self._grow_pangaea_rift(seam_b, side_b)
+        for depth in xrange(
+            self.map_config.pangaea_rift_extra_depth,
+            self.map_config.pangaea_rift_max_depth + 1,
+        ):
+            rift_a = bands_a[depth]
+            rift_b = bands_b[depth]
+            rift = rift_a | rift_b
+            shoulders = self._get_pangaea_shoulders(
+                side_a, rift_a
+            ) | self._get_pangaea_shoulders(side_b, rift_b)
+            if self._is_rift_separating(
+                component_tiles, side_a, side_b, rift, shoulders, minimum_size
+            ):
+                return rift, shoulders
+        return None
+
+    def _is_rift_separating(
+        self, component_tiles, side_a, side_b, rift, shoulders, minimum_size
+    ):
+        """Check that no passable path after the rift links the halves, and both keep enough land."""
+        land_a = sum(
+            1
+            for tile_index in side_a - rift - shoulders
+            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
+        )
+        land_b = sum(
+            1
+            for tile_index in side_b - rift - shoulders
+            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN
+        )
+        if min(land_a, land_b) < minimum_size:
+            return False
+        passable = set(
+            tile_index
+            for tile_index in component_tiles
+            if self._is_passable_after_rift(tile_index, rift, shoulders)
+        )
+        starts = (side_a - rift) & passable
+        if not starts:
+            return False
+        for start in starts:
+            break
+        seen = set([start])
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for neighbour in self.elevation_map._get_all_neighbours(current):
+                if neighbour in passable and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        return not (seen & ((side_b - rift) & passable))
+
+    def _is_passable_after_rift(self, tile_index, rift, shoulders):
+        """Return whether a tile would be land or coast once the rift is applied."""
+        if tile_index in shoulders:
+            elevated = True
+        elif tile_index in rift:
+            elevated = False
+        elif self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
+            return True
+        else:
+            elevated = (
+                self.elevation_map.elevation_map[tile_index]
+                > self.elevation_map.coast_level_threshold
+            )
+        if elevated:
+            return True
+        return _any(
+            self.elevation_map.plot_types[neighbour] != PlotTypes.PLOT_OCEAN
+            and neighbour not in rift
+            and neighbour not in shoulders
+            for neighbour in self.elevation_map._get_all_neighbours(tile_index)
+        )
+
+    def _apply_pangaea_rift(self, rift, shoulders):
+        """Lower the rift to deep ocean and the shoulders to coast height."""
+        deep_elevation = self.elevation_map.coast_level_threshold - 1e-6
+        coast_elevation = (
+            self.elevation_map.coast_level_threshold
+            + self.elevation_map.sea_level_threshold
+        ) / 2.0
+        for tiles, elevation in (
+            (rift, deep_elevation),
+            (shoulders, coast_elevation),
+        ):
+            for tile_index in tiles:
+                self.elevation_map.elevation_map[tile_index] = elevation
+                self.elevation_map.above_sea_level_map[tile_index] = 0.0
+                self.elevation_map.elevation_prominence_map[tile_index] = 0.0
+                self.elevation_map.prominence_map[tile_index] = 0.0
+                self.elevation_map.plot_types[tile_index] = PlotTypes.PLOT_OCEAN
+
+    def _grow_pangaea_rift(self, seam, own_side):
+        """Return cumulative rift bands (depth 0 is the seam), jittered outward into own_side."""
+        bands = [set(seam)]
+        frontier = set(seam)
+        for _ in xrange(self.map_config.pangaea_rift_max_depth):
+            candidates = set(
+                neighbour
+                for tile_index in frontier
+                for neighbour in self.elevation_map._get_cardinal_neighbours(tile_index)
+                if neighbour in own_side and neighbour not in bands[-1]
+            )
+            frontier = set(
+                tile_index
+                for tile_index in sorted(candidates)
+                if random.random() < self.map_config.pangaea_rift_chance
+            )
+            bands.append(bands[-1] | frontier)
+        return bands
+
+    def _get_pangaea_shoulders(self, own_side, rift):
+        """Return the remaining tiles of a side that border its rift band."""
+        return set(
+            tile_index
+            for tile_index in own_side - rift
+            if _any(
+                n in rift for n in self.elevation_map._get_all_neighbours(tile_index)
+            )
+        )
 
 
 class ClimateMap:
@@ -6986,55 +7049,17 @@ class ClimateMap:
         Place a river segment with proper directional validation.
         Fixed the southward flow bug.
         """
-        from_x, from_y = self.map_config.get_coords_from_index(from_node)
-        to_x, to_y = self.map_config.get_coords_from_index(to_node)
-
-        # Calculate flow direction
-        dx = to_x - from_x
-        dy = to_y - from_y
-
-        # Handle wrapping
-        if self.map_config.wrap_x and abs(dx) > self.map_config.num_plots_x // 2:
-            dx = dx - int(copysign(self.map_config.num_plots_x, dx))
-        if self.map_config.wrap_y and abs(dy) > self.map_config.num_plots_y // 2:
-            dy = dy - int(copysign(self.map_config.num_plots_y, dy))
-
-        # Place river on appropriate tile edge with proper validation
-        if abs(dx) > abs(dy):  # Primarily horizontal flow
-            if dx > 0:  # Eastward flow: place north_of_rivers on to_tile
-                tile_x = to_x
-                tile_y = to_y
-                if self.is_valid_north_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
-                    if 0 <= tile_i < self.map_config.num_plots:
-                        self.river_map.append((from_node, to_node, river_id, flow))
-                        return True
-            else:  # Westward flow: place north_of_rivers on from_tile
-                tile_x = from_x
-                tile_y = from_y
-                if self.is_valid_north_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
-                    if 0 <= tile_i < self.map_config.num_plots:
-                        self.river_map.append((from_node, to_node, river_id, flow))
-                        return True
-        else:  # Primarily vertical flow
-            if dy > 0:  # Northward flow: place west_of_rivers on from_tile
-                tile_x = from_x
-                tile_y = from_y
-                if self.is_valid_west_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
-                    if 0 <= tile_i < self.map_config.num_plots:
-                        self.river_map.append((from_node, to_node, river_id, flow))
-                        return True
-            else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
-                tile_x = from_x  # Fixed: was to_y in original code
-                tile_y = to_y
-                if self.is_valid_west_river_placement(tile_x, tile_y):
-                    tile_i = tile_y * self.map_config.num_plots_x + tile_x
-                    if 0 <= tile_i < self.map_config.num_plots:
-                        self.river_map.append((from_node, to_node, river_id, flow))
-                        return True
-
+        tile_i, is_north_edge, _ = self.map_config.get_river_edge(from_node, to_node)
+        if tile_i < 0:
+            return False
+        tile_x, tile_y = self.map_config.get_coords_from_index(tile_i)
+        if is_north_edge:
+            valid = self.is_valid_north_river_placement(tile_x, tile_y)
+        else:
+            valid = self.is_valid_west_river_placement(tile_x, tile_y)
+        if valid:
+            self.river_map.append((from_node, to_node, river_id, flow))
+            return True
         return False
 
     def is_valid_west_river_placement(self, tile_x, tile_y):
@@ -7203,76 +7228,42 @@ class ClimateMap:
             placed_segments = []
 
         for from_node, to_node, river_id, flow in list(self.river_map):
-            from_x, from_y = self.map_config.get_coords_from_index(from_node)
-            to_x, to_y = self.map_config.get_coords_from_index(to_node)
+            tile_i, is_north_river, _ = self.map_config.get_river_edge(
+                from_node, to_node
+            )
 
-            dx = to_x - from_x
-            dy = to_y - from_y
+            if 0 <= tile_i < self.map_config.num_plots:
+                should_remove = False
 
-            if self.map_config.wrap_x and abs(dx) > self.map_config.num_plots_x // 2:
-                dx = dx - int(copysign(self.map_config.num_plots_x, dx))
-            if self.map_config.wrap_y and abs(dy) > self.map_config.num_plots_y // 2:
-                dy = dy - int(copysign(self.map_config.num_plots_y, dy))
-
-            tile_x = -1
-            tile_y = -1
-            is_north_river = False
-            is_west_river = False
-
-            if abs(dx) > abs(dy):
-                if dx > 0:
-                    tile_x = to_x
-                    tile_y = to_y
-                    is_north_river = True
-                else:
-                    tile_x = from_x
-                    tile_y = from_y
-                    is_north_river = True
-            else:
-                if dy > 0:
-                    tile_x = from_x
-                    tile_y = from_y
-                    is_west_river = True
-                else:
-                    tile_x = from_x
-                    tile_y = to_y
-                    is_west_river = True
-
-            if tile_x >= 0 and tile_y >= 0:
-                tile_i = tile_y * self.map_config.num_plots_x + tile_x
-
-                if 0 <= tile_i < self.map_config.num_plots:
-                    should_remove = False
-
-                    if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
+                if self.elevation_map.plot_types[tile_i] == PlotTypes.PLOT_OCEAN:
+                    should_remove = True
+                elif is_north_river:
+                    south_neighbour = self.map_config.neighbours[tile_i][
+                        self.map_config.S
+                    ]
+                    if (
+                        south_neighbour >= 0
+                        and south_neighbour < self.map_config.num_plots
+                        and self.elevation_map.plot_types[south_neighbour]
+                        == PlotTypes.PLOT_OCEAN
+                    ):
                         should_remove = True
-                    elif is_north_river:
-                        south_neighbour = self.map_config.neighbours[tile_i][
-                            self.map_config.S
-                        ]
-                        if (
-                            south_neighbour >= 0
-                            and south_neighbour < self.map_config.num_plots
-                            and self.elevation_map.plot_types[south_neighbour]
-                            == PlotTypes.PLOT_OCEAN
-                        ):
-                            should_remove = True
-                    elif is_west_river:
-                        east_neighbour = self.map_config.neighbours[tile_i][
-                            self.map_config.E
-                        ]
-                        if (
-                            east_neighbour >= 0
-                            and east_neighbour < self.map_config.num_plots
-                            and self.elevation_map.plot_types[east_neighbour]
-                            == PlotTypes.PLOT_OCEAN
-                        ):
-                            should_remove = True
+                else:
+                    east_neighbour = self.map_config.neighbours[tile_i][
+                        self.map_config.E
+                    ]
+                    if (
+                        east_neighbour >= 0
+                        and east_neighbour < self.map_config.num_plots
+                        and self.elevation_map.plot_types[east_neighbour]
+                        == PlotTypes.PLOT_OCEAN
+                    ):
+                        should_remove = True
 
-                    if should_remove:
-                        self._remove_river_segment(from_node, to_node)
-                        if placed_segments and (from_node, to_node) in placed_segments:
-                            self.river_segments_placed.remove((from_node, to_node))
+                if should_remove:
+                    self._remove_river_segment(from_node, to_node)
+                    if placed_segments and (from_node, to_node) in placed_segments:
+                        self.river_segments_placed.remove((from_node, to_node))
 
     def _remove_river_segment(self, from_node, to_node):
         """Remove the first matching river segment from river_map."""
@@ -7619,10 +7610,1354 @@ class ClimateMap:
             self._balloon_climate_percentiles(calibration_factor)
 
 
-class TerrainMap:
-    # Game river flags per tile, set by PlaceResources(); None uses PlanetSim rivers
+class FeatureMap:
+    def __init__(self, terrain_map):
+        self.terrain = terrain_map
+        self.game_context = terrain_map.game_context
+        self.map_config = terrain_map.map_config
+        self.elevation_map = terrain_map.elevation_map
+        self.climate_map = terrain_map.climate_map
+        self.feature_constraints = terrain_map.feature_constraints
+        self.feature_map = [-1] * self.map_config.num_plots
+        self.feature_subtype_map = [-1] * self.map_config.num_plots
+        self.placed_features = {}
+        self._generate_secondary_features()
+
+    def _generate_secondary_features(self):
+        """
+        MODDERS: Add your secondary feature rules here!
+
+        ===========================================
+        COMPLETE SECONDARY FEATURE SCHEMA
+        ===========================================
+
+        'feature_name': {
+            # === REQUIRED FIELDS ===
+            'base_feature': 'FEATURE_TYPE_CONSTANT',      # The feature to place
+            'placement_rules': [                        # List of placement rule sets
+                {
+                    # === CONDITION TYPES ===
+                    'conditions': list('string'),              # Rule trigger condition:
+                    #   'river_tile' - Must be adjacent to river
+                    #   'terrain_match' - Must be on specific terrain
+                    #   'climate_match' - Must meet climate requirements
+                    #   'plot_match' - Must be on specific plot type
+                    #   'biome_match' - Must be in specific biome
+
+                    # === FILTERS AND REQUIREMENTS ===
+                    'terrain_filter': ['TERRAIN_TYPES'], # Only on these terrain types
+                    'biome_filter': ['biome_names'],    # Only in these biomes
+                    'plot_requirements': ['plot_types'], # Required plot types:
+                    #   'plot_flat', 'plot_hills', 'plot_peaks'
+
+                    # === CLIMATE REQUIREMENTS ===
+                    'climate_requirements': {
+                        'temp_range': (float, float),   # Temperature percentile requirements (optional)
+                        'precip_range': (float, float), # Precipitation percentile requirements (optional)
+                        'wind_range': (float, float),   # Wind speed requirements (optional)
+                        'pressure_range': (float, float), # Pressure requirements (optional)
+                    },
+
+                    # === PLACEMENT METHODS ===
+                    'placement_method': 'string',       # How to place features:
+                    #   'probability' - Random chance per eligible tile
+                    #   'scattered' - Random scattered placement with constraints
+                    #   'clustered' - Group placement in patches
+
+                    # === PLACEMENT PARAMETERS ===
+                    'probability': float (0.0-1.0),    # Chance per eligible tile
+                    'density': float (0.0-1.0),        # Fraction of eligible tiles to target
+                    'cluster_size': int,               # Average size of feature clusters
+                    'min_distance': int,               # Minimum distance between features
+                }
+            ]
+        },
+        """
+
+        self.secondary_features = {
+            "flood_plains": {
+                "base_feature": "FEATURE_FLOOD_PLAINS",
+                "placement_rules": [
+                    {
+                        "conditions": [
+                            "river_tile",
+                            "terrain_match",
+                            "climate_match",
+                            "plot_match",
+                        ],
+                        "terrain_filter": [
+                            "TERRAIN_GRASS",
+                            "TERRAIN_PLAINS",
+                            "TERRAIN_TUNDRA",
+                        ],
+                        "climate_requirements": {
+                            "precip_range": (0.5, 1.0),  # Moderate to high rainfall
+                        },
+                        "plot_requirements": ["plot_flat"],  # Flat river areas
+                        "placement_method": "clustered",
+                        "density": 0.2,
+                        "cluster_size": 2,
+                    },
+                ],
+            },
+            "oasis": {
+                "base_feature": "FEATURE_OASIS",
+                "placement_rules": [
+                    {
+                        "conditions": "terrain_match",
+                        "terrain_filter": ["TERRAIN_DESERT"],
+                        "placement_method": "scattered",
+                        "density": 0.1,  # 10% of desert tiles eligible
+                        "cluster_size": 1,  # Single tile oases
+                        "min_distance": 3,  # Minimum 3 tiles apart
+                    },
+                ],
+            },
+            # === MODDERS: ADD YOUR SECONDARY FEATURES BELOW THIS LINE ===
+            # Copy the schema above and modify for your features
+        }
+
+    @profile
+    def place_primary_features(self):
+        """Place primary biome features according to coverage and placement rules"""
+        # Initialize feature tracking
+        self.placed_features = {}
+
+        for tile_index in xrange(self.map_config.num_plots):
+            biome_name = self.terrain.biome_assignments[tile_index]
+            biome_def = self.terrain.biome_definitions[biome_name]
+            feature_def = biome_def["feature"]
+
+            if feature_def["type"] is None or feature_def["coverage"] <= 0.0:
+                continue
+
+            # Check if this tile should get the feature
+            if self._should_place_feature(tile_index, feature_def):
+                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
+                    feature_def["type"]
+                )
+                self.feature_subtype_map[tile_index] = feature_def.get("subtype", 0)
+                self._track_feature_placement(tile_index, feature_def["type"])
+
+    def _should_place_feature(self, tile_index, feature_def):
+        """Determine if feature should be placed considering all rules"""
+        # Check basic placement rules first
+        if not self._check_feature_placement_rules(tile_index, feature_def):
+            return False
+
+        # Special handling for lake ice generation
+        if (
+            tile_index in self.terrain.lake_tiles
+            and feature_def.get("type") == "FEATURE_ICE"
+        ):
+            return self._should_place_lake_ice(tile_index)
+
+        rules = feature_def.get("placement_rules", {})
+        cluster_factor = rules.get("cluster_factor", 0.0)
+        # Base probability from coverage (allow dynamic scaling for some features)
+        base_prob = self._get_scaled_coverage(tile_index, feature_def)
+
+        # Modify probability based on clustering
+        if cluster_factor > 0.0:
+            feature_id = self.game_context.getInfoTypeForString(feature_def["type"])
+            neighbour_bonus = self._calculate_cluster_bonus(
+                tile_index, feature_id, cluster_factor
+            )
+            modified_prob = base_prob * (1.0 + neighbour_bonus * cluster_factor)
+        else:
+            modified_prob = base_prob
+
+        # Check patch size limits
+        if not self._check_patch_size_limits(tile_index, feature_def):
+            return False
+
+        return random.random() <= min(modified_prob, 1.0)
+
+    def _get_scaled_coverage(self, tile_index, feature_def):
+        """Return coverage scaled dynamically for certain features.
+
+        Currently used to scale FEATURE_ICE coverage by water temperature
+        percentile so ice becomes denser at lower temperatures.
+        """
+        base_cov = feature_def.get("coverage", 0.0)
+        if base_cov <= 0.0:
+            return 0.0
+
+        ftype = feature_def.get("type")
+
+        # Override for lake ice - return 0.0 to skip normal coverage calculation
+        # Lakes use special neighbor-based rules instead
+        if tile_index in self.terrain.lake_tiles and ftype == "FEATURE_ICE":
+            return 0.0
+
+        # Read placement rule for temperature-scaled coverage (optional)
+        rules = feature_def.get("placement_rules", {})
+        temp_scale = rules.get("temp_scaled_coverage", None)  # temperature scale factor
+
+        # If no temp scaling rule, keep base coverage
+        if temp_scale is None:
+            return base_cov
+
+        # Determine temperature percentile for water tiles (0.0 cold .. 1.0 warm)
+        if self.terrain.terrain_map[tile_index] in [
+            self.game_context.getInfoTypeForString("TERRAIN_COAST"),
+            self.game_context.getInfoTypeForString("TERRAIN_OCEAN"),
+        ]:
+            temp_pct = self.climate_map.temperature_percentiles_water[tile_index]
+        else:
+            temp_pct = self.climate_map.temperature_percentiles[tile_index]
+
+        biome_def = self.terrain.biome_definitions[
+            self.terrain.biome_assignments[tile_index]
+        ]
+        min_temp, max_temp = biome_def.get("temp_range", (0.0, 1.0))
+
+        # If temperature is warmer than max threshold, scale is 0.
+        if temp_pct >= max_temp:
+            scale = 1.0
+        elif temp_pct <= min_temp:
+            scale = 0.0
+        else:
+            # Linear interpolation: colder => larger scale
+            scale = (temp_pct - min_temp) / float(max_temp - min_temp)
+
+        scale = max(0.0, min(1.0, scale))
+
+        # Final coverage: base coverage multiplied by the smooth_scale and by the rule multiplier
+        return base_cov + scale * temp_scale
+
+    def _calculate_cluster_bonus(self, tile_index, feature_id, cluster_factor):
+        """Calculate clustering bonus for feature placement"""
+        feature_neighbours = 0
+        total_neighbours = 0
+
+        for direction in xrange(1, 9):
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
+            if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
+                if self.feature_map[neighbour_idx] == feature_id:
+                    feature_neighbours += 1
+                total_neighbours += 1
+
+        if total_neighbours == 0:
+            return 0.0
+
+        return feature_neighbours / float(total_neighbours)
+
+    def _count_snow_neighbors(self, tile_index):
+        """Count cardinal neighbors (N,S,E,W) with snow terrain"""
+        snow_count = 0
+        terrain_snow_id = self.game_context.getInfoTypeForString("TERRAIN_SNOW")
+
+        # Check only cardinal directions (N,S,E,W)
+        for direction in [
+            self.map_config.N,
+            self.map_config.S,
+            self.map_config.E,
+            self.map_config.W,
+        ]:
+            neighbor_idx = self.map_config.neighbours[tile_index][direction]
+            if neighbor_idx >= 0 and neighbor_idx < len(self.terrain.terrain_map):
+                if self.terrain.terrain_map[neighbor_idx] == terrain_snow_id:
+                    snow_count += 1
+
+        return snow_count
+
+    def _should_place_lake_ice(self, tile_index):
+        """Determine if ice should be placed on a lake tile based on snow neighbors"""
+        snow_neighbor_count = self._count_snow_neighbors(tile_index)
+        # Require at least 3 out of 4 cardinal neighbors to have snow terrain
+        return snow_neighbor_count >= 2
+
+    def _check_patch_size_limits(self, tile_index, feature_def):
+        """Check if placing feature would violate patch size limits"""
+        rules = feature_def.get("placement_rules", {})
+        min_patch_size = rules.get("min_patch_size", 1)
+        max_patch_size = rules.get("max_patch_size", 999)
+
+        if min_patch_size <= 1 and max_patch_size >= 999:
+            return True  # No limits to check
+
+        # Find connected feature patch this tile would join
+        connected_patch_size = self._get_connected_patch_size(
+            tile_index, feature_def["type"]
+        )
+
+        # Check if adding this tile would exceed max patch size
+        if connected_patch_size + 1 > max_patch_size:
+            return False
+
+        return True
+
+    def _get_connected_patch_size(self, tile_index, feature_type):
+        """Get size of connected feature patch this tile would join"""
+        if feature_type not in self.placed_features:
+            return 0
+
+        # Use flood fill to find connected patch size
+        visited = set()
+        to_visit = []
+
+        # Add neighbouring tiles with the same feature
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
+        for direction in xrange(1, 9):
+            neighbour_idx = self.map_config.neighbours[tile_index][direction]
+            if (
+                neighbour_idx >= 0
+                and neighbour_idx < len(self.feature_map)
+                and self.feature_map[neighbour_idx] == feature_id
+            ):
+                to_visit.append(neighbour_idx)
+
+        # Flood fill to count patch size
+        patch_size = 0
+        while to_visit:
+            current = to_visit.pop()
+            if current in visited:
+                continue
+
+            visited.add(current)
+            patch_size += 1
+
+            # Add neighbours of current tile
+            for direction in xrange(1, 9):
+                neighbour_idx = self.map_config.neighbours[current][direction]
+                if (
+                    neighbour_idx >= 0
+                    and neighbour_idx not in visited
+                    and neighbour_idx < len(self.feature_map)
+                    and self.feature_map[neighbour_idx] == feature_id
+                ):
+                    to_visit.append(neighbour_idx)
+
+        return patch_size
+
+    def _track_feature_placement(self, tile_index, feature_type):
+        """Track placed features for clustering and patch size calculations"""
+        if feature_type not in self.placed_features:
+            self.placed_features[feature_type] = []
+        self.placed_features[feature_type].append(tile_index)
+
+    def _check_feature_placement_rules(self, tile_index, feature_def):
+        """Check if feature placement rules allow placement at this tile"""
+        rules = feature_def.get("placement_rules", {})
+
+        # Check XML constraints first (handled by MapConfig)
+        if not self._check_xml_feature_constraints(tile_index, feature_def["type"]):
+            return False
+
+        # Check procedural rules
+        plot_type = self.elevation_map.plot_types[tile_index]
+
+        if rules.get("avoid_peaks", False) and plot_type == PlotTypes.PLOT_PEAK:
+            return False
+        if rules.get("avoid_hills", False) and plot_type == PlotTypes.PLOT_HILLS:
+            return False
+        if rules.get("prefer_flat", False) and plot_type != PlotTypes.PLOT_LAND:
+            if random.random() > 0.5:  # 50% penalty for non-flat
+                return False
+        if rules.get("prefer_hills", False) and plot_type != PlotTypes.PLOT_HILLS:
+            if random.random() > 0.5:  # 50% penalty for non-hills
+                return False
+
+        if rules.get("prefer_rivers", False):
+            if not self.map_config.is_adjacent_to_river(tile_index):
+                if random.random() > 0.5:  # 50% penalty for non-river
+                    return False
+
+        return True
+
+    def _check_xml_feature_constraints(
+        self, tile_index, feature_type, is_floodplains=False
+    ):
+        """Check XML-defined feature constraints (implemented by MapConfig)"""
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
+        constraints = self.feature_constraints.get(feature_id, {})
+
+        # Example constraints checking (MapConfig handles the details)
+        if constraints.get("bRequiresFlatlands", False):
+            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_LAND:
+                return False
+
+        if constraints.get("bNoCoast", False):
+            # Check if adjacent to coast (MapConfig provides this check)
+            if self.map_config.is_adjacent_to_coast(tile_index):
+                return False
+
+        if constraints.get("bRequiresRiver", False):
+            if not self.map_config.is_adjacent_to_river(tile_index):
+                return False
+
+        if constraints.get("bNoRiver", False):
+            if self.map_config.is_adjacent_to_river(tile_index):
+                return False
+
+        if constraints.get("bNoAdjacent", False):
+            if self.is_adjacent_to_feature(tile_index, feature_type):
+                return False
+
+        # Check terrain compatibility
+        if not is_floodplains:
+            allowed_terrains = constraints.get("TerrainBooleans", [])
+            if (
+                allowed_terrains
+                and self.terrain.terrain_map[tile_index] not in allowed_terrains
+            ):
+                return False
+
+        # More constraint checks would be implemented in MapConfig
+        return True
+
+    @profile
+    def place_secondary_features(self):
+        """Place secondary features like flood plains and oases"""
+        for feature_name, feature_def in self.secondary_features.items():
+            if feature_name == "flood_plains":
+                # Special handling for floodplains due to game engine behavior
+                self._place_floodplains_special(feature_def)
+            else:
+                self._apply_secondary_feature_rules(feature_name, feature_def)
+
+    def _apply_secondary_feature_rules(self, feature_name, feature_def):
+        """Apply secondary feature placement rules"""
+        for rule in feature_def["placement_rules"]:
+            eligible_tiles = self._find_eligible_tiles_for_rule(
+                rule, feature_def["base_feature"]
+            )
+
+            placement_method = rule.get("placement_method", "probability")
+
+            if placement_method == "scattered":
+                self._place_scattered_features(
+                    eligible_tiles,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+            elif placement_method == "clustered":
+                self._place_clustered_features(
+                    eligible_tiles,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+            else:  # Default to probability
+                self._place_probability_features(
+                    eligible_tiles,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+
+    def _find_eligible_tiles_for_rule(self, rule, base_feature):
+        """Find tiles that meet the rule conditions"""
+        eligible = []
+
+        for tile_index in xrange(self.map_config.num_plots):
+            if self._tile_meets_rule_conditions(tile_index, rule, base_feature):
+                eligible.append(tile_index)
+
+        return eligible
+
+    def _tile_meets_rule_conditions(
+        self, tile_index, rule, base_feature, is_floodplains=False
+    ):
+        """Check if a tile meets all conditions for a rule"""
+        conditions = rule.get("conditions", [])
+        if not isinstance(conditions, list):
+            conditions = [conditions]
+
+        if not self._check_xml_feature_constraints(
+            tile_index, base_feature, is_floodplains
+        ):
+            return False
+
+        if len(conditions) == 0:
+            return True  # No conditions means always eligible
+
+        if "river_tile" in conditions:
+            if not self.map_config.is_adjacent_to_river(tile_index):
+                return False
+
+        if "terrain_match" in conditions:
+            terrain_filter = [
+                self.game_context.getInfoTypeForString(t)
+                for t in rule.get("terrain_filter", [])
+            ]
+            if (
+                terrain_filter
+                and self.terrain.terrain_map[tile_index] not in terrain_filter
+            ):
+                return False
+
+        if "plot_match" in conditions:
+            plot_requirements = rule.get("plot_requirements", [])
+            plot_type = self.elevation_map.plot_types[tile_index]
+            meets_plot_req = False
+            for req in plot_requirements:
+                if req == "plot_flat" and plot_type == PlotTypes.PLOT_LAND:
+                    meets_plot_req = True
+                elif req == "plot_hills" and plot_type == PlotTypes.PLOT_HILLS:
+                    meets_plot_req = True
+                elif req == "plot_peaks" and plot_type == PlotTypes.PLOT_PEAK:
+                    meets_plot_req = True
+            if plot_requirements and not meets_plot_req:
+                return False
+
+        if "biome_match" in conditions:
+            biome_filter = rule.get("biome_filter", [])
+            if (
+                biome_filter
+                and self.terrain.biome_assignments[tile_index] not in biome_filter
+            ):
+                return False
+
+        # Check climate requirements
+        climate_req = rule.get("climate_requirements", {})
+        if "climate_match" in conditions and climate_req:
+            if "temp_range" in climate_req:
+                temp = self.climate_map.temperature_percentiles[tile_index]
+                temp_range = climate_req.get("temp_range")
+                if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
+                    return False
+
+            if "precip_range" in climate_req:
+                precip = self.climate_map.rainfall_percentiles[tile_index]
+                precip_range = climate_req.get("precip_range")
+                if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
+                    return False
+
+            # Check wind and pressure if specified
+            if "wind_range" in climate_req:
+                wind = self.terrain.scoring_factors["wind_speed"][tile_index]
+                wind_range = climate_req["wind_range"]
+                if not (wind_range[0] <= wind <= wind_range[1]):
+                    return False
+
+            if "pressure_range" in climate_req:
+                pressure = self.terrain.scoring_factors["pressure"][tile_index]
+                pressure_range = climate_req["pressure_range"]
+                if not (pressure_range[0] <= pressure <= pressure_range[1]):
+                    return False
+
+        return True
+
+    def _place_scattered_features(
+        self, eligible_tiles, feature_type, feature_subtype, rule
+    ):
+        """Place features using scattered placement method"""
+        if not eligible_tiles:
+            return
+
+        density = rule.get("density", 0.1)
+        min_distance = rule.get("min_distance", 2)
+
+        target_count = int(len(eligible_tiles) * density)
+        placed_features = []
+
+        for _ in xrange(target_count * 3):  # Try multiple times
+            if len(placed_features) >= target_count:
+                break
+
+            candidate = random.choice(eligible_tiles)
+
+            # Check minimum distance
+            too_close = False
+            for placed_tile in placed_features:
+                x1, y1 = self.map_config.get_coords_from_index(candidate)
+                x2, y2 = self.map_config.get_coords_from_index(placed_tile)
+                if (
+                    math.sqrt(
+                        sum(
+                            x**2
+                            for x in self.map_config.get_wrapped_distance(
+                                x1, y1, x2, y2
+                            )
+                        )
+                    )
+                    < min_distance
+                ):
+                    too_close = True
+                    break
+
+            if not too_close and self.feature_map[
+                candidate
+            ] == self.game_context.getInfoTypeForString("NO_FEATURE"):
+                feature_id = self.game_context.getInfoTypeForString(feature_type)
+                self.feature_map[candidate] = feature_id
+                self.feature_subtype_map[candidate] = feature_subtype
+                placed_features.append(candidate)
+
+    def _place_clustered_features(
+        self, eligible_tiles, feature_type, feature_subtype, rule
+    ):
+        """Place features using clustered placement method"""
+        if not eligible_tiles:
+            return
+
+        density = rule.get("density", 0.1)
+        cluster_size = rule.get("cluster_size", 3)
+
+        target_clusters = max(1, int(len(eligible_tiles) * density / cluster_size))
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
+
+        for _ in xrange(target_clusters):
+            # Pick random center
+            center = random.choice(eligible_tiles)
+            if self.feature_map[center] != self.game_context.getInfoTypeForString(
+                "NO_FEATURE"
+            ):
+                continue
+
+            # Place cluster around center
+            cluster_tiles = self.map_config.get_tiles_in_radius(center, cluster_size)
+            placed_in_cluster = 0
+
+            for tile in cluster_tiles:
+                if (
+                    tile in eligible_tiles
+                    and self.feature_map[tile]
+                    == self.game_context.getInfoTypeForString("NO_FEATURE")
+                    and placed_in_cluster < cluster_size
+                ):
+                    self.feature_map[tile] = feature_id
+                    self.feature_subtype_map[tile] = feature_subtype
+                    placed_in_cluster += 1
+
+    def _place_probability_features(
+        self, eligible_tiles, feature_type, feature_subtype, rule
+    ):
+        """Place features using probability method"""
+        probability = rule.get("probability", 0.5)
+        feature_id = self.game_context.getInfoTypeForString(feature_type)
+
+        for tile_index in eligible_tiles:
+            if self.feature_map[tile_index] == self.game_context.getInfoTypeForString(
+                "NO_FEATURE"
+            ):
+                if random.random() <= probability:
+                    self.feature_map[tile_index] = feature_id
+                    self.feature_subtype_map[tile_index] = feature_subtype
+
+    def _place_floodplains_special(self, feature_def):
+        """
+        Special handling for floodplains due to game engine behavior.
+
+        The game engine automatically places floodplains on ALL flat river tiles
+        of terrains listed in the XML TerrainBoolean list. We override this by:
+        1. Ignoring XML terrain booleans for floodplains completely
+        2. Using our own terrain rules instead
+        3. Assuming automatic placement on XML-compatible terrains, manual on others
+        """
+
+        for tile_index in xrange(self.map_config.num_plots):
+            # Check if terrain will get automatic floodplains from game engine
+            if self._tile_meets_rule_conditions(tile_index, {}, "FEATURE_FLOOD_PLAINS"):
+                # Game engine will automatically place floodplains here
+                # We just mark it in our tracking but don't place manually
+                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
+                    "FEATURE_FLOOD_PLAINS"
+                )
+                self.feature_subtype_map[tile_index] = 0
+
+        # Use our custom rules for non-XML terrains
+        for rule in feature_def["placement_rules"]:
+            eligible = []
+            for tile_index in xrange(self.map_config.num_plots):
+                if self._tile_meets_rule_conditions(
+                    tile_index, rule, "FEATURE_FLOOD_PLAINS", True
+                ):
+                    eligible.append(tile_index)
+
+            placement_method = rule.get("placement_method", "probability")
+
+            if placement_method == "scattered":
+                self._place_scattered_features(
+                    eligible,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+            elif placement_method == "clustered":
+                self._place_clustered_features(
+                    eligible,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+            else:  # Default to probability
+                self._place_probability_features(
+                    eligible,
+                    feature_def["base_feature"],
+                    feature_def.get("subtype", 0),
+                    rule,
+                )
+
+    def is_adjacent_to_feature(self, tile_index, feature_type):
+        """Check if tile is adjacent to a specific feature."""
+        feature_id = self.map_config.get_feature_id(feature_type)
+        if feature_id == -1:
+            return False
+
+        for direction in xrange(1, 9):  # N, S, E, W, NE, NW, SE, SW
+            adj_index = self.map_config.neighbours[tile_index][direction]
+            if adj_index != -1 and self.feature_map[adj_index] == feature_id:
+                return True
+
+        return False
+
+
+class ResourceMap:
     river_side_map = None
 
+    def __init__(self, terrain):
+        self.terrain = terrain
+        self.resource_map = [-1] * terrain.map_config.num_plots
+        self.resource_targets = {}
+        self.bonus_area_id = [-1] * terrain.map_config.num_plots
+        self.bonus_area_sizes = {}
+        self.placed_resources = {}
+        self.placed_by_class = {}
+        self.resource_exclusion_zones = {}
+        self.continent_assignments = {}
+        self.logged_warnings = set()
+
+    @profile
+    def place_resources(self, river_side_map=None):
+        """Place resources after rivers exist; None uses PlanetSim river adjacency."""
+        self.river_side_map = river_side_map
+        self._place_resources()
+
+    def _place_resources(self):
+        """Place resources using scoring-based system"""
+        print("TerrainMap: Placing resources...")
+
+        # Get resources sorted by placement order
+        resources_by_order = self._get_resources_by_placement_order()
+
+        for resource_def in resources_by_order:
+            if not resource_def["xml_constraints"].get("bArea", False):
+                self._add_non_unique_bonus_type(resource_def)
+            else:
+                self._add_unique_bonus_type(resource_def)
+
+    def _get_resources_by_placement_order(self):
+        """Get resources sorted by placement order, target quantity, then resource name."""
+        resource_list = []
+
+        for base_resource, resource_def in self.terrain.resource_definitions.items():
+            bonus_id = self._get_bonus_id(base_resource)
+            if bonus_id == -1:
+                continue
+
+            xml_constraints = self.terrain.bonus_constraints.get(bonus_id, {})
+            for key, value in resource_def["xml_overrides"].items():
+                if key in xml_constraints:
+                    xml_constraints[key] = value
+
+            placement_order = xml_constraints.get("iPlacementOrder", 99)
+
+            resource_def["base_resource"] = base_resource
+            resource_def["xml_constraints"] = xml_constraints
+
+            resource_list.append((placement_order, resource_def))
+
+        resource_list.sort(key=lambda x: (x[0], random.randint(0, 99)))
+        return [resource_def for _, resource_def in resource_list]
+
+    def _random_below(self, upper):
+        """Uniform integer in [0, upper - 1]; 0 when upper is 0 (engine getMapRandNum)."""
+        if upper <= 0:
+            return 0
+        return random.randrange(upper)
+
+    def _order_candidates(self, tiles, scores, rands):
+        """Drop placed tiles and sort the rest by score * random, highest first."""
+        open_tiles = [tile for tile in tiles if self.resource_map[tile] == -1]
+        open_tiles.sort(key=lambda tile: scores[tile] * rands[tile], reverse=True)
+        return open_tiles
+
+    def _decay_nearby_scores(self, tile_index, scores):
+        """Scale nearby candidate scores by max(0, 1 - k / d^2) after a placement."""
+        if self.terrain.map_config.resource_decay_strength <= 0.0:
+            return
+        for tile in self.terrain.map_config.get_tiles_in_radius(
+            tile_index, self.terrain.map_config.resource_decay_radius
+        ):
+            if tile == tile_index or tile not in scores:
+                continue
+            tile_x, tile_y = self.terrain.map_config.get_coords_from_index(tile)
+            center_x, center_y = self.terrain.map_config.get_coords_from_index(
+                tile_index
+            )
+            dx, dy = self.terrain.map_config.get_wrapped_distance(
+                center_x, center_y, tile_x, tile_y
+            )
+            dist_sq = dx * dx + dy * dy
+            scores[tile] *= max(
+                0.0, 1.0 - self.terrain.map_config.resource_decay_strength / dist_sq
+            )
+
+    def _record_bonus(self, tile_index, bonus_id, xml_constraints, counts):
+        """Store a placed bonus and update counts and exclusion zones."""
+        self.resource_map[tile_index] = bonus_id
+        counts["placed"] += 1
+        if self.terrain.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
+            counts["land"] += 1
+        self.placed_by_class.setdefault(xml_constraints.get("bonus_class"), []).append(
+            tile_index
+        )
+        self._update_exclusion_zones(tile_index, xml_constraints)
+
+    def _place_scored_tiles(
+        self,
+        resource_def,
+        bonus_id,
+        tiles,
+        scores,
+        counts,
+        target_quantity,
+        area_id=None,
+    ):
+        """Place tiles by score * random, re-sorting after each placement."""
+        xml_constraints = resource_def["xml_constraints"]
+        group_range = xml_constraints.get("iGroupRange", 0)
+        group_rand = xml_constraints.get("iGroupRand", 0)
+        rands = dict((tile, random.random()) for tile in tiles)
+        ordered = self._order_candidates(tiles, scores, rands)
+        pos = 0
+        while pos < len(ordered) and counts["placed"] < target_quantity:
+            tile_index = ordered[pos]
+            pos += 1
+            if not self._should_place_resource(
+                tile_index,
+                resource_def,
+                xml_constraints,
+                counts["land"],
+                counts["placed"],
+            ):
+                continue
+
+            self._record_bonus(tile_index, bonus_id, xml_constraints, counts)
+            if group_range > 0 and group_rand > 0:
+                for cluster_tile in self.terrain.map_config.get_tiles_in_radius(
+                    tile_index, group_range
+                ):
+                    if counts["placed"] >= target_quantity:
+                        break
+                    if cluster_tile == tile_index:
+                        continue
+                    if (
+                        area_id is not None
+                        and self.bonus_area_id[cluster_tile] != area_id
+                    ):
+                        continue
+                    if self.resource_map[cluster_tile] != -1:
+                        continue
+                    if not self._can_have_bonus(cluster_tile, resource_def):
+                        continue
+                    if not self._should_place_resource(
+                        cluster_tile,
+                        resource_def,
+                        xml_constraints,
+                        counts["land"],
+                        counts["placed"],
+                    ):
+                        continue
+                    if self._random_below(100) < group_rand:
+                        self._record_bonus(
+                            cluster_tile, bonus_id, xml_constraints, counts
+                        )
+
+            self._decay_nearby_scores(tile_index, scores)
+            ordered = self._order_candidates(ordered, scores, rands)
+            pos = 0
+
+    def _add_non_unique_bonus_type(self, resource_def):
+        """Place a single resource type using scoring system"""
+        bonus_id = self._get_bonus_id(resource_def["base_resource"])
+        if bonus_id == -1:
+            return  # Skip missing resources
+
+        candidate_tiles = []
+        for tile_index in xrange(self.terrain.map_config.num_plots):
+            if self.resource_map[tile_index] != -1:
+                continue  # Already has a resource
+            if not self._can_have_bonus(tile_index, resource_def):
+                continue
+            candidate_tiles.append(tile_index)
+
+        xml_constraints = resource_def["xml_constraints"]
+        target_quantity = self._calculate_num_bonuses_to_add(
+            xml_constraints, len(candidate_tiles)
+        )
+        self.resource_targets[resource_def["base_resource"]] = target_quantity
+
+        scores = {}
+        for tile_index in candidate_tiles:
+            scores[tile_index] = self._calculate_placement_score(
+                tile_index, resource_def
+            )
+
+        counts = {"placed": 0, "land": 0}
+        self._place_scored_tiles(
+            resource_def, bonus_id, candidate_tiles, scores, counts, target_quantity
+        )
+
+    def _add_unique_bonus_type(self, resource_def):
+        """Place a resource in areas ranked by score sum times size over bonus count."""
+        bonus_id = self._get_bonus_id(resource_def["base_resource"])
+        if bonus_id == -1:
+            return
+
+        candidate_tiles = []
+        for tile_index in xrange(self.terrain.map_config.num_plots):
+            if self.resource_map[tile_index] != -1:
+                continue
+            if not self._can_have_bonus(tile_index, resource_def):
+                continue
+            candidate_tiles.append(tile_index)
+
+        xml_constraints = resource_def["xml_constraints"]
+        target_quantity = self._calculate_num_bonuses_to_add(
+            xml_constraints, len(candidate_tiles)
+        )
+        self.resource_targets[resource_def["base_resource"]] = target_quantity
+
+        bonus_count_by_area = {}
+        for tile_index, placed_bonus_id in enumerate(self.resource_map):
+            area_id = self.bonus_area_id[tile_index]
+            if area_id >= 0 and placed_bonus_id != -1:
+                bonus_count_by_area[area_id] = bonus_count_by_area.get(area_id, 0) + 1
+
+        scores = {}
+        candidates_by_area = {}
+        sum_score_by_area = {}
+        for tile_index in candidate_tiles:
+            area_id = self.bonus_area_id[tile_index]
+            if area_id < 0:
+                continue
+
+            score = self._calculate_placement_score(tile_index, resource_def)
+            scores[tile_index] = score
+            candidates_by_area.setdefault(area_id, []).append(tile_index)
+            sum_score_by_area[area_id] = sum_score_by_area.get(area_id, 0.0) + score
+
+        fitting_areas = [
+            area_id
+            for area_id in candidates_by_area
+            if len(candidates_by_area[area_id]) >= target_quantity
+        ]
+        if not fitting_areas:
+            fitting_areas = list(candidates_by_area)
+
+        area_order = sorted(
+            fitting_areas,
+            key=lambda area_id: (
+                sum_score_by_area[area_id]
+                * (
+                    float(self.bonus_area_sizes[area_id])
+                    / (bonus_count_by_area.get(area_id, 0) + target_quantity + 1)
+                )
+                ** self.terrain.map_config.unique_density_exponent
+            ),
+            reverse=True,
+        )
+
+        counts = {"placed": 0, "land": 0}
+        for area_id in area_order:
+            area_tiles = candidates_by_area[area_id]
+            area_scores = dict((tile, scores[tile]) for tile in area_tiles)
+            self._place_scored_tiles(
+                resource_def,
+                bonus_id,
+                area_tiles,
+                area_scores,
+                counts,
+                target_quantity,
+                area_id,
+            )
+            if counts["placed"] >= target_quantity:
+                break
+
+    def _can_have_bonus(self, tile_index, resource_def):
+        """Check hard constraints that must be obeyed (boolean gates)"""
+        bonus_id = self._get_bonus_id(resource_def["base_resource"])
+        if bonus_id == -1:
+            return False  # Missing resource definition
+
+        xml_constraints = resource_def["xml_constraints"]
+        placement_defs = resource_def.get("placement_defs", [])
+
+        plot_type = self.terrain.elevation_map.plot_types[tile_index]
+        terrain_id = self.terrain.terrain_map[tile_index]
+        feature_id = self.terrain.features.feature_map[tile_index]
+        terrain_booleans = xml_constraints.get("TerrainBooleans", [])
+        feature_booleans = xml_constraints.get("FeatureBooleans", [])
+        feature_terrain_booleans = xml_constraints.get("FeatureTerrainBooleans", [])
+
+        if "bPeak" not in placement_defs and plot_type == PlotTypes.PLOT_PEAK:
+            return False
+
+        if feature_id != -1:
+            if feature_id not in feature_booleans:
+                return False
+            if terrain_id not in feature_terrain_booleans:
+                return False
+        else:
+            if terrain_id not in terrain_booleans:
+                return False
+
+        if plot_type == PlotTypes.PLOT_HILLS and not xml_constraints.get(
+            "bHills", False
+        ):
+            return False
+        if plot_type == PlotTypes.PLOT_LAND and not xml_constraints.get(
+            "bFlatlands", False
+        ):
+            return False
+        river_tile = self._is_river_side(tile_index)
+        if xml_constraints.get("bNoRiverSide", False) and river_tile:
+            return False
+
+        if not self._plot_matches_terrain_water(plot_type, terrain_id):
+            return False
+
+        area_size = self.bonus_area_sizes.get(self.bonus_area_id[tile_index], 0)
+
+        if area_size < xml_constraints.get("iMinAreaSize", 0):
+            return False
+
+        x, y = self.terrain.map_config.get_coords_from_index(tile_index)
+        latitude = abs(self.terrain.map_config.get_latitude_for_y(y))
+        min_lat = xml_constraints.get("iMinLatitude", 0)
+        max_lat = xml_constraints.get("iMaxLatitude", 90)
+        if latitude < min_lat or latitude > max_lat:
+            return False
+
+        if not self.terrain.is_potential_city_work[tile_index]:
+            return False
+
+        return True
+
+    def _is_river_side(self, tile_index):
+        """Game river state when supplied, otherwise PlanetSim river adjacency."""
+        if self.river_side_map is not None:
+            return self.river_side_map[tile_index]
+        return self.terrain.map_config.is_adjacent_to_river(tile_index)
+
+    def _get_water_terrain_ids(self):
+        """Cached terrain IDs for water terrains (ocean and coast)"""
+        cached = getattr(self, "_water_terrain_ids", None)
+        if cached is None:
+            cached = (
+                self._get_terrain_id("TERRAIN_OCEAN"),
+                self._get_terrain_id("TERRAIN_COAST"),
+            )
+            self._water_terrain_ids = cached
+        return cached
+
+    def _plot_matches_terrain_water(self, plot_type, terrain_id):
+        """Water plots need water terrain and land plots must not have it"""
+        is_water_terrain = terrain_id in self._get_water_terrain_ids()
+        return (plot_type == PlotTypes.PLOT_OCEAN) == is_water_terrain
+
+    def _calculate_num_bonuses_to_add(self, xml_constraints, num_candidate_tiles):
+        """Calculate target resource quantity from XML parameters."""
+
+        rand_1 = self._random_below(xml_constraints.get("iRandApp1", 0))
+        rand_2 = self._random_below(xml_constraints.get("iRandApp2", 0))
+        rand_3 = self._random_below(xml_constraints.get("iRandApp3", 0))
+        rand_4 = self._random_below(xml_constraints.get("iRandApp4", 0))
+        base_count = (
+            xml_constraints.get("iConstAppearance", 0)
+            + rand_1
+            + rand_2
+            + rand_3
+            + rand_4
+        )
+
+        tiles_per = xml_constraints.get("iTilesPer", 0)
+        land_tiles = 0
+        if tiles_per > 0:
+            land_tiles = num_candidate_tiles // tiles_per
+
+        players = (
+            self.terrain.map_config.num_players
+            * xml_constraints.get("iPlayer", 0)
+            // 100
+        )
+        bonus_count = (base_count * (land_tiles + players)) // 100
+        abundance = getattr(
+            self.terrain.map_config, "resource_quantity_multiplier", 1.0
+        )
+        return max(1, int(round(bonus_count * abundance)))
+
+    def _should_place_resource(
+        self,
+        tile_index,
+        resource_def,
+        xml_constraints,
+        land_count=None,
+        total_count=None,
+    ):
+        """Check clustering and exclusion rules"""
+
+        if self.resource_map[tile_index] != -1:
+            return False
+
+        min_land_percent = xml_constraints.get("iMinLandPercent", 0)
+        if (
+            min_land_percent > 0
+            and self.terrain.elevation_map.plot_types[tile_index]
+            == PlotTypes.PLOT_OCEAN
+        ):
+            if land_count is None or total_count is None:
+                bonus_id = self._get_bonus_id(resource_def["base_resource"])
+                land_count = sum(
+                    1
+                    for index, placed_bonus in enumerate(self.resource_map)
+                    if placed_bonus == bonus_id
+                    and self.terrain.elevation_map.plot_types[index]
+                    != PlotTypes.PLOT_OCEAN
+                )
+                total_count = self.resource_map.count(bonus_id)
+            if land_count * 100 // (total_count + 1) < min_land_percent:
+                return False
+
+        # Check unique radius (exclusion zones)
+        unique_radius = xml_constraints.get("iUnique", 0)
+        if unique_radius > 0:
+            if self._has_resource_in_radius(
+                tile_index, resource_def["base_resource"], unique_radius
+            ):
+                return False
+
+        class_radius = xml_constraints.get("iClassUnique", 0)
+        if class_radius > 0 and self._has_bonus_class_in_radius(
+            tile_index, xml_constraints.get("bonus_class"), class_radius
+        ):
+            return False
+
+        return True
+
+    def _has_resource_in_radius(self, tile_index, resource_type, radius):
+        """Check same-type resources in the same area using Civ plot distance."""
+        bonus_id = self._get_bonus_id(resource_type)
+        if bonus_id == -1:
+            return False
+
+        area_id = self.bonus_area_id[tile_index]
+        for placed_tile in self.placed_resources.get(resource_type, []):
+            if self.resource_map[placed_tile] != bonus_id:
+                continue
+            if self.bonus_area_id[placed_tile] != area_id:
+                continue
+            if (
+                self.terrain.map_config.get_plot_distance(tile_index, placed_tile)
+                <= radius
+            ):
+                return True
+
+        return False
+
+    def _has_bonus_class_in_radius(self, tile_index, bonus_class, radius):
+        """Check placed bonuses of any type in the same class and area."""
+        area_id = self.bonus_area_id[tile_index]
+        for placed_tile in self.placed_by_class.get(bonus_class, []):
+            if self.bonus_area_id[placed_tile] != area_id:
+                continue
+            if (
+                self.terrain.map_config.get_plot_distance(tile_index, placed_tile)
+                <= radius
+            ):
+                return True
+
+        return False
+
+    def _update_exclusion_zones(self, tile_index, xml_constraints):
+        """Update exclusion zones after placing resource"""
+        base_resource = xml_constraints.get("base_resource")
+        if base_resource is None:
+            bonus_id = self.resource_map[tile_index]
+            if bonus_id != -1 and bonus_id != BonusTypes.NO_BONUS:
+                base_resource = self.terrain.map_config.get_bonus_string_from_id(
+                    bonus_id
+                )
+
+        if base_resource is None:
+            return
+
+        if base_resource not in self.placed_resources:
+            self.placed_resources[base_resource] = []
+        self.placed_resources[base_resource].append(tile_index)
+
+        unique_radius = xml_constraints.get("iUnique", 0)
+        if unique_radius > 0:
+            self.resource_exclusion_zones[base_resource] = unique_radius
+
+    def _log_warning(self, message):
+        """Log warning once per unique message"""
+        if message not in self.logged_warnings:
+            print("WARNING: " + str(message))
+            self.logged_warnings.add(message)
+
+    def _get_terrain_id(self, terrain_string):
+        """Convert terrain string to game ID, with error handling"""
+        if terrain_string is None:
+            return -1
+        terrain_id = self.terrain.game_context.getInfoTypeForString(terrain_string)
+        if terrain_id == -1:
+            self._log_warning(
+                "Terrain type '" + str(terrain_string) + "' not found in game XML"
+            )
+        return terrain_id
+
+    def _get_bonus_id(self, bonus_string):
+        """Convert bonus string to game ID, with error handling"""
+        if bonus_string is None:
+            return -1
+        bonus_id = self.terrain.game_context.getInfoTypeForString(bonus_string)
+        if bonus_id == -1:
+            self._log_warning(
+                "Bonus type '" + str(bonus_string) + "' not found in game XML"
+            )
+        return bonus_id
+
+    def _calculate_placement_score(self, tile_index, resource_def):
+        """Calculate placement score (0.0 to 1.0, higher = better)"""
+        score = 0.0  # Base score
+
+        # Apply soft constraint modifiers
+        score += self._score_xml_constraints(tile_index, resource_def)
+        score += self._score_custom_constraints(tile_index, resource_def)
+        score /= 2.0
+
+        return max(0.0, min(1.0, score))  # Clamp to [0,1]
+
+    def _score_xml_constraints(self, tile_index, resource_def):
+        """Score based on XML preferences (0-1)"""
+        score_modifier = 0.0
+
+        bonus_id = self._get_bonus_id(resource_def["base_resource"])
+        if bonus_id == -1:
+            return 0.0
+
+        xml_constraints = self.terrain.bonus_constraints.get(bonus_id, {})
+        _, y = self.terrain.map_config.get_coords_from_index(tile_index)
+
+        # Latitude preference
+        latitude = abs(self.terrain.map_config.get_latitude_for_y(y))
+        min_lat = xml_constraints.get("iMinLatitude", 0)
+        max_lat = xml_constraints.get("iMaxLatitude", 90)
+
+        if latitude < min_lat or latitude > max_lat:
+            return 0.0
+
+        if min_lat == 0:
+            min_lat = -max_lat
+
+        if max_lat == 90 and min_lat == -90:
+            score_modifier = 0.0
+        else:
+            score_modifier = (
+                1
+                - math.cos(
+                    math.radians((latitude - min_lat) * (360.0 / (max_lat - min_lat)))
+                )
+            ) / 2.0
+
+        # Terrain preference
+        terrain_id = self.terrain.terrain_map[tile_index]
+        terrain_booleans = xml_constraints.get("TerrainBooleans", [])
+        if terrain_id in terrain_booleans:
+            score_modifier += 0.2
+        elif terrain_booleans:  # Has preferences but this isn't one
+            score_modifier -= 0.2
+
+        # Feature preference
+        feature_id = self.terrain.features.feature_map[tile_index]
+        feature_booleans = xml_constraints.get("FeatureBooleans", [])
+        if feature_id in feature_booleans:
+            score_modifier += 0.2
+
+        return max(0.0, min(1.0, score_modifier))  # Clamp to [0,1]
+
+    def _score_custom_constraints(self, tile_index, resource_def):
+        """Score based on custom placement rules (0-1)"""
+        score_modifier = 0.0
+
+        # Evaluate each placement rule
+        placement_rules = resource_def.get("placement_rules", [])
+        for rule in placement_rules:
+            rule_score = self._evaluate_placement_rule(tile_index, rule)
+            score_modifier += rule_score
+        if placement_rules:
+            score_modifier /= len(placement_rules)
+
+        return max(0.0, min(1.0, score_modifier))
+
+    def _evaluate_placement_rule(self, tile_index, rule):
+        """Evaluate a single placement rule and return score modifier"""
+        weight = rule.get("weight", 1.0)
+
+        for condition_key, range_values in rule.items():
+            if condition_key == "biome_filter":
+                biome_filter = range_values
+                if biome_filter:
+                    tile_biome = self.terrain.biome_assignments[tile_index]
+                    if tile_biome not in biome_filter:
+                        return 0.0
+            elif condition_key == "temp_range":
+                temp_range = range_values
+                if temp_range:
+                    temp_percentile = self.terrain.climate_map.temperature_percentiles[
+                        tile_index
+                    ]
+                    if (
+                        temp_percentile < temp_range[0]
+                        or temp_percentile > temp_range[1]
+                    ):
+                        return 0.0
+            elif condition_key == "precip_range":
+                precip_range = range_values
+                if precip_range:
+                    precip_percentile = self.terrain.climate_map.rainfall_percentiles[
+                        tile_index
+                    ]
+                    if (
+                        precip_percentile < precip_range[0]
+                        or precip_percentile > precip_range[1]
+                    ):
+                        return 0.0
+            elif condition_key == "wind_range":
+                wind_range = range_values
+                if wind_range:
+                    wind_speed = self.terrain.climate_map.wind_speeds[tile_index]
+                    if wind_speed < wind_range[0] or wind_speed > wind_range[1]:
+                        return 0.0
+            elif condition_key == "pressure_range":
+                pressure_range = range_values
+                if pressure_range:
+                    atmospheric_pressure = (
+                        self.terrain.climate_map.atmospheric_pressure[tile_index]
+                    )
+                    if (
+                        atmospheric_pressure < pressure_range[0]
+                        or atmospheric_pressure > pressure_range[1]
+                    ):
+                        return 0.0
+            elif condition_key == "elevation_range":
+                elevation_range = range_values
+                if elevation_range:
+                    elevation = self.terrain.elevation_map.above_sea_level_map[
+                        tile_index
+                    ]
+                    if elevation < elevation_range[0] or elevation > elevation_range[1]:
+                        return 0.0
+        return weight
+
+
+class TerrainMap:
     @profile
     def __init__(
         self, game_context=None, config=None, elevation_map=None, climate_map=None
@@ -7662,31 +8997,18 @@ class TerrainMap:
 
         # Results arrays - using -1 for NO_TERRAIN/NO_FEATURE/NO_BONUS
         self.terrain_map = [-1] * self.map_config.num_plots
-        self.feature_map = [-1] * self.map_config.num_plots
-        self.feature_subtype_map = [-1] * self.map_config.num_plots
-        self.resource_map = [-1] * self.map_config.num_plots
         self.biome_assignments = [""] * self.map_config.num_plots
-        self.resource_targets = {}
         self.land_area_id = [-1] * self.map_config.num_plots
         self.land_area_sizes = {}
-        self.bonus_area_id = [-1] * self.map_config.num_plots
-        self.bonus_area_sizes = {}
         self.world_ids = [-1] * self.map_config.num_plots
         self.world_sizes = {}
         self.is_potential_city_work = [False] * self.map_config.num_plots
 
-        self.map_config.feature_map = self.feature_map
-        self.map_config.resource_map = self.resource_map
-
-        # Feature tracking
-        self.placed_features = {}  # Track placed features by type
-        self.placed_resources = {}  # Track placed resources by type
-        self.placed_by_class = {}  # Track placed bonus tiles by bonus class
-        self.resource_exclusion_zones = {}  # Track exclusion zones for iUnique
-        self.continent_assignments = {}  # Track which continents get bArea resources
-
-        # Warning tracking (warn once per resource/feature)
-        self.logged_warnings = set()
+        # Lakes are ocean plots with coast terrain, so biome selection needs them
+        self.lake_tiles = set()
+        if hasattr(self.climate_map, "lake_data") and self.climate_map.lake_data:
+            for lake in self.climate_map.lake_data["lakes"]:
+                self.lake_tiles.update(lake["final_tiles"])
 
         # Normalized scoring factors (0.0 to 1.0)
         self.scoring_factors = {
@@ -7704,9 +9026,10 @@ class TerrainMap:
         }
 
         self._generate_biome_definitions()
-        self._generate_secondary_features()
         self._generate_resource_definitions()
         self._build_biome_grid()
+        self.features = FeatureMap(self)
+        self.resources = ResourceMap(self)
         self._precalculate_adjacency_maps()
 
     @profile
@@ -7721,10 +9044,10 @@ class TerrainMap:
         self._calculate_bonus_area_ids()
 
         # Pass 2: Place primary features based on biome definitions
-        self._place_primary_features()
+        self.features.place_primary_features()
 
         # Pass 3: Place secondary features (flood plains, oases, etc.)
-        self._place_secondary_features()
+        self.features.place_secondary_features()
 
         print("TerrainMap: Terrain generation complete.")
 
@@ -8160,100 +9483,6 @@ class TerrainMap:
             # Copy the schema above and modify for your biomes
         }
 
-    def _generate_secondary_features(self):
-        """
-        MODDERS: Add your secondary feature rules here!
-
-        ===========================================
-        COMPLETE SECONDARY FEATURE SCHEMA
-        ===========================================
-
-        'feature_name': {
-            # === REQUIRED FIELDS ===
-            'base_feature': 'FEATURE_TYPE_CONSTANT',      # The feature to place
-            'placement_rules': [                        # List of placement rule sets
-                {
-                    # === CONDITION TYPES ===
-                    'conditions': list('string'),              # Rule trigger condition:
-                    #   'river_tile' - Must be adjacent to river
-                    #   'terrain_match' - Must be on specific terrain
-                    #   'climate_match' - Must meet climate requirements
-                    #   'plot_match' - Must be on specific plot type
-                    #   'biome_match' - Must be in specific biome
-
-                    # === FILTERS AND REQUIREMENTS ===
-                    'terrain_filter': ['TERRAIN_TYPES'], # Only on these terrain types
-                    'biome_filter': ['biome_names'],    # Only in these biomes
-                    'plot_requirements': ['plot_types'], # Required plot types:
-                    #   'plot_flat', 'plot_hills', 'plot_peaks'
-
-                    # === CLIMATE REQUIREMENTS ===
-                    'climate_requirements': {
-                        'temp_range': (float, float),   # Temperature percentile requirements (optional)
-                        'precip_range': (float, float), # Precipitation percentile requirements (optional)
-                        'wind_range': (float, float),   # Wind speed requirements (optional)
-                        'pressure_range': (float, float), # Pressure requirements (optional)
-                    },
-
-                    # === PLACEMENT METHODS ===
-                    'placement_method': 'string',       # How to place features:
-                    #   'probability' - Random chance per eligible tile
-                    #   'scattered' - Random scattered placement with constraints
-                    #   'clustered' - Group placement in patches
-
-                    # === PLACEMENT PARAMETERS ===
-                    'probability': float (0.0-1.0),    # Chance per eligible tile
-                    'density': float (0.0-1.0),        # Fraction of eligible tiles to target
-                    'cluster_size': int,               # Average size of feature clusters
-                    'min_distance': int,               # Minimum distance between features
-                }
-            ]
-        },
-        """
-
-        self.secondary_features = {
-            "flood_plains": {
-                "base_feature": "FEATURE_FLOOD_PLAINS",
-                "placement_rules": [
-                    {
-                        "conditions": [
-                            "river_tile",
-                            "terrain_match",
-                            "climate_match",
-                            "plot_match",
-                        ],
-                        "terrain_filter": [
-                            "TERRAIN_GRASS",
-                            "TERRAIN_PLAINS",
-                            "TERRAIN_TUNDRA",
-                        ],
-                        "climate_requirements": {
-                            "precip_range": (0.5, 1.0),  # Moderate to high rainfall
-                        },
-                        "plot_requirements": ["plot_flat"],  # Flat river areas
-                        "placement_method": "clustered",
-                        "density": 0.2,
-                        "cluster_size": 2,
-                    },
-                ],
-            },
-            "oasis": {
-                "base_feature": "FEATURE_OASIS",
-                "placement_rules": [
-                    {
-                        "conditions": "terrain_match",
-                        "terrain_filter": ["TERRAIN_DESERT"],
-                        "placement_method": "scattered",
-                        "density": 0.1,  # 10% of desert tiles eligible
-                        "cluster_size": 1,  # Single tile oases
-                        "min_distance": 3,  # Minimum 3 tiles apart
-                    },
-                ],
-            },
-            # === MODDERS: ADD YOUR SECONDARY FEATURES BELOW THIS LINE ===
-            # Copy the schema above and modify for your features
-        }
-
     def _generate_resource_definitions(self):
         """
         MODDERS: Add your custom resources here!
@@ -8507,41 +9736,15 @@ class TerrainMap:
         north_of_river = set()
         west_of_river = set()
         for from_node, to_node, _, _ in self.climate_map.river_map:
-            from_x, from_y = self.climate_map.map_config.get_coords_from_index(
-                from_node
+            edge_index, is_north_edge, _ = self.map_config.get_river_edge(
+                from_node, to_node
             )
-            to_x, to_y = self.climate_map.map_config.get_coords_from_index(to_node)
-
-            dx = to_x - from_x
-            dy = to_y - from_y
-
-            if (
-                self.climate_map.map_config.wrap_x
-                and abs(dx) > self.climate_map.map_config.num_plots_x // 2
-            ):
-                dx = dx - int(copysign(self.climate_map.map_config.num_plots_x, dx))
-            if (
-                self.climate_map.map_config.wrap_y
-                and abs(dy) > self.climate_map.map_config.num_plots_y // 2
-            ):
-                dy = dy - int(copysign(self.climate_map.map_config.num_plots_y, dy))
-
-            if abs(dx) > abs(dy):
-                if dx > 0:
-                    edge_x, edge_y = to_x, to_y
-                else:
-                    edge_x, edge_y = from_x, from_y
-                edge_index = self.map_config.get_index_from_coords(edge_x, edge_y)
-                if edge_index != -1:
-                    north_of_river.add(edge_index)
+            if edge_index == -1:
+                continue
+            if is_north_edge:
+                north_of_river.add(edge_index)
             else:
-                if dy > 0:
-                    edge_x, edge_y = from_x, from_y
-                else:
-                    edge_x, edge_y = from_x, to_y
-                edge_index = self.map_config.get_index_from_coords(edge_x, edge_y)
-                if edge_index != -1:
-                    west_of_river.add(edge_index)
+                west_of_river.add(edge_index)
 
         # Civ's river-side eligibility is based on the four cardinal edges.
         for tile_index in xrange(self.map_config.num_plots):
@@ -8784,7 +9987,9 @@ class TerrainMap:
         plot_type = self.elevation_map.plot_types[tile_index]
         is_water = plot_type == PlotTypes.PLOT_OCEAN
         if is_water:
-            is_coast = self._is_coastal_water(tile_index)
+            is_coast = tile_index in self.lake_tiles or self._is_coastal_water(
+                tile_index
+            )
         else:
             is_coast = False
 
@@ -8932,12 +10137,12 @@ class TerrainMap:
 
     def _calculate_bonus_area_ids(self):
         """Calculate contiguous land and water areas for iMinAreaSize."""
-        self.bonus_area_id = [-1] * self.map_config.num_plots
-        self.bonus_area_sizes = {}
+        self.resources.bonus_area_id = [-1] * self.map_config.num_plots
+        self.resources.bonus_area_sizes = {}
         area_id = 0
 
         for start_tile in xrange(self.map_config.num_plots):
-            if self.bonus_area_id[start_tile] != -1:
+            if self.resources.bonus_area_id[start_tile] != -1:
                 continue
 
             area_is_water = (
@@ -8947,18 +10152,18 @@ class TerrainMap:
             area_size = 0
             while stack:
                 current = stack.pop()
-                if self.bonus_area_id[current] != -1:
+                if self.resources.bonus_area_id[current] != -1:
                     continue
                 if (
                     self.elevation_map.plot_types[current] == PlotTypes.PLOT_OCEAN
                 ) != area_is_water:
                     continue
 
-                self.bonus_area_id[current] = area_id
+                self.resources.bonus_area_id[current] = area_id
                 area_size += 1
                 for direction in xrange(1, 9):
                     neighbour = self.map_config.neighbours[current][direction]
-                    if neighbour < 0 or self.bonus_area_id[neighbour] != -1:
+                    if neighbour < 0 or self.resources.bonus_area_id[neighbour] != -1:
                         continue
                     neighbour_is_water = (
                         self.elevation_map.plot_types[neighbour] == PlotTypes.PLOT_OCEAN
@@ -8966,7 +10171,7 @@ class TerrainMap:
                     if neighbour_is_water == area_is_water:
                         stack.append(neighbour)
 
-            self.bonus_area_sizes[area_id] = area_size
+            self.resources.bonus_area_sizes[area_id] = area_size
             area_id += 1
 
     def _flood_fill_land_area(self, start_tile, land_area_id):
@@ -9063,1215 +10268,6 @@ class TerrainMap:
 
         return world_size
 
-    @profile
-    def _place_primary_features(self):
-        """Place primary biome features according to coverage and placement rules"""
-        # Initialize feature tracking
-        self.placed_features = {}
-
-        # Extract lake tiles from ClimateMap for special ice generation rules
-        self.lake_tiles = set()
-        if hasattr(self.climate_map, "lake_data") and self.climate_map.lake_data:
-            for lake in self.climate_map.lake_data["lakes"]:
-                self.lake_tiles.update(lake["final_tiles"])
-
-        for tile_index in xrange(self.map_config.num_plots):
-            biome_name = self.biome_assignments[tile_index]
-            biome_def = self.biome_definitions[biome_name]
-            feature_def = biome_def["feature"]
-
-            if feature_def["type"] is None or feature_def["coverage"] <= 0.0:
-                continue
-
-            # Check if this tile should get the feature
-            if self._should_place_feature(tile_index, feature_def):
-                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
-                    feature_def["type"]
-                )
-                self.feature_subtype_map[tile_index] = feature_def.get("subtype", 0)
-                self._track_feature_placement(tile_index, feature_def["type"])
-
-    def _should_place_feature(self, tile_index, feature_def):
-        """Determine if feature should be placed considering all rules"""
-        # Check basic placement rules first
-        if not self._check_feature_placement_rules(tile_index, feature_def):
-            return False
-
-        # Special handling for lake ice generation
-        if tile_index in self.lake_tiles and feature_def.get("type") == "FEATURE_ICE":
-            return self._should_place_lake_ice(tile_index)
-
-        rules = feature_def.get("placement_rules", {})
-        cluster_factor = rules.get("cluster_factor", 0.0)
-        # Base probability from coverage (allow dynamic scaling for some features)
-        base_prob = self._get_scaled_coverage(tile_index, feature_def)
-
-        # Modify probability based on clustering
-        if cluster_factor > 0.0:
-            feature_id = self.game_context.getInfoTypeForString(feature_def["type"])
-            neighbour_bonus = self._calculate_cluster_bonus(
-                tile_index, feature_id, cluster_factor
-            )
-            modified_prob = base_prob * (1.0 + neighbour_bonus * cluster_factor)
-        else:
-            modified_prob = base_prob
-
-        # Check patch size limits
-        if not self._check_patch_size_limits(tile_index, feature_def):
-            return False
-
-        return random.random() <= min(modified_prob, 1.0)
-
-    def _get_scaled_coverage(self, tile_index, feature_def):
-        """Return coverage scaled dynamically for certain features.
-
-        Currently used to scale FEATURE_ICE coverage by water temperature
-        percentile so ice becomes denser at lower temperatures.
-        """
-        base_cov = feature_def.get("coverage", 0.0)
-        if base_cov <= 0.0:
-            return 0.0
-
-        ftype = feature_def.get("type")
-
-        # Override for lake ice - return 0.0 to skip normal coverage calculation
-        # Lakes use special neighbor-based rules instead
-        if tile_index in self.lake_tiles and ftype == "FEATURE_ICE":
-            return 0.0
-
-        # Read placement rule for temperature-scaled coverage (optional)
-        rules = feature_def.get("placement_rules", {})
-        temp_scale = rules.get("temp_scaled_coverage", None)  # temperature scale factor
-
-        # If no temp scaling rule, keep base coverage
-        if temp_scale is None:
-            return base_cov
-
-        # Determine temperature percentile for water tiles (0.0 cold .. 1.0 warm)
-        if self.terrain_map[tile_index] in [
-            self.game_context.getInfoTypeForString("TERRAIN_COAST"),
-            self.game_context.getInfoTypeForString("TERRAIN_OCEAN"),
-        ]:
-            temp_pct = self.climate_map.temperature_percentiles_water[tile_index]
-        else:
-            temp_pct = self.climate_map.temperature_percentiles[tile_index]
-
-        biome_def = self.biome_definitions[self.biome_assignments[tile_index]]
-        min_temp, max_temp = biome_def.get("temp_range", (0.0, 1.0))
-
-        # If temperature is warmer than max threshold, scale is 0.
-        if temp_pct >= max_temp:
-            scale = 1.0
-        elif temp_pct <= min_temp:
-            scale = 0.0
-        else:
-            # Linear interpolation: colder => larger scale
-            scale = (temp_pct - min_temp) / float(max_temp - min_temp)
-
-        scale = max(0.0, min(1.0, scale))
-
-        # Final coverage: base coverage multiplied by the smooth_scale and by the rule multiplier
-        return base_cov + scale * temp_scale
-
-    def _calculate_cluster_bonus(self, tile_index, feature_id, cluster_factor):
-        """Calculate clustering bonus for feature placement"""
-        feature_neighbours = 0
-        total_neighbours = 0
-
-        for direction in xrange(1, 9):
-            neighbour_idx = self.map_config.neighbours[tile_index][direction]
-            if neighbour_idx >= 0 and neighbour_idx < len(self.feature_map):
-                if self.feature_map[neighbour_idx] == feature_id:
-                    feature_neighbours += 1
-                total_neighbours += 1
-
-        if total_neighbours == 0:
-            return 0.0
-
-        return feature_neighbours / float(total_neighbours)
-
-    def _count_snow_neighbors(self, tile_index):
-        """Count cardinal neighbors (N,S,E,W) with snow terrain"""
-        snow_count = 0
-        terrain_snow_id = self.game_context.getInfoTypeForString("TERRAIN_SNOW")
-
-        # Check only cardinal directions (N,S,E,W)
-        for direction in [
-            self.map_config.N,
-            self.map_config.S,
-            self.map_config.E,
-            self.map_config.W,
-        ]:
-            neighbor_idx = self.map_config.neighbours[tile_index][direction]
-            if neighbor_idx >= 0 and neighbor_idx < len(self.terrain_map):
-                if self.terrain_map[neighbor_idx] == terrain_snow_id:
-                    snow_count += 1
-
-        return snow_count
-
-    def _should_place_lake_ice(self, tile_index):
-        """Determine if ice should be placed on a lake tile based on snow neighbors"""
-        snow_neighbor_count = self._count_snow_neighbors(tile_index)
-        # Require at least 3 out of 4 cardinal neighbors to have snow terrain
-        return snow_neighbor_count >= 2
-
-    def _check_patch_size_limits(self, tile_index, feature_def):
-        """Check if placing feature would violate patch size limits"""
-        rules = feature_def.get("placement_rules", {})
-        min_patch_size = rules.get("min_patch_size", 1)
-        max_patch_size = rules.get("max_patch_size", 999)
-
-        if min_patch_size <= 1 and max_patch_size >= 999:
-            return True  # No limits to check
-
-        # Find connected feature patch this tile would join
-        connected_patch_size = self._get_connected_patch_size(
-            tile_index, feature_def["type"]
-        )
-
-        # Check if adding this tile would exceed max patch size
-        if connected_patch_size + 1 > max_patch_size:
-            return False
-
-        return True
-
-    def _get_connected_patch_size(self, tile_index, feature_type):
-        """Get size of connected feature patch this tile would join"""
-        if feature_type not in self.placed_features:
-            return 0
-
-        # Use flood fill to find connected patch size
-        visited = set()
-        to_visit = []
-
-        # Add neighbouring tiles with the same feature
-        feature_id = self.game_context.getInfoTypeForString(feature_type)
-        for direction in xrange(1, 9):
-            neighbour_idx = self.map_config.neighbours[tile_index][direction]
-            if (
-                neighbour_idx >= 0
-                and neighbour_idx < len(self.feature_map)
-                and self.feature_map[neighbour_idx] == feature_id
-            ):
-                to_visit.append(neighbour_idx)
-
-        # Flood fill to count patch size
-        patch_size = 0
-        while to_visit:
-            current = to_visit.pop()
-            if current in visited:
-                continue
-
-            visited.add(current)
-            patch_size += 1
-
-            # Add neighbours of current tile
-            for direction in xrange(1, 9):
-                neighbour_idx = self.map_config.neighbours[current][direction]
-                if (
-                    neighbour_idx >= 0
-                    and neighbour_idx not in visited
-                    and neighbour_idx < len(self.feature_map)
-                    and self.feature_map[neighbour_idx] == feature_id
-                ):
-                    to_visit.append(neighbour_idx)
-
-        return patch_size
-
-    def _track_feature_placement(self, tile_index, feature_type):
-        """Track placed features for clustering and patch size calculations"""
-        if feature_type not in self.placed_features:
-            self.placed_features[feature_type] = []
-        self.placed_features[feature_type].append(tile_index)
-
-    def _check_feature_placement_rules(self, tile_index, feature_def):
-        """Check if feature placement rules allow placement at this tile"""
-        rules = feature_def.get("placement_rules", {})
-
-        # Check XML constraints first (handled by MapConfig)
-        if not self._check_xml_feature_constraints(tile_index, feature_def["type"]):
-            return False
-
-        # Check procedural rules
-        plot_type = self.elevation_map.plot_types[tile_index]
-
-        if rules.get("avoid_peaks", False) and plot_type == PlotTypes.PLOT_PEAK:
-            return False
-        if rules.get("avoid_hills", False) and plot_type == PlotTypes.PLOT_HILLS:
-            return False
-        if rules.get("prefer_flat", False) and plot_type != PlotTypes.PLOT_LAND:
-            if random.random() > 0.5:  # 50% penalty for non-flat
-                return False
-        if rules.get("prefer_hills", False) and plot_type != PlotTypes.PLOT_HILLS:
-            if random.random() > 0.5:  # 50% penalty for non-hills
-                return False
-
-        if rules.get("prefer_rivers", False):
-            if not self.map_config.is_adjacent_to_river(tile_index):
-                if random.random() > 0.5:  # 50% penalty for non-river
-                    return False
-
-        return True
-
-    def _check_xml_feature_constraints(
-        self, tile_index, feature_type, is_floodplains=False
-    ):
-        """Check XML-defined feature constraints (implemented by MapConfig)"""
-        feature_id = self.game_context.getInfoTypeForString(feature_type)
-        constraints = self.feature_constraints.get(feature_id, {})
-
-        # Example constraints checking (MapConfig handles the details)
-        if constraints.get("bRequiresFlatlands", False):
-            if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_LAND:
-                return False
-
-        if constraints.get("bNoCoast", False):
-            # Check if adjacent to coast (MapConfig provides this check)
-            if self.map_config.is_adjacent_to_coast(tile_index):
-                return False
-
-        if constraints.get("bRequiresRiver", False):
-            if not self.map_config.is_adjacent_to_river(tile_index):
-                return False
-
-        if constraints.get("bNoRiver", False):
-            if self.map_config.is_adjacent_to_river(tile_index):
-                return False
-
-        if constraints.get("bNoAdjacent", False):
-            if self.map_config.is_adjacent_to_feature(tile_index, feature_type):
-                return False
-
-        # Check terrain compatibility
-        if not is_floodplains:
-            allowed_terrains = constraints.get("TerrainBooleans", [])
-            if (
-                allowed_terrains
-                and self.terrain_map[tile_index] not in allowed_terrains
-            ):
-                return False
-
-        # More constraint checks would be implemented in MapConfig
-        return True
-
-    @profile
-    def _place_secondary_features(self):
-        """Place secondary features like flood plains and oases"""
-        for feature_name, feature_def in self.secondary_features.items():
-            if feature_name == "flood_plains":
-                # Special handling for floodplains due to game engine behavior
-                self._place_floodplains_special(feature_def)
-            else:
-                self._apply_secondary_feature_rules(feature_name, feature_def)
-
-    def _apply_secondary_feature_rules(self, feature_name, feature_def):
-        """Apply secondary feature placement rules"""
-        for rule in feature_def["placement_rules"]:
-            eligible_tiles = self._find_eligible_tiles_for_rule(
-                rule, feature_def["base_feature"]
-            )
-
-            placement_method = rule.get("placement_method", "probability")
-
-            if placement_method == "scattered":
-                self._place_scattered_features(
-                    eligible_tiles,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-            elif placement_method == "clustered":
-                self._place_clustered_features(
-                    eligible_tiles,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-            else:  # Default to probability
-                self._place_probability_features(
-                    eligible_tiles,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-
-    def _find_eligible_tiles_for_rule(self, rule, base_feature):
-        """Find tiles that meet the rule conditions"""
-        eligible = []
-
-        for tile_index in xrange(self.map_config.num_plots):
-            if self._tile_meets_rule_conditions(tile_index, rule, base_feature):
-                eligible.append(tile_index)
-
-        return eligible
-
-    def _tile_meets_rule_conditions(
-        self, tile_index, rule, base_feature, is_floodplains=False
-    ):
-        """Check if a tile meets all conditions for a rule"""
-        conditions = rule.get("conditions", [])
-        if not isinstance(conditions, list):
-            conditions = [conditions]
-
-        if not self._check_xml_feature_constraints(
-            tile_index, base_feature, is_floodplains
-        ):
-            return False
-
-        if len(conditions) == 0:
-            return True  # No conditions means always eligible
-
-        if "river_tile" in conditions:
-            if not self.map_config.is_adjacent_to_river(tile_index):
-                return False
-
-        if "terrain_match" in conditions:
-            terrain_filter = [
-                self.game_context.getInfoTypeForString(t)
-                for t in rule.get("terrain_filter", [])
-            ]
-            if terrain_filter and self.terrain_map[tile_index] not in terrain_filter:
-                return False
-
-        if "plot_match" in conditions:
-            plot_requirements = rule.get("plot_requirements", [])
-            plot_type = self.elevation_map.plot_types[tile_index]
-            meets_plot_req = False
-            for req in plot_requirements:
-                if req == "plot_flat" and plot_type == PlotTypes.PLOT_LAND:
-                    meets_plot_req = True
-                elif req == "plot_hills" and plot_type == PlotTypes.PLOT_HILLS:
-                    meets_plot_req = True
-                elif req == "plot_peaks" and plot_type == PlotTypes.PLOT_PEAK:
-                    meets_plot_req = True
-            if plot_requirements and not meets_plot_req:
-                return False
-
-        if "biome_match" in conditions:
-            biome_filter = rule.get("biome_filter", [])
-            if biome_filter and self.biome_assignments[tile_index] not in biome_filter:
-                return False
-
-        # Check climate requirements
-        climate_req = rule.get("climate_requirements", {})
-        if "climate_match" in conditions and climate_req:
-            if "temp_range" in climate_req:
-                temp = self.climate_map.temperature_percentiles[tile_index]
-                temp_range = climate_req.get("temp_range")
-                if temp_range and not (temp_range[0] <= temp <= temp_range[1]):
-                    return False
-
-            if "precip_range" in climate_req:
-                precip = self.climate_map.rainfall_percentiles[tile_index]
-                precip_range = climate_req.get("precip_range")
-                if precip_range and not (precip_range[0] <= precip <= precip_range[1]):
-                    return False
-
-            # Check wind and pressure if specified
-            if "wind_range" in climate_req:
-                wind = self.scoring_factors["wind_speed"][tile_index]
-                wind_range = climate_req["wind_range"]
-                if not (wind_range[0] <= wind <= wind_range[1]):
-                    return False
-
-            if "pressure_range" in climate_req:
-                pressure = self.scoring_factors["pressure"][tile_index]
-                pressure_range = climate_req["pressure_range"]
-                if not (pressure_range[0] <= pressure <= pressure_range[1]):
-                    return False
-
-        return True
-
-    def _place_scattered_features(
-        self, eligible_tiles, feature_type, feature_subtype, rule
-    ):
-        """Place features using scattered placement method"""
-        if not eligible_tiles:
-            return
-
-        density = rule.get("density", 0.1)
-        min_distance = rule.get("min_distance", 2)
-
-        target_count = int(len(eligible_tiles) * density)
-        placed_features = []
-
-        for _ in xrange(target_count * 3):  # Try multiple times
-            if len(placed_features) >= target_count:
-                break
-
-            candidate = random.choice(eligible_tiles)
-
-            # Check minimum distance
-            too_close = False
-            for placed_tile in placed_features:
-                x1, y1 = self.map_config.get_coords_from_index(candidate)
-                x2, y2 = self.map_config.get_coords_from_index(placed_tile)
-                if (
-                    math.sqrt(
-                        sum(
-                            x**2
-                            for x in self.map_config.get_wrapped_distance(
-                                x1, y1, x2, y2
-                            )
-                        )
-                    )
-                    < min_distance
-                ):
-                    too_close = True
-                    break
-
-            if not too_close and self.feature_map[
-                candidate
-            ] == self.game_context.getInfoTypeForString("NO_FEATURE"):
-                feature_id = self.game_context.getInfoTypeForString(feature_type)
-                self.feature_map[candidate] = feature_id
-                self.feature_subtype_map[candidate] = feature_subtype
-                placed_features.append(candidate)
-
-    def _place_clustered_features(
-        self, eligible_tiles, feature_type, feature_subtype, rule
-    ):
-        """Place features using clustered placement method"""
-        if not eligible_tiles:
-            return
-
-        density = rule.get("density", 0.1)
-        cluster_size = rule.get("cluster_size", 3)
-
-        target_clusters = max(1, int(len(eligible_tiles) * density / cluster_size))
-        feature_id = self.game_context.getInfoTypeForString(feature_type)
-
-        for _ in xrange(target_clusters):
-            # Pick random center
-            center = random.choice(eligible_tiles)
-            if self.feature_map[center] != self.game_context.getInfoTypeForString(
-                "NO_FEATURE"
-            ):
-                continue
-
-            # Place cluster around center
-            cluster_tiles = self._get_tiles_in_radius(center, cluster_size)
-            placed_in_cluster = 0
-
-            for tile in cluster_tiles:
-                if (
-                    tile in eligible_tiles
-                    and self.feature_map[tile]
-                    == self.game_context.getInfoTypeForString("NO_FEATURE")
-                    and placed_in_cluster < cluster_size
-                ):
-                    self.feature_map[tile] = feature_id
-                    self.feature_subtype_map[tile] = feature_subtype
-                    placed_in_cluster += 1
-
-    def _place_probability_features(
-        self, eligible_tiles, feature_type, feature_subtype, rule
-    ):
-        """Place features using probability method"""
-        probability = rule.get("probability", 0.5)
-        feature_id = self.game_context.getInfoTypeForString(feature_type)
-
-        for tile_index in eligible_tiles:
-            if self.feature_map[tile_index] == self.game_context.getInfoTypeForString(
-                "NO_FEATURE"
-            ):
-                if random.random() <= probability:
-                    self.feature_map[tile_index] = feature_id
-                    self.feature_subtype_map[tile_index] = feature_subtype
-
-    def _get_tiles_in_radius(self, center_tile, radius):
-        """Get all tiles within radius of center tile"""
-        tiles = []
-        center_x = center_tile % self.map_config.num_plots_x
-        center_y = center_tile // self.map_config.num_plots_x
-
-        for dy in xrange(-radius, radius + 1):
-            for dx in xrange(-radius, radius + 1):
-                if dx * dx + dy * dy <= radius * radius:
-                    x = (center_x + dx) % self.map_config.num_plots_x
-                    y = center_y + dy
-                    if 0 <= y < self.map_config.num_plots_y:
-                        tile_index = y * self.map_config.num_plots_x + x
-                        tiles.append(tile_index)
-
-        return tiles
-
-    def _place_floodplains_special(self, feature_def):
-        """
-        Special handling for floodplains due to game engine behavior.
-
-        The game engine automatically places floodplains on ALL flat river tiles
-        of terrains listed in the XML TerrainBoolean list. We override this by:
-        1. Ignoring XML terrain booleans for floodplains completely
-        2. Using our own terrain rules instead
-        3. Assuming automatic placement on XML-compatible terrains, manual on others
-        """
-
-        for tile_index in xrange(self.map_config.num_plots):
-            # Check if terrain will get automatic floodplains from game engine
-            if self._tile_meets_rule_conditions(tile_index, {}, "FEATURE_FLOOD_PLAINS"):
-                # Game engine will automatically place floodplains here
-                # We just mark it in our tracking but don't place manually
-                self.feature_map[tile_index] = self.game_context.getInfoTypeForString(
-                    "FEATURE_FLOOD_PLAINS"
-                )
-                self.feature_subtype_map[tile_index] = 0
-
-        # Use our custom rules for non-XML terrains
-        for rule in feature_def["placement_rules"]:
-            eligible = []
-            for tile_index in xrange(self.map_config.num_plots):
-                if self._tile_meets_rule_conditions(
-                    tile_index, rule, "FEATURE_FLOOD_PLAINS", True
-                ):
-                    eligible.append(tile_index)
-
-            placement_method = rule.get("placement_method", "probability")
-
-            if placement_method == "scattered":
-                self._place_scattered_features(
-                    eligible,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-            elif placement_method == "clustered":
-                self._place_clustered_features(
-                    eligible,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-            else:  # Default to probability
-                self._place_probability_features(
-                    eligible,
-                    feature_def["base_feature"],
-                    feature_def.get("subtype", 0),
-                    rule,
-                )
-
-    @profile
-    def place_resources(self, river_side_map=None):
-        """Place resources after rivers exist; None uses PlanetSim river adjacency."""
-        self.river_side_map = river_side_map
-        self._place_resources()
-
-    def _place_resources(self):
-        """Place resources using scoring-based system"""
-        print("TerrainMap: Placing resources...")
-
-        # Get resources sorted by placement order
-        resources_by_order = self._get_resources_by_placement_order()
-
-        for resource_def in resources_by_order:
-            if not resource_def["xml_constraints"].get("bArea", False):
-                self._add_non_unique_bonus_type(resource_def)
-            else:
-                self._add_unique_bonus_type(resource_def)
-
-    def _get_resources_by_placement_order(self):
-        """Get resources sorted by placement order, target quantity, then resource name."""
-        resource_list = []
-
-        for base_resource, resource_def in self.resource_definitions.items():
-            bonus_id = self._get_bonus_id(base_resource)
-            if bonus_id == -1:
-                continue
-
-            xml_constraints = self.bonus_constraints.get(bonus_id, {})
-            for key, value in resource_def["xml_overrides"].items():
-                if key in xml_constraints:
-                    xml_constraints[key] = value
-
-            placement_order = xml_constraints.get("iPlacementOrder", 99)
-
-            resource_def["base_resource"] = base_resource
-            resource_def["xml_constraints"] = xml_constraints
-
-            resource_list.append((placement_order, resource_def))
-
-        resource_list.sort(key=lambda x: (x[0], random.randint(0, 99)))
-        return [resource_def for _, resource_def in resource_list]
-
-    def _random_below(self, upper):
-        """Uniform integer in [0, upper - 1]; 0 when upper is 0 (engine getMapRandNum)."""
-        if upper <= 0:
-            return 0
-        return random.randrange(upper)
-
-    def _order_candidates(self, tiles, scores, rands):
-        """Drop placed tiles and sort the rest by score * random, highest first."""
-        open_tiles = [tile for tile in tiles if self.resource_map[tile] == -1]
-        open_tiles.sort(key=lambda tile: scores[tile] * rands[tile], reverse=True)
-        return open_tiles
-
-    def _decay_nearby_scores(self, tile_index, scores):
-        """Scale nearby candidate scores by max(0, 1 - k / d^2) after a placement."""
-        if self.map_config.resource_decay_strength <= 0.0:
-            return
-        for tile in self._get_tiles_in_radius(
-            tile_index, self.map_config.resource_decay_radius
-        ):
-            if tile == tile_index or tile not in scores:
-                continue
-            tile_x, tile_y = self.map_config.get_coords_from_index(tile)
-            center_x, center_y = self.map_config.get_coords_from_index(tile_index)
-            dx, dy = self.map_config.get_wrapped_distance(
-                center_x, center_y, tile_x, tile_y
-            )
-            dist_sq = dx * dx + dy * dy
-            scores[tile] *= max(
-                0.0, 1.0 - self.map_config.resource_decay_strength / dist_sq
-            )
-
-    def _record_bonus(self, tile_index, bonus_id, xml_constraints, counts):
-        """Store a placed bonus and update counts and exclusion zones."""
-        self.resource_map[tile_index] = bonus_id
-        counts["placed"] += 1
-        if self.elevation_map.plot_types[tile_index] != PlotTypes.PLOT_OCEAN:
-            counts["land"] += 1
-        self.placed_by_class.setdefault(xml_constraints.get("bonus_class"), []).append(
-            tile_index
-        )
-        self._update_exclusion_zones(tile_index, xml_constraints)
-
-    def _place_scored_tiles(
-        self,
-        resource_def,
-        bonus_id,
-        tiles,
-        scores,
-        counts,
-        target_quantity,
-        area_id=None,
-    ):
-        """Place tiles by score * random, re-sorting after each placement."""
-        xml_constraints = resource_def["xml_constraints"]
-        group_range = xml_constraints.get("iGroupRange", 0)
-        group_rand = xml_constraints.get("iGroupRand", 0)
-        rands = dict((tile, random.random()) for tile in tiles)
-        ordered = self._order_candidates(tiles, scores, rands)
-        pos = 0
-        while pos < len(ordered) and counts["placed"] < target_quantity:
-            tile_index = ordered[pos]
-            pos += 1
-            if not self._should_place_resource(
-                tile_index,
-                resource_def,
-                xml_constraints,
-                counts["land"],
-                counts["placed"],
-            ):
-                continue
-
-            self._record_bonus(tile_index, bonus_id, xml_constraints, counts)
-            if group_range > 0 and group_rand > 0:
-                for cluster_tile in self._get_tiles_in_radius(tile_index, group_range):
-                    if counts["placed"] >= target_quantity:
-                        break
-                    if cluster_tile == tile_index:
-                        continue
-                    if (
-                        area_id is not None
-                        and self.bonus_area_id[cluster_tile] != area_id
-                    ):
-                        continue
-                    if self.resource_map[cluster_tile] != -1:
-                        continue
-                    if not self._can_have_bonus(cluster_tile, resource_def):
-                        continue
-                    if not self._should_place_resource(
-                        cluster_tile,
-                        resource_def,
-                        xml_constraints,
-                        counts["land"],
-                        counts["placed"],
-                    ):
-                        continue
-                    if self._random_below(100) < group_rand:
-                        self._record_bonus(
-                            cluster_tile, bonus_id, xml_constraints, counts
-                        )
-
-            self._decay_nearby_scores(tile_index, scores)
-            ordered = self._order_candidates(ordered, scores, rands)
-            pos = 0
-
-    def _add_non_unique_bonus_type(self, resource_def):
-        """Place a single resource type using scoring system"""
-        bonus_id = self._get_bonus_id(resource_def["base_resource"])
-        if bonus_id == -1:
-            return  # Skip missing resources
-
-        candidate_tiles = []
-        for tile_index in xrange(self.map_config.num_plots):
-            if self.resource_map[tile_index] != -1:
-                continue  # Already has a resource
-            if not self._can_have_bonus(tile_index, resource_def):
-                continue
-            candidate_tiles.append(tile_index)
-
-        xml_constraints = resource_def["xml_constraints"]
-        target_quantity = self._calculate_num_bonuses_to_add(
-            xml_constraints, len(candidate_tiles)
-        )
-        self.resource_targets[resource_def["base_resource"]] = target_quantity
-
-        scores = {}
-        for tile_index in candidate_tiles:
-            scores[tile_index] = self._calculate_placement_score(
-                tile_index, resource_def
-            )
-
-        counts = {"placed": 0, "land": 0}
-        self._place_scored_tiles(
-            resource_def, bonus_id, candidate_tiles, scores, counts, target_quantity
-        )
-
-    def _add_unique_bonus_type(self, resource_def):
-        """Place a resource in areas ranked by score sum times size over bonus count."""
-        bonus_id = self._get_bonus_id(resource_def["base_resource"])
-        if bonus_id == -1:
-            return
-
-        candidate_tiles = []
-        for tile_index in xrange(self.map_config.num_plots):
-            if self.resource_map[tile_index] != -1:
-                continue
-            if not self._can_have_bonus(tile_index, resource_def):
-                continue
-            candidate_tiles.append(tile_index)
-
-        xml_constraints = resource_def["xml_constraints"]
-        target_quantity = self._calculate_num_bonuses_to_add(
-            xml_constraints, len(candidate_tiles)
-        )
-        self.resource_targets[resource_def["base_resource"]] = target_quantity
-
-        bonus_count_by_area = {}
-        for tile_index, placed_bonus_id in enumerate(self.resource_map):
-            area_id = self.bonus_area_id[tile_index]
-            if area_id >= 0 and placed_bonus_id != -1:
-                bonus_count_by_area[area_id] = bonus_count_by_area.get(area_id, 0) + 1
-
-        scores = {}
-        candidates_by_area = {}
-        sum_score_by_area = {}
-        for tile_index in candidate_tiles:
-            area_id = self.bonus_area_id[tile_index]
-            if area_id < 0:
-                continue
-
-            score = self._calculate_placement_score(tile_index, resource_def)
-            scores[tile_index] = score
-            candidates_by_area.setdefault(area_id, []).append(tile_index)
-            sum_score_by_area[area_id] = sum_score_by_area.get(area_id, 0.0) + score
-
-        fitting_areas = [
-            area_id
-            for area_id in candidates_by_area
-            if len(candidates_by_area[area_id]) >= target_quantity
-        ]
-        if not fitting_areas:
-            fitting_areas = list(candidates_by_area)
-
-        area_order = sorted(
-            fitting_areas,
-            key=lambda area_id: (
-                sum_score_by_area[area_id]
-                * (
-                    float(self.bonus_area_sizes[area_id])
-                    / (bonus_count_by_area.get(area_id, 0) + target_quantity + 1)
-                )
-                ** self.map_config.unique_density_exponent
-            ),
-            reverse=True,
-        )
-
-        counts = {"placed": 0, "land": 0}
-        for area_id in area_order:
-            area_tiles = candidates_by_area[area_id]
-            area_scores = dict((tile, scores[tile]) for tile in area_tiles)
-            self._place_scored_tiles(
-                resource_def,
-                bonus_id,
-                area_tiles,
-                area_scores,
-                counts,
-                target_quantity,
-                area_id,
-            )
-            if counts["placed"] >= target_quantity:
-                break
-
-    def _can_have_bonus(self, tile_index, resource_def):
-        """Check hard constraints that must be obeyed (boolean gates)"""
-        bonus_id = self._get_bonus_id(resource_def["base_resource"])
-        if bonus_id == -1:
-            return False  # Missing resource definition
-
-        xml_constraints = resource_def["xml_constraints"]
-        placement_defs = resource_def.get("placement_defs", [])
-
-        plot_type = self.elevation_map.plot_types[tile_index]
-        terrain_id = self.terrain_map[tile_index]
-        feature_id = self.feature_map[tile_index]
-        terrain_booleans = xml_constraints.get("TerrainBooleans", [])
-        feature_booleans = xml_constraints.get("FeatureBooleans", [])
-        feature_terrain_booleans = xml_constraints.get("FeatureTerrainBooleans", [])
-
-        if "bPeak" not in placement_defs and plot_type == PlotTypes.PLOT_PEAK:
-            return False
-
-        if feature_id != -1:
-            if feature_id not in feature_booleans:
-                return False
-            if terrain_id not in feature_terrain_booleans:
-                return False
-        else:
-            if terrain_id not in terrain_booleans:
-                return False
-
-        if plot_type == PlotTypes.PLOT_HILLS and not xml_constraints.get(
-            "bHills", False
-        ):
-            return False
-        if plot_type == PlotTypes.PLOT_LAND and not xml_constraints.get(
-            "bFlatlands", False
-        ):
-            return False
-        river_tile = self._is_river_side(tile_index)
-        if xml_constraints.get("bNoRiverSide", False) and river_tile:
-            return False
-
-        if not self._plot_matches_terrain_water(plot_type, terrain_id):
-            return False
-
-        area_size = self.bonus_area_sizes.get(self.bonus_area_id[tile_index], 0)
-
-        if area_size < xml_constraints.get("iMinAreaSize", 0):
-            return False
-
-        x, y = self.map_config.get_coords_from_index(tile_index)
-        latitude = abs(self.map_config.get_latitude_for_y(y))
-        min_lat = xml_constraints.get("iMinLatitude", 0)
-        max_lat = xml_constraints.get("iMaxLatitude", 90)
-        if latitude < min_lat or latitude > max_lat:
-            return False
-
-        if not self.is_potential_city_work[tile_index]:
-            return False
-
-        return True
-
-    def _is_river_side(self, tile_index):
-        """Game river state when supplied, otherwise PlanetSim river adjacency."""
-        if self.river_side_map is not None:
-            return self.river_side_map[tile_index]
-        return self.map_config.is_adjacent_to_river(tile_index)
-
-    def _get_water_terrain_ids(self):
-        """Cached terrain IDs for water terrains (ocean and coast)"""
-        cached = getattr(self, "_water_terrain_ids", None)
-        if cached is None:
-            cached = (
-                self._get_terrain_id("TERRAIN_OCEAN"),
-                self._get_terrain_id("TERRAIN_COAST"),
-            )
-            self._water_terrain_ids = cached
-        return cached
-
-    def _plot_matches_terrain_water(self, plot_type, terrain_id):
-        """Water plots need water terrain and land plots must not have it"""
-        is_water_terrain = terrain_id in self._get_water_terrain_ids()
-        return (plot_type == PlotTypes.PLOT_OCEAN) == is_water_terrain
-
-    def _calculate_num_bonuses_to_add(self, xml_constraints, num_candidate_tiles):
-        """Calculate target resource quantity from XML parameters."""
-
-        rand_1 = self._random_below(xml_constraints.get("iRandApp1", 0))
-        rand_2 = self._random_below(xml_constraints.get("iRandApp2", 0))
-        rand_3 = self._random_below(xml_constraints.get("iRandApp3", 0))
-        rand_4 = self._random_below(xml_constraints.get("iRandApp4", 0))
-        base_count = (
-            xml_constraints.get("iConstAppearance", 0)
-            + rand_1
-            + rand_2
-            + rand_3
-            + rand_4
-        )
-
-        tiles_per = xml_constraints.get("iTilesPer", 0)
-        land_tiles = 0
-        if tiles_per > 0:
-            land_tiles = num_candidate_tiles // tiles_per
-
-        players = self.map_config.num_players * xml_constraints.get("iPlayer", 0) // 100
-        bonus_count = (base_count * (land_tiles + players)) // 100
-        abundance = getattr(self.map_config, "resource_quantity_multiplier", 1.0)
-        return max(1, int(round(bonus_count * abundance)))
-
-    def _should_place_resource(
-        self,
-        tile_index,
-        resource_def,
-        xml_constraints,
-        land_count=None,
-        total_count=None,
-    ):
-        """Check clustering and exclusion rules"""
-
-        if self.resource_map[tile_index] != -1:
-            return False
-
-        min_land_percent = xml_constraints.get("iMinLandPercent", 0)
-        if (
-            min_land_percent > 0
-            and self.elevation_map.plot_types[tile_index] == PlotTypes.PLOT_OCEAN
-        ):
-            if land_count is None or total_count is None:
-                bonus_id = self._get_bonus_id(resource_def["base_resource"])
-                land_count = sum(
-                    1
-                    for index, placed_bonus in enumerate(self.resource_map)
-                    if placed_bonus == bonus_id
-                    and self.elevation_map.plot_types[index] != PlotTypes.PLOT_OCEAN
-                )
-                total_count = self.resource_map.count(bonus_id)
-            if land_count * 100 // (total_count + 1) < min_land_percent:
-                return False
-
-        # Check unique radius (exclusion zones)
-        unique_radius = xml_constraints.get("iUnique", 0)
-        if unique_radius > 0:
-            if self._has_resource_in_radius(
-                tile_index, resource_def["base_resource"], unique_radius
-            ):
-                return False
-
-        class_radius = xml_constraints.get("iClassUnique", 0)
-        if class_radius > 0 and self._has_bonus_class_in_radius(
-            tile_index, xml_constraints.get("bonus_class"), class_radius
-        ):
-            return False
-
-        return True
-
-    def _plot_distance_between(self, tile_a, tile_b):
-        """Civ plot distance between two tiles, honoring map wrapping."""
-        ax, ay = self.map_config.get_coords_from_index(tile_a)
-        bx, by = self.map_config.get_coords_from_index(tile_b)
-        dx, dy = self.map_config.get_wrapped_distance(ax, ay, bx, by)
-        dx = abs(dx)
-        dy = abs(dy)
-        return max(dx, dy) + min(dx, dy) // 2
-
-    def _has_resource_in_radius(self, tile_index, resource_type, radius):
-        """Check same-type resources in the same area using Civ plot distance."""
-        bonus_id = self._get_bonus_id(resource_type)
-        if bonus_id == -1:
-            return False
-
-        area_id = self.bonus_area_id[tile_index]
-        for placed_tile in self.placed_resources.get(resource_type, []):
-            if self.resource_map[placed_tile] != bonus_id:
-                continue
-            if self.bonus_area_id[placed_tile] != area_id:
-                continue
-            if self._plot_distance_between(tile_index, placed_tile) <= radius:
-                return True
-
-        return False
-
-    def _has_bonus_class_in_radius(self, tile_index, bonus_class, radius):
-        """Check placed bonuses of any type in the same class and area."""
-        area_id = self.bonus_area_id[tile_index]
-        for placed_tile in self.placed_by_class.get(bonus_class, []):
-            if self.bonus_area_id[placed_tile] != area_id:
-                continue
-            if self._plot_distance_between(tile_index, placed_tile) <= radius:
-                return True
-
-        return False
-
-    def _update_exclusion_zones(self, tile_index, xml_constraints):
-        """Update exclusion zones after placing resource"""
-        base_resource = xml_constraints.get("base_resource")
-        if base_resource is None:
-            bonus_id = self.resource_map[tile_index]
-            if bonus_id != -1 and bonus_id != BonusTypes.NO_BONUS:
-                base_resource = self.map_config.get_bonus_string_from_id(bonus_id)
-
-        if base_resource is None:
-            return
-
-        if base_resource not in self.placed_resources:
-            self.placed_resources[base_resource] = []
-        self.placed_resources[base_resource].append(tile_index)
-
-        unique_radius = xml_constraints.get("iUnique", 0)
-        if unique_radius > 0:
-            self.resource_exclusion_zones[base_resource] = unique_radius
-
-    def _log_warning(self, message):
-        """Log warning once per unique message"""
-        if message not in self.logged_warnings:
-            print("WARNING: " + str(message))
-            self.logged_warnings.add(message)
-
-    def _get_terrain_id(self, terrain_string):
-        """Convert terrain string to game ID, with error handling"""
-        if terrain_string is None:
-            return -1
-        terrain_id = self.game_context.getInfoTypeForString(terrain_string)
-        if terrain_id == -1:
-            self._log_warning(
-                "Terrain type '" + str(terrain_string) + "' not found in game XML"
-            )
-        return terrain_id
-
-    def _get_bonus_id(self, bonus_string):
-        """Convert bonus string to game ID, with error handling"""
-        if bonus_string is None:
-            return -1
-        bonus_id = self.game_context.getInfoTypeForString(bonus_string)
-        if bonus_id == -1:
-            self._log_warning(
-                "Bonus type '" + str(bonus_string) + "' not found in game XML"
-            )
-        return bonus_id
-
-    def _calculate_placement_score(self, tile_index, resource_def):
-        """Calculate placement score (0.0 to 1.0, higher = better)"""
-        score = 0.0  # Base score
-
-        # Apply soft constraint modifiers
-        score += self._score_xml_constraints(tile_index, resource_def)
-        score += self._score_custom_constraints(tile_index, resource_def)
-        score /= 2.0
-
-        return max(0.0, min(1.0, score))  # Clamp to [0,1]
-
-    def _score_xml_constraints(self, tile_index, resource_def):
-        """Score based on XML preferences (0-1)"""
-        score_modifier = 0.0
-
-        bonus_id = self._get_bonus_id(resource_def["base_resource"])
-        if bonus_id == -1:
-            return 0.0
-
-        xml_constraints = self.bonus_constraints.get(bonus_id, {})
-        _, y = self.map_config.get_coords_from_index(tile_index)
-
-        # Latitude preference
-        latitude = abs(self.map_config.get_latitude_for_y(y))
-        min_lat = xml_constraints.get("iMinLatitude", 0)
-        max_lat = xml_constraints.get("iMaxLatitude", 90)
-
-        if latitude < min_lat or latitude > max_lat:
-            return 0.0
-
-        if min_lat == 0:
-            min_lat = -max_lat
-
-        if max_lat == 90 and min_lat == -90:
-            score_modifier = 0.0
-        else:
-            score_modifier = (
-                1
-                - math.cos(
-                    math.radians((latitude - min_lat) * (360.0 / (max_lat - min_lat)))
-                )
-            ) / 2.0
-
-        # Terrain preference
-        terrain_id = self.terrain_map[tile_index]
-        terrain_booleans = xml_constraints.get("TerrainBooleans", [])
-        if terrain_id in terrain_booleans:
-            score_modifier += 0.2
-        elif terrain_booleans:  # Has preferences but this isn't one
-            score_modifier -= 0.2
-
-        # Feature preference
-        feature_id = self.feature_map[tile_index]
-        feature_booleans = xml_constraints.get("FeatureBooleans", [])
-        if feature_id in feature_booleans:
-            score_modifier += 0.2
-
-        return max(0.0, min(1.0, score_modifier))  # Clamp to [0,1]
-
-    def _score_custom_constraints(self, tile_index, resource_def):
-        """Score based on custom placement rules (0-1)"""
-        score_modifier = 0.0
-
-        # Evaluate each placement rule
-        placement_rules = resource_def.get("placement_rules", [])
-        for rule in placement_rules:
-            rule_score = self._evaluate_placement_rule(tile_index, rule)
-            score_modifier += rule_score
-        if placement_rules:
-            score_modifier /= len(placement_rules)
-
-        return max(0.0, min(1.0, score_modifier))
-
-    def _evaluate_placement_rule(self, tile_index, rule):
-        """Evaluate a single placement rule and return score modifier"""
-        weight = rule.get("weight", 1.0)
-
-        for condition_key, range_values in rule.items():
-            if condition_key == "biome_filter":
-                biome_filter = range_values
-                if biome_filter:
-                    tile_biome = self.biome_assignments[tile_index]
-                    if tile_biome not in biome_filter:
-                        return 0.0
-            elif condition_key == "temp_range":
-                temp_range = range_values
-                if temp_range:
-                    temp_percentile = self.climate_map.temperature_percentiles[
-                        tile_index
-                    ]
-                    if (
-                        temp_percentile < temp_range[0]
-                        or temp_percentile > temp_range[1]
-                    ):
-                        return 0.0
-            elif condition_key == "precip_range":
-                precip_range = range_values
-                if precip_range:
-                    precip_percentile = self.climate_map.rainfall_percentiles[
-                        tile_index
-                    ]
-                    if (
-                        precip_percentile < precip_range[0]
-                        or precip_percentile > precip_range[1]
-                    ):
-                        return 0.0
-            elif condition_key == "wind_range":
-                wind_range = range_values
-                if wind_range:
-                    wind_speed = self.climate_map.wind_speeds[tile_index]
-                    if wind_speed < wind_range[0] or wind_speed > wind_range[1]:
-                        return 0.0
-            elif condition_key == "pressure_range":
-                pressure_range = range_values
-                if pressure_range:
-                    atmospheric_pressure = self.climate_map.atmospheric_pressure[
-                        tile_index
-                    ]
-                    if (
-                        atmospheric_pressure < pressure_range[0]
-                        or atmospheric_pressure > pressure_range[1]
-                    ):
-                        return 0.0
-            elif condition_key == "elevation_range":
-                elevation_range = range_values
-                if elevation_range:
-                    elevation = self.elevation_map.above_sea_level_map[tile_index]
-                    if elevation < elevation_range[0] or elevation > elevation_range[1]:
-                        return 0.0
-        return weight
-
     # Helper methods for data processing
     def _get_plot_flat_map(self):
         """Generate map of flat plot preferences"""
@@ -10326,7 +10322,7 @@ class StartingPlotFinder:
         except TypeError:
             bonus_id = plot.getBonusType()
         if bonus_id is None or bonus_id < 0:
-            resource_map = getattr(self.terrain_map, "resource_map", [])
+            resource_map = getattr(self.terrain_map.resources, "resource_map", [])
             if tile_index < len(resource_map):
                 bonus_id = resource_map[tile_index]
         return bonus_id
@@ -10409,7 +10405,7 @@ class StartingPlotFinder:
             for terrain_name_part in flags:
                 if terrain_name_part in terrain_name:
                     flags[terrain_name_part] = True
-            feature_id = self.terrain_map.feature_map[neighbour_index]
+            feature_id = self.terrain_map.features.feature_map[neighbour_index]
             feature_name = self.map_config.get_feature_string_from_id(feature_id) or ""
             if "JUNGLE" in feature_name:
                 flags["JUNGLE"] = True
@@ -10682,6 +10678,11 @@ def generateTerrainTypes():
     return terrain_map.terrain_map
 
 
+def addLakes():
+    """Lakes are placed by ClimateMap; the engine must not add its own."""
+    pass
+
+
 def addRivers():
     """Add rivers to the map using realistic flow patterns"""
     global map_config, elevation_map, climate_map, engine_plot_types, map_ctx
@@ -10700,62 +10701,25 @@ def addRivers():
             map_ctx.plotByIndex(i).setPlotType(elevation_map.plot_types[i], True, True)
 
     for from_node, to_node, river_id, _ in climate_map.river_map:
-        from_x, from_y = map_config.get_coords_from_index(from_node)
-        to_x, to_y = map_config.get_coords_from_index(to_node)
-
-        # Calculate flow direction
-        dx = to_x - from_x
-        dy = to_y - from_y
-
-        # Handle wrapping
-        if map_config.wrap_x and abs(dx) > map_config.num_plots_x // 2:
-            dx = dx - int(copysign(map_config.num_plots_x, dx))
-        if map_config.wrap_y and abs(dy) > map_config.num_plots_y // 2:
-            dy = dy - int(copysign(map_config.num_plots_y, dy))
-
-        # Place river on appropriate tile edge with proper validation
-        if abs(dx) > abs(dy):  # Primarily horizontal flow
-            if dx > 0:  # Eastward flow: place north_of_rivers on to_tile
-                tile_x = to_x
-                tile_y = to_y
-                tile_i = tile_y * map_config.num_plots_x + tile_x
-                if 0 <= tile_i < map_config.num_plots:
-                    plot = map_ctx.plotByIndex(tile_i)
-                    plot.setNOfRiver(
-                        True, CardinalDirectionTypes.CARDINALDIRECTION_EAST
-                    )
-                    plot.setRiverID(river_id)
-            else:  # Westward flow: place north_of_rivers on from_tile
-                tile_x = from_x
-                tile_y = from_y
-                tile_i = tile_y * map_config.num_plots_x + tile_x
-                if 0 <= tile_i < map_config.num_plots:
-                    plot = map_ctx.plotByIndex(tile_i)
-                    plot.setNOfRiver(
-                        True, CardinalDirectionTypes.CARDINALDIRECTION_WEST
-                    )
-                    plot.setRiverID(river_id)
-        else:  # Primarily vertical flow
-            if dy > 0:  # Northward flow: place west_of_rivers on from_tile
-                tile_x = from_x
-                tile_y = from_y
-                tile_i = tile_y * map_config.num_plots_x + tile_x
-                if 0 <= tile_i < map_config.num_plots:
-                    plot = map_ctx.plotByIndex(tile_i)
-                    plot.setWOfRiver(
-                        True, CardinalDirectionTypes.CARDINALDIRECTION_NORTH
-                    )
-                    plot.setRiverID(river_id)
-            else:  # Southward flow: place west_of_rivers on to_tile (FIXED BUG)
-                tile_x = from_x  # Fixed: was to_y in original code
-                tile_y = to_y
-                tile_i = tile_y * map_config.num_plots_x + tile_x
-                if 0 <= tile_i < map_config.num_plots:
-                    plot = map_ctx.plotByIndex(tile_i)
-                    plot.setWOfRiver(
-                        True, CardinalDirectionTypes.CARDINALDIRECTION_SOUTH
-                    )
-                    plot.setRiverID(river_id)
+        tile_i, is_north_edge, is_forward = map_config.get_river_edge(
+            from_node, to_node
+        )
+        if tile_i < 0:
+            continue
+        plot = map_ctx.plotByIndex(tile_i)
+        if is_north_edge:
+            if is_forward:
+                direction = CardinalDirectionTypes.CARDINALDIRECTION_EAST
+            else:
+                direction = CardinalDirectionTypes.CARDINALDIRECTION_WEST
+            plot.setNOfRiver(True, direction)
+        else:
+            if is_forward:
+                direction = CardinalDirectionTypes.CARDINALDIRECTION_NORTH
+            else:
+                direction = CardinalDirectionTypes.CARDINALDIRECTION_SOUTH
+            plot.setWOfRiver(True, direction)
+        plot.setRiverID(river_id)
 
 
 def addFeatures():
@@ -10769,7 +10733,8 @@ def addFeatures():
     for i in xrange(map_config.num_plots):
         plot = map_ctx.plotByIndex(i)
         plot.setFeatureType(
-            terrain_map.feature_map[i], terrain_map.feature_subtype_map[i]
+            terrain_map.features.feature_map[i],
+            terrain_map.features.feature_subtype_map[i],
         )
 
 
@@ -10784,9 +10749,9 @@ def addBonuses():
     river_side_map = [
         map_ctx.plotByIndex(i).isRiverSide() for i in xrange(map_config.num_plots)
     ]
-    terrain_map.place_resources(river_side_map)
+    terrain_map.resources.place_resources(river_side_map)
 
-    resource_map = getattr(terrain_map, "resource_map", [])
+    resource_map = getattr(terrain_map.resources, "resource_map", [])
     if not resource_map:
         return
 

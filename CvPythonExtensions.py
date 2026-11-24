@@ -312,6 +312,9 @@ class CyGlobalContext:
         return CyBonusInfo("UNKNOWN_BONUS", -1)
 
     def getBonusClassInfo(self, class_id):
+        # Engine CyGlobalContext::getBonusClassInfo returns NULL for class_id <= 0.
+        if class_id <= 0:
+            return None
         return CyBonusClassInfo(class_id)
 
 

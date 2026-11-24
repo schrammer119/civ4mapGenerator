@@ -1,5 +1,6 @@
 # pylint: disable=invalid-name  # fake Civ IV engine API mirrors game core names
 import unittest
+from types import SimpleNamespace
 
 from CvPythonExtensions import TeamTypes, YieldTypes
 from PlanetSim import PlotTypes, StartingPlotFinder
@@ -178,8 +179,12 @@ class StartingPlotFinderTests(unittest.TestCase):
             (object,),
             {
                 "terrain_map": [0] * self.map_config.num_plots,
-                "feature_map": [-1] * self.map_config.num_plots,
-                "resource_map": [-1] * self.map_config.num_plots,
+                "features": SimpleNamespace(
+                    feature_map=[-1] * self.map_config.num_plots,
+                ),
+                "resources": SimpleNamespace(
+                    resource_map=[-1] * self.map_config.num_plots
+                ),
             },
         )()
         plots = [

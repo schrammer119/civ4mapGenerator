@@ -12,4 +12,4 @@ module-rgx=^(?:PlanetSim|[a-z_][a-z0-9_]*)$
 class-rgx=^(?:xrange|[A-Z][A-Za-z0-9]*)$
 
 # Civ IV engine callbacks are invoked by name and keep their camelCase API names.
-function-rgx=^(?:[a-z_][a-z0-9_]*|getDescription|isAdvancedMap|isClimateMap|isSeaLevelMap|getNumCustomMapOptions|getCustomMapOptionName|getNumCustomMapOptionValues|getCustomMapOptionDescAt|getCustomMapOptionDefault|isRandomCustomMapOption|beforeInit|beforeGeneration|generatePlotTypes|generateTerrainTypes|addRivers|addFeatures|addBonuses|afterGeneration|assignStartingPlots)$
+function-rgx=^(?:[a-z_][a-z0-9_]*|getDescription|isAdvancedMap|isClimateMap|isSeaLevelMap|getNumCustomMapOptions|getCustomMapOptionName|getNumCustomMapOptionValues|getCustomMapOptionDescAt|getCustomMapOptionDefault|isRandomCustomMapOption|beforeInit|beforeGeneration|generatePlotTypes|generateTerrainTypes|addLakes|addRivers|addFeatures|addBonuses|afterGeneration|assignStartingPlots)$

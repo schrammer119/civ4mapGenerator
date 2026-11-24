@@ -92,13 +92,6 @@ Core consolidation is complete, but resource verification, start-location logic,
 
 ---
 
-## Code TODOs
-
-- [ ] break up classes a little bit: move resources/bonuses to their own class. Pangaea breaker as well. Follow current layout, naming, structure of other classes. Features perhaps to their own class. The general rule would be: one class per callback. The pangaea breaker breaks this rule because it is a large, optional extra.
-  - Findings: see [game_core_interaction.md](game_core_interaction.md). `elevation_map.plot_types` goes stale after engine `addLakes`; reads in `TerrainMap` resource and feature code and `StartingPlotFinder._is_coastal` treat lake tiles as land. Pass plot types explicitly to `ClimateMap`/`TerrainMap`; read game plot state in `place_resources` and start plots.
-
----
-
 ## Mod TODOs
 
 - [ ] integrate with CoM mod, adding custom rules for new features, terrains, and resources

@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from PlanetSim import ElevationMap, PlotTypes
+from PlanetSim import ElevationMap, PangaeaBreaker, PlotTypes
 from tests.test_map_config import make_map_config
 
 
@@ -128,9 +128,10 @@ class ElevationBehaviorTests(unittest.TestCase):
 
     def test_pangaea_breaker_selects_a_balanced_deep_ocean_rift(self):
         elevation_map = make_narrow_neck_map()
+        breaker = PangaeaBreaker(elevation_map)
 
         self.assertTrue(elevation_map.is_pangaea)
-        self.assertTrue(elevation_map._break_pangaea())
+        self.assertTrue(breaker.break_pangaea())
 
         final_sizes = sorted(elevation_map.continent_sizes.values(), reverse=True)
         self.assertEqual(2, len(final_sizes))
@@ -199,19 +200,21 @@ class ElevationBehaviorTests(unittest.TestCase):
 
     def test_pangaea_breaker_splits_neck_in_doubly_wrapped_ocean(self):
         elevation_map = make_narrow_neck_map(wrap_x=True, wrap_y=True)
+        breaker = PangaeaBreaker(elevation_map)
 
-        self.assertTrue(elevation_map._break_pangaea())
+        self.assertTrue(breaker.break_pangaea())
         self.assertEqual(2, len(elevation_map.continent_sizes))
 
     def test_rift_lowers_seam_to_deep_ocean_and_shoulders_to_coast_height(self):
         elevation_map = make_elevation_map(width=7, height=1)
+        breaker = PangaeaBreaker(elevation_map)
         elevation_map.sea_level_threshold = 0.4
         elevation_map.coast_level_threshold = 0.0
         elevation_map.above_sea_level_map = [0.0] * 7
         elevation_map.plot_types = [PlotTypes.PLOT_LAND] * 7
         elevation_map.elevation_map = [1.0] * 7
 
-        elevation_map._apply_pangaea_rift(set([2, 3]), set([1, 4]))
+        breaker._apply_pangaea_rift(set([2, 3]), set([1, 4]))
 
         for tile_index in (2, 3):
             self.assertLess(elevation_map.elevation_map[tile_index], 0.0)
@@ -224,29 +227,32 @@ class ElevationBehaviorTests(unittest.TestCase):
 
     def test_seam_length_straight_cut_equals_step_count(self):
         elevation_map = make_elevation_map(width=8, height=8)
+        breaker = PangaeaBreaker(elevation_map)
         component = set(range(64))
         side_a = set(i for i in component if i % 8 < 4)
 
-        self.assertEqual(8, elevation_map._get_seam_length(side_a, component))
+        self.assertEqual(8, breaker._get_seam_length(side_a, component))
 
     def test_seam_length_45_degree_staircase_is_sqrt2_over_2_of_steps(self):
         elevation_map = make_elevation_map(width=8, height=8)
+        breaker = PangaeaBreaker(elevation_map)
         component = set(range(64))
         side_a = set(i for i in component if (i % 8) <= (i // 8))
         steps = 14
 
-        length = elevation_map._get_seam_length(side_a, component)
+        length = breaker._get_seam_length(side_a, component)
 
         self.assertAlmostEqual(steps * math.sqrt(2) / 2, length, delta=1.0)
 
     def test_seam_length_single_kink_costs_less_than_steps(self):
         elevation_map = make_elevation_map(width=12, height=6)
+        breaker = PangaeaBreaker(elevation_map)
         component = set(range(72))
         side_a = set(
             i for i in component if (i % 12) < 5 or (i % 12 == 5 and i // 12 < 3)
         )
 
-        length = elevation_map._get_seam_length(side_a, component)
+        length = breaker._get_seam_length(side_a, component)
 
         self.assertAlmostEqual(
             7 - 2 * elevation_map.map_config.pangaea_seam_turn_reduction, length
@@ -254,6 +260,7 @@ class ElevationBehaviorTests(unittest.TestCase):
 
     def test_perturbed_seam_stays_connected_and_balanced(self):
         elevation_map = make_narrow_neck_map()
+        breaker = PangaeaBreaker(elevation_map)
         largest_id = max(
             elevation_map.continent_sizes, key=elevation_map.continent_sizes.get
         )
@@ -266,9 +273,9 @@ class ElevationBehaviorTests(unittest.TestCase):
         minimum_size = (30 * size) // 100 + 1
         maximum_size = size - minimum_size
 
-        projection = elevation_map._select_projection_partition(component, minimum_size)
+        projection = breaker._select_projection_partition(component, minimum_size)
         self.assertIsNotNone(projection)
-        perturbed = elevation_map._perturb_pangaea_seam(
+        perturbed = breaker._perturb_pangaea_seam(
             component, projection, minimum_size, maximum_size
         )
 
@@ -276,28 +283,31 @@ class ElevationBehaviorTests(unittest.TestCase):
             (tile_index, 0 if tile_index in perturbed else 1)
             for tile_index in component
         )
-        sizes = elevation_map._get_pangaea_sizes(side_of, component)
+        sizes = breaker._get_pangaea_sizes(side_of, component)
         self.assertTrue(minimum_size <= min(sizes) and max(sizes) <= maximum_size)
-        self.assertTrue(elevation_map._is_valid_pangaea_partition(side_of, component))
+        self.assertTrue(breaker._is_valid_pangaea_partition(side_of, component))
 
     def test_pangaea_breaker_preserves_x_wrap(self):
         elevation_map = make_narrow_neck_map(wrap_x=True)
+        breaker = PangaeaBreaker(elevation_map)
 
-        self.assertTrue(elevation_map._break_pangaea())
+        self.assertTrue(breaker.break_pangaea())
         self.assertEqual(2, len(elevation_map.continent_sizes))
 
     def test_pangaea_breaker_uses_horizontal_rift_when_y_wraps(self):
         elevation_map = make_narrow_neck_map(wrap_y=True)
+        breaker = PangaeaBreaker(elevation_map)
 
-        self.assertTrue(elevation_map._break_pangaea())
+        self.assertTrue(breaker.break_pangaea())
         self.assertEqual(2, len(elevation_map.continent_sizes))
 
     def test_pangaea_breaker_does_not_change_map_when_disabled(self):
         elevation_map = make_narrow_neck_map()
+        breaker = PangaeaBreaker(elevation_map)
         elevation_map.map_config.enable_pangaea_breaker = False
         original_plot_types = list(elevation_map.plot_types)
 
-        self.assertFalse(elevation_map._break_pangaea())
+        self.assertFalse(breaker.break_pangaea())
         self.assertEqual(original_plot_types, elevation_map.plot_types)
 
     def test_peak_demotions_choose_two_lowest_neighbors_only_above_threshold(self):

@@ -7,6 +7,7 @@ _.isSeaLevelMap
 _.beforeInit
 _.beforeGeneration
 _.afterGeneration
+_.addLakes
 _.isNone
 
 # Pending: game-provided climate settings (CvClimateInfo). Remove when the climate TODO is done.

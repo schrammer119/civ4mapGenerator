@@ -41,7 +41,7 @@ No Hungarian prefixes (`i`, `b`, `s`, `e`, ...). Drop them: `iNumPlots` becomes 
 
 These come from the game engine or are fixed by it. Renaming any of them breaks the script in the game.
 
-- Engine callbacks, defined in `PlanetSim.py` with engine-specific names: `getDescription`, `isAdvancedMap`, `isClimateMap`, `isSeaLevelMap`, `getNumCustomMapOptions`, `getCustomMapOptionName`, `getNumCustomMapOptionValues`, `getCustomMapOptionDescAt`, `getCustomMapOptionDefault`, `isRandomCustomMapOption`, `beforeInit`, `beforeGeneration`, `generatePlotTypes`, `generateTerrainTypes`, `addRivers`, `addFeatures`, `addBonuses`, `afterGeneration`, `assignStartingPlots`.
+- Engine callbacks, defined in `PlanetSim.py` with engine-specific names: `getDescription`, `isAdvancedMap`, `isClimateMap`, `isSeaLevelMap`, `getNumCustomMapOptions`, `getCustomMapOptionName`, `getNumCustomMapOptionValues`, `getCustomMapOptionDescAt`, `getCustomMapOptionDefault`, `isRandomCustomMapOption`, `beforeInit`, `beforeGeneration`, `generatePlotTypes`, `generateTerrainTypes`, `addLakes`, `addRivers`, `addFeatures`, `addBonuses`, `afterGeneration`, `assignStartingPlots`.
 - Game API names: anything called on engine objects, such as `CyGlobalContext`, `map`, `plot`, `city`, and their `get*`, `set*`, `is*`, `has*`, `calculate*` methods.
 - Engine enums and constants: `PlotTypes`, `BonusTypes`, `PLOT_LAND`, `NO_BONUS`, and similar.
 - XML-type string values: `"BONUS_HORSE"`, `"CIVILIZATION_ARABIA"`, `"TERRAIN_DESERT"`, and similar.
@@ -49,3 +49,5 @@ These come from the game engine or are fixed by it. Renaming any of them breaks 
 ## Scope of the changeover
 
 Names defined in `PlanetSim.py` are owned by the script and follow this convention, including `generate_*` methods and `map_ctx`. The mocks `CvPythonExtensions.py` and `CvUtil.py` are not renamed.
+
+Feature arrays are owned by `TerrainMap.features` (`FeatureMap`), and feature adjacency is provided by `FeatureMap.is_adjacent_to_feature`.

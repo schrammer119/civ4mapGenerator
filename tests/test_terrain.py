@@ -35,7 +35,7 @@ def generate_planetsim_map(seed):
     climate_map.generate_climate_map()
     terrain_map = TerrainMap(game_context, map_config, elevation_map, climate_map)
     terrain_map.generate_terrain()
-    terrain_map.place_resources()
+    terrain_map.resources.place_resources()
     return elevation_map, climate_map, terrain_map
 
 
@@ -49,9 +49,9 @@ def generate_map_snapshot(seed):
         tuple(climate_map.river_map),
         tuple(terrain_map.biome_assignments),
         tuple(terrain_map.terrain_map),
-        tuple(terrain_map.feature_map),
-        tuple(terrain_map.feature_subtype_map),
-        tuple(terrain_map.resource_map),
+        tuple(terrain_map.features.feature_map),
+        tuple(terrain_map.features.feature_subtype_map),
+        tuple(terrain_map.resources.resource_map),
     )
 
 
@@ -112,6 +112,7 @@ class TerrainBehaviorTests(unittest.TestCase):
             "ocean_biome": {"terrain": "TERRAIN_OCEAN", "scoring_factors": {}},
         }
         terrain_map.biome_grid = {(9, 9): [("ocean_biome", 1.0), ("land_biome", 0.5)]}
+        terrain_map.lake_tiles = set()
         terrain_map._calculate_secondary_score = lambda biome_name, tile_index: 0.0
 
         self.assertEqual("land_biome", terrain_map._select_biome_for_tile(0))
@@ -134,7 +135,28 @@ class TerrainBehaviorTests(unittest.TestCase):
             "coast_biome": {"terrain": "TERRAIN_COAST", "scoring_factors": {}},
         }
         terrain_map.biome_grid = {(9, 9): [("ocean_biome", 1.0), ("coast_biome", 0.5)]}
+        terrain_map.lake_tiles = set()
         terrain_map._is_coastal_water = lambda tile_index: True
+        terrain_map._calculate_secondary_score = lambda biome_name, tile_index: 0.0
+
+        self.assertEqual("coast_biome", terrain_map._select_biome_for_tile(0))
+
+    def test_lake_tiles_select_coast_biome_even_away_from_land(self):
+        terrain_map = object.__new__(TerrainMap)
+        terrain_map.biome_grid_size = 20
+        terrain_map.elevation_map = SimpleNamespace(plot_types=[PlotTypes.PLOT_OCEAN])
+        terrain_map.climate_map = SimpleNamespace(
+            temperature_percentiles=[0.5],
+            rainfall_percentiles=[0.5],
+            temperature_percentiles_water=[0.5],
+        )
+        terrain_map.biome_definitions = {
+            "ocean_biome": {"terrain": "TERRAIN_OCEAN", "scoring_factors": {}},
+            "coast_biome": {"terrain": "TERRAIN_COAST", "scoring_factors": {}},
+        }
+        terrain_map.biome_grid = {(9, 9): [("ocean_biome", 1.0), ("coast_biome", 0.5)]}
+        terrain_map.lake_tiles = {0}
+        terrain_map._is_coastal_water = lambda tile_index: False
         terrain_map._calculate_secondary_score = lambda biome_name, tile_index: 0.0
 
         self.assertEqual("coast_biome", terrain_map._select_biome_for_tile(0))
