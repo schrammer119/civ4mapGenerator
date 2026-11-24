@@ -6983,7 +6983,9 @@ class ClimateMap:
         """Attempt to connect a lake to the ocean if beneficial"""
 
         # Find closest ocean from lake edge
+        lake_tiles = set(lake["final_tiles"])
         best_path = None
+        best_start = None
         min_distance = 1e999
 
         for lake_tile in lake["final_tiles"]:
@@ -6997,24 +6999,26 @@ class ClimateMap:
                 ):
 
                     path = self.find_path_to_ocean(
-                        neighbour, 3
+                        neighbour, 3, lake_tiles
                     )  # Short connections only
 
                     if path and len(path) < min_distance:
                         min_distance = len(path)
                         best_path = path
+                        best_start = neighbour
 
         # Create connection if path is very short
         if best_path and len(best_path) <= 2:
-            for tile_i in best_path:
+            # The start tile touches the lake and must be cut as well
+            for tile_i in [best_start] + best_path:
                 # Don't remove peaks for connections
                 if self.elevation_map.plot_types[tile_i] != PlotTypes.PLOT_PEAK:
                     self.elevation_map.plot_types[tile_i] = PlotTypes.PLOT_OCEAN
 
             lake["connected_to_ocean"] = True
 
-    def find_path_to_ocean(self, start_tile, max_distance):
-        """Find shortest path from tile to ocean"""
+    def find_path_to_ocean(self, start_tile, max_distance, excluded_tiles=frozenset()):
+        """Find shortest path from tile to ocean, skipping excluded tiles"""
 
         queue = deque([(start_tile, [])])
         visited = set([start_tile])
@@ -7032,6 +7036,7 @@ class ClimateMap:
                     neighbour >= 0
                     and neighbour < self.map_config.num_plots
                     and neighbour not in visited
+                    and neighbour not in excluded_tiles
                 ):
 
                     new_path = path + [neighbour]

@@ -87,6 +87,40 @@ class HydrologyBehaviorTests(unittest.TestCase):
             )
         )
 
+    def _make_connection_map(self, plot_types):
+        map_config = make_map_config(width=len(plot_types), height=1)
+        climate_map = object.__new__(ClimateMap)
+        climate_map.map_config = map_config
+        climate_map.elevation_map = SimpleNamespace(plot_types=list(plot_types))
+        return climate_map
+
+    def test_ocean_connection_cuts_single_land_tile_between_lake_and_ocean(self):
+        climate_map = self._make_connection_map(
+            [PlotTypes.PLOT_OCEAN, PlotTypes.PLOT_LAND, PlotTypes.PLOT_OCEAN]
+        )
+
+        climate_map.attempt_ocean_connection({"final_tiles": [0]})
+
+        self.assertEqual(
+            [PlotTypes.PLOT_OCEAN] * 3, climate_map.elevation_map.plot_types
+        )
+
+    def test_ocean_connection_cuts_both_land_tiles_in_two_tile_gap(self):
+        climate_map = self._make_connection_map(
+            [
+                PlotTypes.PLOT_OCEAN,
+                PlotTypes.PLOT_LAND,
+                PlotTypes.PLOT_LAND,
+                PlotTypes.PLOT_OCEAN,
+            ]
+        )
+
+        climate_map.attempt_ocean_connection({"final_tiles": [0]})
+
+        self.assertEqual(
+            [PlotTypes.PLOT_OCEAN] * 4, climate_map.elevation_map.plot_types
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
